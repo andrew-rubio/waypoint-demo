@@ -1,10 +1,36 @@
 {
   "mode": "greenfield",
   "phase": "increment-delivery",
-  "step": "delivered",
-  "status": "done",
-  "currentIncrement": "INC-2",
+  "step": "tests",
+  "status": "in-progress",
+  "currentIncrement": "INC-3",
+  "lastUpdated": "2026-08-13T15:50:44Z",
   "increments_progress": {
+    "INC-3": {
+      "frd": "FRD-003",
+      "name": "destination-advice",
+      "depends_on": ["INC-1"],
+      "status": "in-progress",
+      "tests": {
+        "status": "gherkin-pending-approval",
+        "e2e": {
+          "status": "done",
+          "flow": "Flow 2 — Destination advice",
+          "files": ["e2e/destination-advice.spec.ts", "e2e/pages/chat.page.ts"],
+          "tests": 4,
+          "validation": "playwright --list: 18/18 discovered across full suite"
+        },
+        "gherkin": {
+          "path": "specs/features/destination-advice.feature",
+          "status": "pending-approval",
+          "scenarios": 9,
+          "validation": "Cucumber dry-run parsed 9 scenarios; 42 INC-3 steps undefined as expected before test generation"
+        },
+        "bdd": [],
+        "unit": []
+      },
+      "started_at": "2026-08-13T15:50:44Z"
+    },
     "INC-2": {
       "frd": "FRD-002",
       "name": "audit-trail",
