@@ -43,12 +43,12 @@ async function* runFault(kind: string): AsyncIterable<AgentEvent> {
   switch (kind) {
     case 'agent-unavailable':
     case 'model-unavailable':
-      yield { type: 'error', code: 'agent_unavailable', message: 'The assistant is unavailable right now.' };
+      yield { type: 'error', code: 'agent_unavailable', message: 'The assistant is unavailable right now. Please try again.' };
       return;
 
     case 'timeout':
       yield { type: 'decision', summary: 'Attempt to answer the traveller.' };
-      yield { type: 'error', code: 'timeout', message: 'The assistant took too long to respond.' };
+      yield { type: 'error', code: 'timeout', message: 'The assistant timed out. Please try again.' };
       return;
 
     case 'mid-stream-error':
@@ -64,6 +64,52 @@ async function* runFault(kind: string): AsyncIterable<AgentEvent> {
       for (const word of words) {
         await sleep(500);
         yield { type: 'token', value: word + ' ' };
+      }
+      yield { type: 'done' };
+      return;
+    }
+
+    // A representative tool-using turn so the audit trail (FRD-002) can be
+    // exercised before real MCP servers arrive (INC-3+). The apiKey below is
+    // deliberately present — it must be redacted at the SSE boundary, never
+    // reaching the client.
+    case 'sample-tools': {
+      yield { type: 'decision', summary: 'Live flight search required — calling RouteStack.' };
+      yield {
+        type: 'tool_call',
+        name: 'routestack.searchFlights',
+        args: { from: 'LON', to: 'LIS', depart: '2026-10-14', return: '2026-10-21', pax: 2, apiKey: 'super-secret-key-value' },
+      };
+      await sleep(120);
+      yield {
+        type: 'tool_result',
+        name: 'routestack.searchFlights',
+        ok: true,
+        result: [
+          { airline: 'TAP', price: { amount: 128, ccy: 'GBP' }, stops: 0 },
+          { airline: 'BA', price: { amount: 146, ccy: 'GBP' }, stops: 0 },
+          { airline: 'easyJet', price: { amount: 97, ccy: 'GBP' }, stops: 0 },
+        ],
+      };
+      const words = 'Here are three direct options from London to Lisbon in October.'.split(' ');
+      for (const word of words) {
+        await sleep(8);
+        yield { type: 'token', value: word + ' ' };
+      }
+      yield { type: 'done' };
+      return;
+    }
+
+    // A markdown-formatted reply so the rich-text rendering in the chat is
+    // exercisable (bold, bullet list, heading).
+    case 'sample-markdown': {
+      yield { type: 'decision', summary: 'Reply with a formatted answer.' };
+      const md =
+        '### Two great options\n\nHere are **two** places to consider:\n\n' +
+        '- **Lisbon** — sunny and coastal\n- **Kyoto** — temples and gardens\n\nTell me which you prefer.';
+      for (const chunk of md.match(/[\s\S]{1,8}/g) ?? [md]) {
+        await sleep(8);
+        yield { type: 'token', value: chunk };
       }
       yield { type: 'done' };
       return;

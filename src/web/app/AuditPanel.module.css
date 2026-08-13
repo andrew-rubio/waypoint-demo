@@ -1,0 +1,252 @@
+/*
+ * Audit trail side panel (FRD-002). The audit surface is intentionally a dark
+ * "developer" theme (per specs/ui/prototypes/audit-panel.html), distinct from
+ * the light traveller chat. Layout is a fixed right-hand drawer that becomes a
+ * bottom sheet on small screens.
+ */
+
+.panel {
+  --audit-bg: #0f172a;
+  --audit-surface: #1e293b;
+  --audit-text: #e2e8f0;
+  --audit-muted: #94a3b8;
+  --audit-border: #334155;
+  --audit-mono: ui-monospace, 'JetBrains Mono', 'SFMono-Regular', Menlo, monospace;
+
+  flex: 0 0 clamp(320px, 34%, 460px);
+  min-height: 0;
+  background: var(--audit-bg);
+  color: var(--audit-text);
+  border-left: 1px solid var(--audit-border);
+  display: flex;
+  flex-direction: column;
+  animation: slide-in var(--dur-card) var(--ease-out) both;
+}
+
+@keyframes slide-in {
+  from {
+    transform: translateX(16px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--audit-border);
+  flex: 0 0 auto;
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: var(--text-sm);
+}
+
+.title svg {
+  color: var(--color-secondary);
+}
+
+.clear {
+  background: transparent;
+  border: 1px solid var(--audit-border);
+  color: var(--audit-muted);
+  border-radius: var(--radius-sm);
+  padding: 5px 10px;
+  font-size: var(--text-xs);
+  font-weight: 600;
+  cursor: pointer;
+  transition: color var(--dur-press), transform var(--dur-press) var(--ease-out);
+}
+
+.clear:hover {
+  color: var(--audit-text);
+}
+
+.clear:active {
+  transform: scale(0.96);
+}
+
+.clear:focus-visible {
+  outline: 2px solid var(--color-secondary);
+  outline-offset: 2px;
+}
+
+.empty {
+  flex: 1 1 auto;
+  display: grid;
+  place-items: center;
+  color: var(--audit-muted);
+  font-size: var(--text-sm);
+  padding: var(--space-8);
+  text-align: center;
+}
+
+.list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: var(--space-3);
+}
+
+.turnLabel {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--audit-muted);
+  margin: 10px 4px 6px;
+}
+
+.entry {
+  background: var(--audit-surface);
+  border: 1px solid var(--audit-border);
+  border-radius: var(--radius-md);
+  padding: 10px 12px;
+  margin-bottom: var(--space-2);
+}
+
+.entryTop {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  cursor: pointer;
+}
+
+.entryTop:focus-visible {
+  outline: 2px solid var(--color-secondary);
+  outline-offset: 2px;
+}
+
+.badge {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+.t_decision {
+  background: rgba(129, 140, 248, 0.18);
+  color: #a5b4fc;
+}
+.t_skill {
+  background: rgba(34, 211, 238, 0.18);
+  color: #67e8f9;
+}
+.t_mcp {
+  background: rgba(52, 211, 153, 0.18);
+  color: #6ee7b7;
+}
+.t_api {
+  background: rgba(251, 191, 36, 0.18);
+  color: #fcd34d;
+}
+
+.name {
+  font-family: var(--audit-mono);
+  font-size: var(--text-xs);
+  color: var(--audit-text);
+}
+
+.duration {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--audit-muted);
+  font-family: var(--audit-mono);
+  display: inline-flex;
+  align-items: center;
+}
+
+.status {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: lowercase;
+}
+
+.s_ok {
+  color: #6ee7b7;
+}
+.s_error {
+  color: #f87171;
+}
+.s_pending {
+  color: var(--audit-muted);
+}
+
+.detail {
+  margin-top: 10px;
+  border-top: 1px solid var(--audit-border);
+  padding-top: 10px;
+  font-family: var(--audit-mono);
+  font-size: 11px;
+  line-height: 17px;
+  color: #cbd5e1;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.detail > div {
+  margin-bottom: 4px;
+}
+
+.k {
+  color: #67e8f9;
+  margin-right: 6px;
+}
+
+.note {
+  color: #64748b;
+  font-style: italic;
+}
+
+.spin {
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--audit-border);
+  border-top-color: var(--audit-muted);
+  border-radius: 50%;
+  display: inline-block;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 1023px) {
+  .panel {
+    position: fixed;
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: 72vh;
+    flex: none;
+    z-index: 30;
+    border-left: 0;
+    border-top: 1px solid var(--audit-border);
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+    box-shadow: var(--shadow-lg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .panel,
+  .spin {
+    animation: none;
+  }
+}

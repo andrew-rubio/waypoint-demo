@@ -46,8 +46,9 @@ Then('no reply is generated', async function (this: CustomWorld) {
 // ── Ordering (AC-001-3) ─────────────────────────────────────────────────
 Given('the traveller has already exchanged two messages with the agent', async function (this: CustomWorld) {
   await this.chat.send('First question');
-  await expect(this.chat.assistantMessage(1)).toBeVisible();
+  await expect(this.page.getByTestId('streaming-caret')).toBeHidden();
   await this.chat.send('Second question');
+  await expect(this.page.getByTestId('streaming-caret')).toBeHidden();
   await expect(this.chat.assistantMessage(3)).toBeVisible();
   this.sent = 2;
 });
@@ -139,6 +140,12 @@ Given('the traveller has an ongoing conversation with several messages', async f
 
 Given('the traveller is in an ongoing conversation', async function (this: CustomWorld) {
   await this.chat.send('Tell me about Lisbon');
+  this.sent = 1;
+});
+
+Given('the traveller has an ongoing conversation', async function (this: CustomWorld) {
+  await this.chat.send('Tell me about Lisbon');
+  await expect(this.page.getByTestId('streaming-caret')).toBeHidden();
   this.sent = 1;
 });
 

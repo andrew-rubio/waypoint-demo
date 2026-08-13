@@ -4,6 +4,20 @@
   height: 100vh;
 }
 
+.body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.chatColumn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
 .header {
   display: flex;
   align-items: center;
@@ -137,6 +151,7 @@
   color: var(--color-text);
   border: 1px solid var(--color-border);
   border-bottom-left-radius: var(--radius-sm);
+  white-space: normal;
 }
 
 .caret {

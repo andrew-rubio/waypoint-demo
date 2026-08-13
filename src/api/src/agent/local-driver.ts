@@ -18,14 +18,19 @@ export class LocalAgentDriver implements AgentDriver {
       summary: `Answer the traveller directly about "${preview(input.message)}".`,
     };
 
-    // 2) Stream the reply one word at a time so the UI fills in progressively.
+    // 2) Open a model-generation audit entry so a plain conversation still shows
+    //    the model working — mirrors the real Copilot driver's copilot.chat entry.
+    yield { type: 'tool_call', name: 'copilot.chat', args: { model: 'local', prompt: input.message } };
+
+    // 3) Stream the reply one word at a time so the UI fills in progressively.
     const reply = composeReply(input.message);
     for (const word of reply.split(' ')) {
       await sleep(8);
       yield { type: 'token', value: word + ' ' };
     }
 
-    // 3) Terminal success event.
+    // 4) Close the model-generation entry with the reply text, then finish.
+    yield { type: 'tool_result', name: 'copilot.chat', ok: true, result: reply };
     yield { type: 'done' };
   }
 }

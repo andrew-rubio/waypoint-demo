@@ -59,6 +59,8 @@ export class CopilotAgentDriver implements AgentDriver {
     // A tiny async queue bridges the SDK's callback events into the
     // `for await` stream the route consumes.
     const queue = new EventQueue();
+    // Accumulated reply text, echoed into the model's audit entry.
+    let reply = '';
 
     const session = await client.createSession({
       model,
@@ -99,11 +101,21 @@ export class CopilotAgentDriver implements AgentDriver {
     // Stream reply text as `token` events. We intentionally do NOT subscribe to
     // `assistant.reasoning_delta` — hidden chain-of-thought never leaves here.
     session.on('assistant.message_delta', (e: any) => {
-      queue.push({ type: 'token', value: e.data.deltaContent });
+      const delta = e.data.deltaContent;
+      reply += delta;
+      queue.push({ type: 'token', value: delta });
     });
-    session.on('session.idle', () => queue.close());
+    session.on('session.idle', () => {
+      // Close out the model-generation audit entry with the reply that was sent.
+      queue.push({ type: 'tool_result', name: 'copilot.chat', ok: true, result: reply || 'Response generated.' });
+      queue.close();
+    });
 
     try {
+      // Always record the model turn so the audit trail shows activity even when
+      // no external tool is called (a plain conversational reply).
+      queue.push({ type: 'decision', summary: 'Plan a reply for the traveller.' });
+      queue.push({ type: 'tool_call', name: 'copilot.chat', args: { model: model ?? 'copilot', prompt: input.message } });
       await session.send({ prompt: input.message });
       // Drain events until the session goes idle.
       for await (const event of queue) {

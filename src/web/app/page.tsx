@@ -2,6 +2,8 @@
 
 import { useState, type KeyboardEvent } from 'react';
 import { useChat } from '../lib/useChat';
+import { AuditPanel } from './AuditPanel';
+import { Markdown } from './Markdown';
 import styles from './page.module.css';
 
 /**
@@ -10,15 +12,18 @@ import styles from './page.module.css';
  * lives in useChat — this file is just the view.
  */
 export default function ChatPage() {
-  const { messages, streaming, error, truncated, started, send, reset } = useChat();
+  const { messages, streaming, error, truncated, started, send, reset, auditOpen, auditGroups, toggleAudit, clearAudit } =
+    useChat();
   const [draft, setDraft] = useState('');
 
   const canSend = draft.trim().length > 0 && !streaming;
 
-  const submit = () => {
+  const submit = async () => {
     if (!canSend) return;
-    send(draft);
-    setDraft('');
+    const text = draft;
+    // Keep the text in the composer if the send fails so the traveller can resend.
+    const ok = await send(text);
+    if (ok) setDraft('');
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -44,13 +49,21 @@ export default function ChatPage() {
           <PlusIcon />
           New chat
         </button>
-        <button className={styles.headerBtn} data-testid="audit-toggle" aria-pressed={false} aria-label="Audit trail">
+        <button
+          className={styles.headerBtn}
+          data-testid="audit-toggle"
+          aria-pressed={auditOpen}
+          aria-label="Audit trail"
+          onClick={toggleAudit}
+        >
           <ActivityIcon />
           Audit
         </button>
       </header>
 
-      <main className={styles.main}>
+      <div className={styles.body}>
+        <div className={styles.chatColumn}>
+          <main className={styles.main}>
         {!started ? (
           <section className={styles.welcome} data-testid="welcome">
             <h1>Where would you like to go?</h1>
@@ -66,7 +79,7 @@ export default function ChatPage() {
                   data-testid={`message-${m.role}-${i}`}
                   className={`${styles.bubble} ${m.role === 'user' ? styles.user : styles.assistant}`}
                 >
-                  {m.content}
+                  {m.role === 'assistant' ? <Markdown>{m.content}</Markdown> : m.content}
                   {isStreamingBubble && <span className={styles.caret} data-testid="streaming-caret" aria-hidden />}
                 </div>
               );
@@ -103,6 +116,10 @@ export default function ChatPage() {
             Send
           </button>
         </div>
+      </div>
+        </div>
+
+        <AuditPanel open={auditOpen} groups={auditGroups} onClear={clearAudit} />
       </div>
     </div>
   );

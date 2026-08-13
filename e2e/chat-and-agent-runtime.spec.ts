@@ -48,4 +48,19 @@ test.describe('Chat & agent runtime (FRD-001)', () => {
     await chat.brandHome.click();
     await expect(chat.welcome).toBeVisible();
   });
+
+  test('assistant replies render markdown as rich text (bold + lists)', async ({ page }) => {
+    const chat = new ChatPage(page);
+    await page.goto('/?fault=sample-markdown');
+    await chat.send('Give me some options');
+    await expect(page.getByTestId('streaming-caret')).toBeHidden();
+
+    const bubble = chat.assistantMessage(1);
+    // Raw markdown must not leak through as text.
+    await expect(bubble).not.toContainText('**');
+    // Structure is rendered: a heading, a two-item bullet list, and bold text.
+    await expect(bubble.locator('h3')).toContainText('Two great options');
+    await expect(bubble.locator('li')).toHaveCount(2);
+    await expect(bubble.locator('li').first().locator('strong')).toContainText('Lisbon');
+  });
 });

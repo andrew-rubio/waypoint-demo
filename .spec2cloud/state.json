@@ -1,10 +1,79 @@
 {
   "mode": "greenfield",
   "phase": "increment-delivery",
-  "step": "implementation",
-  "status": "awaiting-approval",
-  "currentIncrement": "INC-1",
+  "step": "delivered",
+  "status": "done",
+  "currentIncrement": "INC-2",
   "increments_progress": {
+    "INC-2": {
+      "frd": "FRD-002",
+      "name": "audit-trail",
+      "depends_on": ["INC-1"],
+      "gherkin": { "path": "specs/features/audit-trail.feature", "status": "approved", "scenarios": 11 },
+      "tests": {
+        "status": "approved",
+        "e2e": ["e2e/pages/audit.page.ts", "e2e/audit-trail.spec.ts"],
+        "bdd": ["tests/features/step-definitions/audit-trail.steps.ts"],
+        "unit": ["src/api/tests/unit/audit-map.test.ts"],
+        "baseline": "red->green (verified 2026-08-13)",
+        "testHook": "?fault=sample-tools: emits decision + server-redacted tool_call/tool_result + tokens + done"
+      },
+      "contracts": {
+        "status": "done",
+        "sharedReducer": "src/shared/audit.ts (AuditEntry, emptyAuditState, applyAuditEvent, auditTurns)",
+        "note": "No new API/infra contract; reuses FRD-001 SSE stream + boundary redaction in app.ts"
+      },
+      "implementation": {
+        "status": "approved",
+        "files": [
+          "src/shared/audit.ts",
+          "src/web/app/AuditPanel.tsx",
+          "src/web/app/AuditPanel.module.css",
+          "src/web/lib/useChat.ts",
+          "src/web/app/page.tsx",
+          "src/api/src/agent/runtime.ts",
+          "tsconfig.base.json"
+        ],
+        "verification": {
+          "unit": "19/19 pass (11 INC-1 + 8 audit reducer)",
+          "e2e": "12/12 pass (4 INC-1 + 8 INC-2)",
+          "bdd": "29/29 pass (full suite)",
+          "webBuild": "next build clean; base tsc clean except 1 pre-existing e2e/playwright.config.ts(22) TS2769",
+          "skipScan": "clean"
+        },
+        "inc1FixesUnderApproval": {
+          "note": "User approved fixing pre-existing INC-1 failures now (bug-spot protocol)",
+          "fixes": [
+            "runtime.ts: timeout msg -> 'timed out'; unavailable msg -> adds 'Please try again.'",
+            "useChat.ts: send() returns success bool; preserve composer draft on error (resend); listen for window 'offline' to abort a stalled stream and surface connection-lost",
+            "page.tsx: submit awaits send, clears draft only on success",
+            "steps: ordering step waits for streaming to finish between sends; added 'the traveller has an ongoing conversation' step def (was undefined)"
+          ]
+        }
+      },
+      "deployment": {
+        "status": "done",
+        "deployed_at": "2026-08-13",
+        "subscription": "ME-MngEnvMCAP241522-andrewrubio-1 (c7233dbc-6a6d-40da-83a7-738e54ffedef)",
+        "region": "swedencentral",
+        "resourceGroup": "rg-waypoint",
+        "tool": "azd deploy (code-only; no infra change)",
+        "endpoints": {
+          "web": "https://ca-web-dnszpz4hqfi7g.salmonflower-718a2dad.swedencentral.azurecontainerapps.io",
+          "api": "https://ca-api-dnszpz4hqfi7g.salmonflower-718a2dad.swedencentral.azurecontainerapps.io"
+        },
+        "smoke": "web 200; plain chat streams decision + copilot.chat model entry + real reply; hasError=false",
+        "postDeployFixes": [
+          "copilot-driver + local-driver: emit opening decision + copilot.chat (api) model-generation entry so the audit trail populates for plain conversations (real driver previously only emitted a decision on tool use -> empty prod audit trail)",
+          "audit reducer: classify copilot.* as type 'api'",
+          "UI: audit panel is now an in-flow right column (chat resizes beside it) on desktop; mobile stays a bottom sheet",
+          "copilot.chat entry now echoes the user's message (request) and the agent's reply text (response); reducer MAX_SUMMARY raised 400->2000; new e2e test locks it in",
+          "chat now renders assistant replies as rich markdown (react-markdown + remark-gfm, no raw HTML = XSS-safe) via src/web/app/Markdown.tsx; user messages stay plain; sample-markdown dev hook + e2e test added",
+          "test-flake fix: BDD fault injection switched from history.replaceState (racy under load) to page.goto(?fault=) which reliably applies the fault; error scenario re-opens the panel after navigation; verified stable 4x"
+        ]
+      },
+      "started_at": "2026-08-13"
+    },
     "INC-1": {
       "frd": "FRD-001",
       "gherkin": { "path": "specs/features/chat-and-agent-runtime.feature", "status": "approved", "scenarios": 18 },
@@ -80,7 +149,7 @@
           "node:22-slim lacks ca-certificates -> Copilot native runtime TLS failed (builder error); added ca-certificates to src/api/Dockerfile",
           "token lacked gpt-5 -> copilot-driver now picks an available model via client.listModels() (pickModel), COPILOT_MODEL override supported"
         ],
-        "strayResources": "partial rg-waypoint in sub-andrewrubio/westeurope (efb26d53...) left in place per user; contains log/id/acr/appi/cae only, no running apps"
+        "strayResources": "cleaned up 2026-08-13 (user manually deleted the partial westeurope rg-waypoint in sub-andrewrubio)"
       }
     }
   },

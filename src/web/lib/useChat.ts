@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type { AgentEvent } from '../../shared/types/chat-and-agent-runtime';
+import { applyAuditEvent, auditTurns, emptyAuditState, type AuditState } from '../../shared/audit';
 
 /** A message as shown in the UI (flat list; index drives the data-testid). */
 export interface UiMessage {
@@ -13,6 +14,7 @@ export interface UiMessage {
 const TRUNCATE_AT = 4000;
 
 const newSessionId = () => `sess-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+const newTurnId = () => `t-${Math.random().toString(36).slice(2)}-${Date.now()}`;
 
 /** Read the optional `?fault=` test hook so demos can simulate failures. */
 function faultParam(): string | null {
@@ -31,15 +33,18 @@ export function useChat() {
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [truncated, setTruncated] = useState(false);
+  const [audit, setAudit] = useState<AuditState>(emptyAuditState);
+  const [auditOpen, setAuditOpen] = useState(false);
   const sessionId = useRef<string>(newSessionId());
   const abortRef = useRef<AbortController | null>(null);
 
   const started = messages.length > 0;
+  const auditGroups = useMemo(() => auditTurns(audit), [audit]);
 
   const send = useCallback(
-    async (raw: string) => {
+    async (raw: string): Promise<boolean> => {
       const text = raw.trim();
-      if (!text || streaming) return; // empty/whitespace or busy → ignore
+      if (!text || streaming) return false; // empty/whitespace or busy → ignore
 
       setError(null);
       setTruncated(text.length > TRUNCATE_AT);
@@ -48,8 +53,17 @@ export function useChat() {
       setMessages((prev) => [...prev, { role: 'user', content: text }, { role: 'assistant', content: '' }]);
       setStreaming(true);
 
+      // Each send is one audit turn; events below fold into it.
+      const turnId = newTurnId();
+      let failed = false;
+
       const controller = new AbortController();
       abortRef.current = controller;
+
+      // A streamed response won't always error on its own when connectivity
+      // drops, so react to the browser's offline event and abort the read.
+      const onOffline = () => controller.abort();
+      if (typeof window !== 'undefined') window.addEventListener('offline', onOffline);
 
       const fault = faultParam();
       const url = fault ? `/api/chat?fault=${encodeURIComponent(fault)}` : '/api/chat';
@@ -63,8 +77,13 @@ export function useChat() {
         });
         if (!res.ok || !res.body) throw new Error(`chat failed: ${res.status}`);
 
-        await readSse(res.body, (event) => applyEvent(event, setMessages, setError));
+        await readSse(res.body, (event) => {
+          if (event.type === 'error') failed = true;
+          applyEvent(event, setMessages, setError);
+          setAudit((prev) => applyAuditEvent(prev, turnId, event, Date.now()));
+        });
       } catch (err) {
+        failed = true;
         // A dropped connection (offline) keeps the partial reply visible.
         if (typeof navigator !== 'undefined' && !navigator.onLine) {
           setError('The connection was lost. Your reply so far is preserved — please try again.');
@@ -72,14 +91,18 @@ export function useChat() {
           setError('Something went wrong. Please try again.');
         }
       } finally {
+        if (typeof window !== 'undefined') window.removeEventListener('offline', onOffline);
         setStreaming(false);
         abortRef.current = null;
       }
+
+      // Report success so the composer can preserve the draft for a resend on failure.
+      return !failed;
     },
     [streaming],
   );
 
-  /** Reset to a brand-new, empty session (New chat + logo/home). */
+  /** Reset to a brand-new, empty session (New chat + logo/home). Clears the audit trail (FR-002-9). */
   const reset = useCallback(() => {
     abortRef.current?.abort();
     sessionId.current = newSessionId();
@@ -87,9 +110,28 @@ export function useChat() {
     setError(null);
     setTruncated(false);
     setStreaming(false);
+    setAudit(emptyAuditState());
   }, []);
 
-  return { messages, streaming, error, truncated, started, send, reset };
+  /** Show/hide the audit panel (AC-002-1); never touches the conversation. */
+  const toggleAudit = useCallback(() => setAuditOpen((o) => !o), []);
+
+  /** Empty the audit trail between demo runs (AC-002-5). */
+  const clearAudit = useCallback(() => setAudit(emptyAuditState()), []);
+
+  return {
+    messages,
+    streaming,
+    error,
+    truncated,
+    started,
+    send,
+    reset,
+    auditOpen,
+    auditGroups,
+    toggleAudit,
+    clearAudit,
+  };
 }
 
 /** Route a single AgentEvent into UI state. */
