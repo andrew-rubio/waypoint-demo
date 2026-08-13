@@ -69,7 +69,8 @@
           "UI: audit panel is now an in-flow right column (chat resizes beside it) on desktop; mobile stays a bottom sheet",
           "copilot.chat entry now echoes the user's message (request) and the agent's reply text (response); reducer MAX_SUMMARY raised 400->2000; new e2e test locks it in",
           "chat now renders assistant replies as rich markdown (react-markdown + remark-gfm, no raw HTML = XSS-safe) via src/web/app/Markdown.tsx; user messages stay plain; sample-markdown dev hook + e2e test added",
-          "test-flake fix: BDD fault injection switched from history.replaceState (racy under load) to page.goto(?fault=) which reliably applies the fault; error scenario re-opens the panel after navigation; verified stable 4x"
+          "test-flake fix: BDD fault injection switched from history.replaceState (racy under load) to page.goto(?fault=) which reliably applies the fault; error scenario re-opens the panel after navigation; verified stable 4x",
+          "ADR-005 model/auth swap: BYOK -> Microsoft Foundry v2 (AIServices + allowProjectManagement + 'waypoint' project, account aif-<token>) gpt-5.4-mini via MANAGED IDENTITY (sub policy disables API keys). foundry.bicep + Cognitive Services OpenAI User role; @azure/identity bearerTokenProvider. Deployed 2026-08-13; smoke ok (real reply, no key). Old kind:OpenAI account aoai-<token> deleted + purged 2026-08-13. Old GitHub-token path kept commented. Revert: useFoundry=false + redeploy."
         ]
       },
       "started_at": "2026-08-13"
@@ -220,11 +221,12 @@
         "specs/adrs/adr-001-copilot-sdk.md",
         "specs/adrs/adr-002-model-auth.md",
         "specs/adrs/adr-003-hosting-aca.md",
-        "specs/adrs/adr-004-frontend-styling.md"
+        "specs/adrs/adr-004-frontend-styling.md",
+        "specs/adrs/adr-005-byok-foundry-model.md"
       ],
       "decisions": {
         "agentRuntime": "@github/copilot-sdk (Node/TS)",
-        "modelAuth": "COPILOT_GITHUB_TOKEN (confirmed Option A; BYOK->Foundry deferred)",
+        "modelAuth": "BYOK -> Microsoft Foundry, MANAGED IDENTITY (ADR-005, supersedes ADR-002). Sub policy disables local auth (keys); uses SDK bearerTokenProvider + DefaultAzureCredential; MI granted Cognitive Services OpenAI User. FOUNDRY_MODEL_URL/MODEL + FOUNDRY_USE_MANAGED_IDENTITY + AZURE_CLIENT_ID; old GitHub-token path kept commented",
         "web": "Next.js 15 + React 19, CSS Modules + design tokens",
         "api": "Express 5 on Node 22, Zod, pino, SSE",
         "hosting": "Azure Container Apps via azd + Bicep; Aspire local",

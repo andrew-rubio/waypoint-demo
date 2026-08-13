@@ -1,5 +1,7 @@
 import type { AgentEvent } from '../../../shared/types/chat-and-agent-runtime.js';
 import type { AgentDriver, AgentInput } from './driver.js';
+import type { ProviderConfig } from '@github/copilot-sdk';
+import type { TokenCredential } from '@azure/identity';
 import { logger } from '../logger.js';
 
 /**
@@ -42,19 +44,68 @@ async function pickModel(client: any): Promise<string | undefined> {
   }
 }
 
+/**
+ * BYOK provider settings for a Microsoft Foundry model deployment (ADR-005).
+ * The model is served by Foundry; the GitHub Copilot token is no longer used for
+ * inference. Auth is either a Foundry API key or — where policy disables local
+ * auth — the Container App's managed identity (Entra).
+ */
+export interface FoundryProviderConfig {
+  /** OpenAI-compatible base URL, e.g. https://<resource>.openai.azure.com/openai/v1/ */
+  baseUrl: string;
+  /** The Foundry deployment name (e.g. "gpt-5.4-mini"); passed to the SDK as `model`. */
+  model: string;
+  /** "responses" for GPT-5-series, "completions" for older models. */
+  wireApi: 'responses' | 'completions';
+  /** API key (BYOK key-based). Omitted when using managed identity. */
+  apiKey?: string;
+  /** Authenticate the model with the Container App's managed identity (Entra). */
+  useManagedIdentity?: boolean;
+}
+
+// One credential instance is reused so its internal token cache is effective.
+let cachedCredential: TokenCredential | undefined;
+
+/** Build the Copilot SDK provider block for a Foundry model (key or managed identity). */
+async function buildFoundryProvider(cfg: FoundryProviderConfig): Promise<ProviderConfig> {
+  const base: ProviderConfig = { type: 'openai', baseUrl: cfg.baseUrl, wireApi: cfg.wireApi };
+  if (cfg.useManagedIdentity) {
+    const { DefaultAzureCredential } = await import('@azure/identity');
+    const credential: TokenCredential = (cachedCredential ??= new DefaultAzureCredential());
+    return {
+      ...base,
+      // Entra token for the Azure OpenAI data plane; the SDK calls this per request.
+      bearerTokenProvider: async () => {
+        const token = await credential.getToken('https://cognitiveservices.azure.com/.default');
+        if (!token?.token) throw new Error('Failed to acquire an Entra token for the Foundry model');
+        return token.token;
+      },
+    };
+  }
+  return { ...base, apiKey: cfg.apiKey };
+}
+
 export class CopilotAgentDriver implements AgentDriver {
-  constructor(private readonly gitHubToken: string) {}
+  // ── B1 / ADR-005: the agent's model is a Microsoft Foundry deployment (BYOK, API key). ──
+  constructor(private readonly foundry: FoundryProviderConfig) {}
+  // ── ORIGINAL (ADR-002, swapped out): a GitHub Copilot service token. ──
+  // constructor(private readonly gitHubToken: string) {}
 
   async *run(input: AgentInput): AsyncIterable<AgentEvent> {
     // Lazy import so the SDK (and its bundled runtime) is only loaded when a
     // real credential is present — tests and offline demos never touch it.
     const { CopilotClient } = await import('@github/copilot-sdk');
 
-    const client = new CopilotClient({ gitHubToken: this.gitHubToken });
+    // ── B1 / ADR-005: BYOK → Microsoft Foundry. No GitHub auth; the model is a
+    //    Foundry deployment reached via an OpenAI-compatible endpoint + API key. ──
+    const client = new CopilotClient();
     await client.start();
+    const model = this.foundry.model;
 
-    // Pick a model this token actually has access to (don't hardcode one).
-    const model = await pickModel(client);
+    // ── ORIGINAL: GitHub Copilot models via COPILOT_GITHUB_TOKEN (kept to show the swap). ──
+    // const client = new CopilotClient({ gitHubToken: this.gitHubToken });
+    // await client.start();
+    // const model = await pickModel(client);
 
     // A tiny async queue bridges the SDK's callback events into the
     // `for await` stream the route consumes.
@@ -62,9 +113,15 @@ export class CopilotAgentDriver implements AgentDriver {
     // Accumulated reply text, echoed into the model's audit entry.
     let reply = '';
 
+    // BYOK provider → a Microsoft Foundry model deployment (ADR-005). This
+    // environment disables API keys, so we authenticate with the Container App's
+    // managed identity via a bearerTokenProvider (Entra); key-based is the fallback.
+    const provider = await buildFoundryProvider(this.foundry);
+
     const session = await client.createSession({
       model,
       streaming: true,
+      provider,
 
       // Called before every tool / MCP call. This is where the audit trail is
       // born: we record the decision, enforce the allowlist, then approve.

@@ -1,24 +1,45 @@
 import type { AgentEvent } from '../../../shared/types/chat-and-agent-runtime.js';
 import type { AgentInput, AgentDriver } from './driver.js';
 import { LocalAgentDriver } from './local-driver.js';
-import { CopilotAgentDriver } from './copilot-driver.js';
+import { CopilotAgentDriver, type FoundryProviderConfig } from './copilot-driver.js';
 import { logger } from '../logger.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /**
  * Pick the driver for this environment:
- *   - real Copilot SDK when a service token is present and we're not testing;
+ *   - real Copilot SDK when a model credential is present and we're not testing;
  *   - the deterministic local driver otherwise (tests, offline demo).
  */
 function selectDriver(): AgentDriver {
-  const token = process.env.COPILOT_GITHUB_TOKEN;
-  if (token && process.env.NODE_ENV !== 'test') {
-    logger.info('Using Copilot SDK agent driver');
-    return new CopilotAgentDriver(token);
+  if (process.env.NODE_ENV !== 'test') {
+    // ── B1 / ADR-005: BYOK → Microsoft Foundry model when configured. ──
+    const foundry = readFoundryConfig();
+    if (foundry) {
+      logger.info({ model: foundry.model }, 'Using Copilot SDK agent driver (BYOK → Microsoft Foundry)');
+      return new CopilotAgentDriver(foundry);
+    }
+
+    // ── ORIGINAL (ADR-002, swapped out): GitHub Copilot models via a service token. ──
+    // const token = process.env.COPILOT_GITHUB_TOKEN;
+    // if (token) {
+    //   logger.info('Using Copilot SDK agent driver (GitHub Copilot models)');
+    //   return new CopilotAgentDriver(token);
+    // }
   }
-  logger.info('Using local agent driver (no COPILOT_GITHUB_TOKEN / test mode)');
+  logger.info('Using local agent driver (no Foundry config / test mode)');
   return new LocalAgentDriver();
+}
+
+/** Read BYOK → Foundry settings; baseUrl + model + one auth method (key or managed identity) required. */
+function readFoundryConfig(): FoundryProviderConfig | undefined {
+  const baseUrl = process.env.FOUNDRY_MODEL_URL;
+  const apiKey = process.env.FOUNDRY_API_KEY;
+  const model = process.env.FOUNDRY_MODEL;
+  const useManagedIdentity = process.env.FOUNDRY_USE_MANAGED_IDENTITY === 'true';
+  if (!baseUrl || !model || (!apiKey && !useManagedIdentity)) return undefined;
+  const wireApi = process.env.FOUNDRY_WIRE_API === 'completions' ? 'completions' : 'responses';
+  return { baseUrl, apiKey, model, wireApi, useManagedIdentity };
 }
 
 /** One traveller turn → a stream of AgentEvents. Optional `fault` (test/demo only). */

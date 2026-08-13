@@ -28,8 +28,12 @@ resources:
     identity: userAssignedManagedIdentity
     env:
       - APPLICATIONINSIGHTS_CONNECTION_STRING   # from Application Insights
+      - FOUNDRY_MODEL_URL                        # ADR-005 (BYOK → Foundry endpoint)
+      - FOUNDRY_MODEL                            # ADR-005 (Foundry deployment name)
+      - FOUNDRY_USE_MANAGED_IDENTITY             # ADR-005 (Entra auth; keys disabled by policy)
+      - AZURE_CLIENT_ID                          # ADR-005 (selects the user-assigned identity)
     secrets:
-      - COPILOT_GITHUB_TOKEN                     # INC-1 (Copilot auth; or Foundry BYOK vars)
+      # - COPILOT_GITHUB_TOKEN                   # ADR-002 (superseded by ADR-005; kept for the demo)
       - ROUTESTACK_API_KEY                       # INC-5
       - CURRENCY_API_KEY                         # INC-5/INC-7 (omit if provider is keyless)
       - FABRIC_ENDPOINT                          # INC-6
@@ -46,6 +50,17 @@ resources:
     env:
       - API_BASE_URL                             # service discovery to `api`
     increment: INC-1
+
+  - name: foundry
+    type: Microsoft.CognitiveServices/accounts   # kind: AIServices + allowProjectManagement (Foundry v2)
+    sku: S0
+    purpose: BYOK model for the agent (ADR-005). Foundry v2 account + project; OpenAI-compatible endpoint.
+    project: waypoint                            # Microsoft.CognitiveServices/accounts/projects (v2 experience)
+    deployments:
+      - name: gpt-5.4-mini                       # = SDK `model`; version pinned in Bicep
+        sku: { name: GlobalStandard, capacity: 20 }   # needs regional quota (Sweden Central)
+    auth: managedIdentity                        # Cognitive Services OpenAI User role (keys disabled by policy)
+    increment: ADR-005
 
   - name: containerRegistry
     type: Microsoft.ContainerRegistry/registries

@@ -78,18 +78,21 @@ npm run start --workspace @waypoint/api
 npm run dev   --workspace @waypoint/web
 ```
 
-Open http://localhost:3000 and start chatting. Without a Copilot token it runs in **local‑driver** mode (deterministic replies) — perfect for a quick look.
+Open http://localhost:3000 and start chatting. Without a Foundry model configured it runs in **local‑driver** mode (deterministic replies) — perfect for a quick look.
 
-### Enable the real Copilot SDK
+### Enable the real agent (BYOK → Microsoft Foundry)
 
-Set a **GitHub token for an account with a Copilot seat** (e.g. `gh auth token`). Never commit it.
+The agent's model is a **Microsoft Foundry** deployment via the Copilot SDK's BYOK path (ADR-005). Auth is **managed identity** (the target subscription disables API keys). In Azure the Container App's identity is used automatically; **locally**, `DefaultAzureCredential` falls back to your `az login`:
 
 ```powershell
-$env:COPILOT_GITHUB_TOKEN = "<your-token>"     # locally
+az login
+$env:FOUNDRY_MODEL_URL             = "https://<resource>.openai.azure.com/openai/v1/"
+$env:FOUNDRY_MODEL                 = "gpt-5.4-mini"   # your Foundry deployment name
+$env:FOUNDRY_USE_MANAGED_IDENTITY  = "true"           # or set FOUNDRY_API_KEY if your resource allows keys
 npm run start --workspace @waypoint/api
 ```
 
-The runtime auto‑switches to the Copilot driver and picks an available model via `client.listModels()` (override with `COPILOT_MODEL`).
+The runtime auto‑switches to the Copilot SDK driver with `provider: { type: 'openai', baseUrl: FOUNDRY_MODEL_URL, bearerTokenProvider, wireApi: 'responses' }` (or `apiKey` when keys are used). The **original `COPILOT_GITHUB_TOKEN` path is kept commented** in [`copilot-driver.ts`](src/api/src/agent/copilot-driver.ts) / [`runtime.ts`](src/api/src/agent/runtime.ts) to show what was swapped.
 
 ---
 
@@ -113,13 +116,14 @@ Container Apps via `azd` (Bicep in [`infra/`](infra)):
 azd auth login
 azd env set AZURE_SUBSCRIPTION_ID <sub-id>
 azd env set AZURE_LOCATION <region>
-azd env set COPILOT_GITHUB_TOKEN <token>   # optional: enables the real Copilot SDK
+# Foundry (BYOK) is provisioned by Bicep and the key is auto-wired — no secret to set.
+# Override the model/version if needed: azd env set FOUNDRY_MODEL_NAME gpt-5.4-mini
 azd up
 ```
 
 > **Important:** `azd provision` on its own resets the container apps to a placeholder image. Always follow provisioning with `azd deploy` — or just use `azd up` (provision + deploy).
 
-The API image installs `ca-certificates` (the Copilot native runtime needs a system CA store for TLS). The token is stored as a Container App secret and redacted from logs and the response stream.
+The API image installs `ca-certificates` (the Copilot native runtime needs a system CA store for TLS). Auth is **managed identity** — the Container App identity is granted **Cognitive Services OpenAI User** on the Foundry resource; there is no key or secret to store.
 
 ---
 
@@ -127,11 +131,16 @@ The API image installs `ca-certificates` (the Copilot native runtime needs a sys
 
 | Variable | Where | Purpose |
 |---|---|---|
-| `COPILOT_GITHUB_TOKEN` | api | GitHub token with a Copilot seat. Absent → local‑driver mode. |
-| `COPILOT_MODEL` | api | Override the auto‑selected Copilot model. |
+| `FOUNDRY_MODEL_URL` | api | Foundry OpenAI‑compatible endpoint, e.g. `https://<resource>.openai.azure.com/openai/v1/`. |
+| `FOUNDRY_MODEL` | api | Foundry **deployment name** (passed to the SDK as `model`). |
+| `FOUNDRY_USE_MANAGED_IDENTITY` | api | `true` → authenticate with the managed identity (Entra). |
+| `AZURE_CLIENT_ID` | api | Client ID of the user‑assigned identity (selects it for `DefaultAzureCredential`). |
+| `FOUNDRY_API_KEY` | api | Alternative to managed identity (only if the resource allows keys). All auth absent → local‑driver mode. |
+| `FOUNDRY_WIRE_API` | api | `responses` (default) or `completions`. |
 | `API_BASE_URL` | web | Upstream API base for the `/api/chat` proxy. |
 | `PORT` | api | API port (default `8080`). |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | api | Telemetry (set in Azure). |
+| `COPILOT_GITHUB_TOKEN` | api | *(Superseded by ADR-005; kept commented for the demo.)* GitHub token for the original Copilot‑models path. |
 
 No secrets are hardcoded; nothing that looks like a credential is logged or streamed.
 

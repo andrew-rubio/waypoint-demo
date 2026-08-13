@@ -29,7 +29,7 @@ flowchart LR
     A -->|MCP| OM[Open-Meteo MCP]
     A -->|MCP| FB[Fabric Data Agent MCP]
     A -->|MCP| FX[Currency MCP]
-    A -->|models| CP[(Copilot models<br/>via COPILOT_GITHUB_TOKEN)]
+    A -->|models| CP[(Microsoft Foundry model<br/>via BYOK API key)]
     A -.telemetry.-> AI[App Insights]
 ```
 
@@ -44,12 +44,13 @@ flowchart LR
 - **Anti-patterns:** Don't build a bespoke planning loop; don't expose hidden model reasoning; don't disable the permission handler.
 - **Docs:** github.com/github/copilot-sdk (`docs/features`, `docs/setup/backend-services.md`).
 
-### Model + auth — Copilot token (BYOK→Foundry alternative)
+### Model + auth — BYOK → Microsoft Foundry (API key)
 - **Purpose:** Which model powers the agent and how the deployed container authenticates.
-- **Choice:** **`COPILOT_GITHUB_TOKEN`** env credential → Copilot models (primary). **BYOK → Microsoft Foundry with Azure managed identity** documented as the Azure-native alternative. See **ADR-002**.
-- **Rationale:** Simplest for a demo and keeps the "GitHub Copilot" story pure; Foundry BYOK is the upgrade path for a Microsoft-native production posture.
-- **Wiring:** Auth priority is explicit token → Copilot API env → `GITHUB_TOKEN` env → stored creds. Provide the token as a **Container Apps secret**. Single service credential (no per-user tokens — single demo user).
-- **Anti-patterns:** No token in code/client; never log it (redact server-side).
+- **Choice:** **BYOK → Microsoft Foundry** model deployment, **managed-identity** auth (Entra; the subscription disables API keys). `FOUNDRY_MODEL_URL` + `FOUNDRY_MODEL` + `FOUNDRY_USE_MANAGED_IDENTITY`. Supersedes the `COPILOT_GITHUB_TOKEN` choice. See **ADR-005** (supersedes the auth part of **ADR-002**).
+- **Rationale:** Azure-native model governance and pay-as-you-go billing; keyless. The Copilot SDK is kept (only its `provider` block changes). The original GitHub-token path is retained commented-out for the demo.
+- **Wiring:** Copilot SDK `createSession({ model, provider: { type: 'openai', baseUrl: '<endpoint>/openai/v1/', bearerTokenProvider, wireApi } })`; `model` = the Foundry **deployment name**. The Foundry resource + deployment are provisioned as IaC (`infra/modules/foundry.bicep`) and the Container App's managed identity is granted **Cognitive Services OpenAI User** — no key/secret.
+- **Note:** BYOK's built-in fields are key-based; managed identity uses the SDK's `bearerTokenProvider` callback (`DefaultAzureCredential`).
+- **Anti-patterns:** No key in code/client; never log it (redact server-side).
 
 ### Frontend framework — Next.js + React
 - **Purpose:** The single-page chat UI (welcome, conversation, trip summary, audit panel).

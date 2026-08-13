@@ -13,8 +13,17 @@ param environmentName string
 param location string
 
 @secure()
-@description('GitHub/Copilot service token for the agent (ADR-002). Leave empty to run the API in local-driver mode.')
+@description('GitHub/Copilot service token for the agent (ADR-002, superseded by ADR-005). Kept for the demo; unused while Foundry BYOK is active.')
 param copilotGitHubToken string = ''
+
+@description('Use BYOK → Microsoft Foundry for the agent model (ADR-005). When false, falls back to the GitHub-token path.')
+param useFoundry bool = true
+
+@description('Foundry model deployment name (also passed to the SDK as `model`).')
+param foundryModelName string = 'gpt-5.4-mini'
+
+@description('Foundry model version to deploy.')
+param foundryModelVersion string = '2026-03-17'
 
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
@@ -68,15 +77,33 @@ module env 'modules/container-apps-environment.bicep' = {
   }
 }
 
-// Secrets for the API container (only wired when a token is supplied).
-var apiSecrets = empty(copilotGitHubToken)
+// Microsoft Foundry model for BYOK (ADR-005). Only provisioned when useFoundry.
+module foundry 'modules/foundry.bicep' = if (useFoundry) {
+  scope: rg
+  name: 'foundry'
+  params: {
+    location: location
+    tags: tags
+    accountName: 'aif-${resourceToken}'
+    modelName: foundryModelName
+    modelVersion: foundryModelVersion
+    principalId: identity.outputs.principalId
+  }
+}
+
+// ── B1 / ADR-005: BYOK → Foundry with managed identity (this environment disables
+//    API keys). No secret to wire — the agent authenticates with Entra. ──
+// ── ORIGINAL (ADR-002, swapped out): a GitHub Copilot service token secret. ──
+var apiSecrets = useFoundry
   ? []
-  : [
-      {
-        name: 'copilot-github-token'
-        value: copilotGitHubToken
-      }
-    ]
+  : (empty(copilotGitHubToken)
+      ? []
+      : [
+          {
+            name: 'copilot-github-token'
+            value: copilotGitHubToken
+          }
+        ])
 
 var apiEnv = concat(
   [
@@ -85,14 +112,34 @@ var apiEnv = concat(
       value: monitoring.outputs.applicationInsightsConnectionString
     }
   ],
-  empty(copilotGitHubToken)
-    ? []
-    : [
+  useFoundry
+    ? [
         {
-          name: 'COPILOT_GITHUB_TOKEN'
-          secretRef: 'copilot-github-token'
+          name: 'FOUNDRY_MODEL_URL'
+          value: foundry!.outputs.openAiEndpoint
+        }
+        {
+          name: 'FOUNDRY_MODEL'
+          value: foundryModelName
+        }
+        {
+          name: 'FOUNDRY_USE_MANAGED_IDENTITY'
+          value: 'true'
+        }
+        {
+          // Selects the user-assigned identity for DefaultAzureCredential.
+          name: 'AZURE_CLIENT_ID'
+          value: identity.outputs.clientId
         }
       ]
+    : (empty(copilotGitHubToken)
+        ? []
+        : [
+            {
+              name: 'COPILOT_GITHUB_TOKEN'
+              secretRef: 'copilot-github-token'
+            }
+          ])
 )
 
 module api 'modules/container-app.bicep' = {

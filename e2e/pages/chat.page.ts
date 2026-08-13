@@ -18,6 +18,7 @@ export class ChatPage {
   readonly input: Locator;
   readonly sendButton: Locator;
   readonly errorNotice: Locator;
+  readonly destinationList: Locator;
 
   constructor(page: Page) {
     this.page = page;
@@ -31,6 +32,7 @@ export class ChatPage {
     this.input = page.getByTestId('composer-input');
     this.sendButton = page.getByTestId('send-button');
     this.errorNotice = page.getByTestId('error-notice');
+    this.destinationList = page.getByTestId('destination-list');
   }
 
   async goto(): Promise<void> {
@@ -52,6 +54,10 @@ export class ChatPage {
 
   assistantMessage(index: number): Locator {
     return this.page.getByTestId(`message-assistant-${index}`);
+  }
+
+  destinationItem(index: number): Locator {
+    return this.page.getByTestId(`destination-item-${index}`);
   }
 
   async expectSendDisabled(): Promise<void> {

@@ -12,6 +12,7 @@
     "test:watch": "vitest --config vitest.config.ts"
   },
   "dependencies": {
+    "@azure/identity": "^4.13.1",
     "@github/copilot-sdk": "1.0.9-preview.3",
     "express": "^5.0.0",
     "pino": "^9.4.0",
