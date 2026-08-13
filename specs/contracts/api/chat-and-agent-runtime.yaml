@@ -1,0 +1,88 @@
+# API contract — Chat & Agent Runtime (FRD-001, INC-1 walking skeleton)
+# Simplified OpenAPI-inspired schema. Source of truth for the POST /api/chat
+# endpoint that the Implementation Agent must satisfy. Derived from the Gherkin
+# scenarios in specs/features/ and the tests in src/api/tests + tests/features.
+feature: chat-and-agent-runtime
+version: "1.0"
+basePath: /api
+
+endpoints:
+  - path: /chat
+    method: POST
+    description: >-
+      Send a traveller message to the holiday-planning agent and receive the
+      reply as a Server-Sent Events (SSE) stream. The stream is the observable
+      record of what the agent did: every decision, tool/MCP call and result is
+      emitted as an event, followed by the reply tokens. No hidden model
+      reasoning (chain-of-thought) is ever streamed.
+    auth: none   # single demo user, no login (ADR-002)
+    request:
+      body:
+        type: object
+        required: [sessionId, message]
+        properties:
+          sessionId:
+            type: string
+            minLength: 1
+            description: Opaque per-conversation id; "New chat" starts a fresh one.
+          message:
+            type: string
+            minLength: 1          # empty / whitespace-only rejected (AC-001-2)
+            maxLength: 8000        # oversized payloads rejected at the boundary (FR-001-8)
+            description: The traveller's message. Whitespace-only is invalid.
+    responses:
+      200:
+        description: >-
+          Streamed agent reply. Content-Type is text/event-stream. The body is a
+          sequence of newline-delimited JSON AgentEvent objects (see
+          src/shared/types/chat-and-agent-runtime.ts). Guarantees:
+            - at least one `decision` event precedes the first `token` (AC-001-4)
+            - the stream ends with a single `done` event
+            - a mid-stream failure emits an `error` event (AC-001-5)
+        headers:
+          Content-Type: text/event-stream
+          Cache-Control: no-cache
+          Connection: keep-alive
+        body:
+          type: stream
+          eventTypes: [decision, token, tool_call, tool_result, done, error]
+      400:
+        description: Validation error — missing sessionId, empty/whitespace message.
+        body:
+          type: object
+          properties:
+            error: { type: string }
+            code: { type: string, enum: [invalid_request] }
+      413:
+        description: Payload too large — message exceeds the max length.
+        body:
+          type: object
+          properties:
+            error: { type: string }
+            code: { type: string, enum: [payload_too_large] }
+      503:
+        description: Agent runtime unavailable (e.g. model/credential unavailable).
+        body:
+          type: object
+          properties:
+            error: { type: string }
+            code: { type: string, enum: [agent_unavailable] }
+
+# Test-mode fault hook (test/demo builds only, never production).
+# Opening the app or calling the endpoint with ?fault=<kind> makes the runtime
+# simulate a failure so the Gherkin fault scenarios are exercisable.
+faultHook:
+  query: fault
+  kinds: [agent-unavailable, mid-stream-error, timeout, model-unavailable, slow-reply]
+  enabledWhen: NODE_ENV != production
+
+# Coverage map — every INC-1 Gherkin behaviour maps to this single endpoint.
+coverage:
+  AC-001-1: 200 stream of token events, terminated by done
+  AC-001-2: 400 for empty / whitespace-only message
+  AC-001-3: message ordering preserved within a session
+  AC-001-4: decision event precedes first token; no chain_of_thought/reasoning
+  AC-001-5: error event on mid-stream failure; prior turns preserved
+  AC-001-6: new sessionId resets conversation state
+  FR-001-8: oversized payload rejected (400/413)
+  FR-001-10: secrets redacted before logging/streaming

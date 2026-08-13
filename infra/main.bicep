@@ -1,0 +1,150 @@
+// Waypoint infrastructure (INC-1). Generated to match specs/contracts/infra/resources.yaml.
+// Two Azure Container Apps (web + api) on a shared environment, ACR, monitoring,
+// and a user-assigned managed identity for ACR pull. Cheap by design:
+// scale-to-zero, Basic ACR, capped Log Analytics.
+targetScope = 'subscription'
+
+@minLength(1)
+@description('Name of the azd environment — used to name the resource group and derive resource names.')
+param environmentName string
+
+@minLength(1)
+@description('Primary location for all resources.')
+param location string
+
+@secure()
+@description('GitHub/Copilot service token for the agent (ADR-002). Leave empty to run the API in local-driver mode.')
+param copilotGitHubToken string = ''
+
+var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
+var tags = { 'azd-env-name': environmentName }
+
+resource rg 'Microsoft.Resources/resourceGroups@2023-07-01' = {
+  name: 'rg-${environmentName}'
+  location: location
+  tags: tags
+}
+
+module monitoring 'modules/monitoring.bicep' = {
+  scope: rg
+  name: 'monitoring'
+  params: {
+    location: location
+    tags: tags
+    logAnalyticsName: 'log-${resourceToken}'
+    applicationInsightsName: 'appi-${resourceToken}'
+  }
+}
+
+module identity 'modules/identity.bicep' = {
+  scope: rg
+  name: 'identity'
+  params: {
+    location: location
+    tags: tags
+    identityName: 'id-${resourceToken}'
+  }
+}
+
+module registry 'modules/registry.bicep' = {
+  scope: rg
+  name: 'registry'
+  params: {
+    location: location
+    tags: tags
+    registryName: 'acr${resourceToken}'
+    principalId: identity.outputs.principalId
+  }
+}
+
+module env 'modules/container-apps-environment.bicep' = {
+  scope: rg
+  name: 'container-apps-env'
+  params: {
+    location: location
+    tags: tags
+    name: 'cae-${resourceToken}'
+    logAnalyticsName: monitoring.outputs.logAnalyticsName
+  }
+}
+
+// Secrets for the API container (only wired when a token is supplied).
+var apiSecrets = empty(copilotGitHubToken)
+  ? []
+  : [
+      {
+        name: 'copilot-github-token'
+        value: copilotGitHubToken
+      }
+    ]
+
+var apiEnv = concat(
+  [
+    {
+      name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
+      value: monitoring.outputs.applicationInsightsConnectionString
+    }
+  ],
+  empty(copilotGitHubToken)
+    ? []
+    : [
+        {
+          name: 'COPILOT_GITHUB_TOKEN'
+          secretRef: 'copilot-github-token'
+        }
+      ]
+)
+
+module api 'modules/container-app.bicep' = {
+  scope: rg
+  name: 'api'
+  params: {
+    location: location
+    tags: tags
+    name: 'ca-api-${resourceToken}'
+    serviceName: 'api'
+    environmentId: env.outputs.id
+    registryLoginServer: registry.outputs.loginServer
+    identityId: identity.outputs.id
+    targetPort: 8080
+    cpu: '0.5'
+    memory: '1Gi'
+    minReplicas: 1
+    maxReplicas: 1
+    envVars: apiEnv
+    secrets: apiSecrets
+  }
+}
+
+module web 'modules/container-app.bicep' = {
+  scope: rg
+  name: 'web'
+  params: {
+    location: location
+    tags: tags
+    name: 'ca-web-${resourceToken}'
+    serviceName: 'web'
+    environmentId: env.outputs.id
+    registryLoginServer: registry.outputs.loginServer
+    identityId: identity.outputs.id
+    targetPort: 3000
+    cpu: '0.25'
+    memory: '0.5Gi'
+    envVars: [
+      {
+        name: 'API_BASE_URL'
+        value: api.outputs.uri
+      }
+    ]
+    secrets: []
+  }
+}
+
+// azd reads these outputs to push images and report endpoints.
+output AZURE_LOCATION string = location
+output AZURE_RESOURCE_GROUP string = rg.name
+output AZURE_CONTAINER_REGISTRY_ENDPOINT string = registry.outputs.loginServer
+output AZURE_CONTAINER_REGISTRY_NAME string = registry.outputs.name
+output SERVICE_API_ENDPOINT_URL string = api.outputs.uri
+output SERVICE_WEB_ENDPOINT_URL string = web.outputs.uri
+output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString

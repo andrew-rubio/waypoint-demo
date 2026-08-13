@@ -1,0 +1,23 @@
+{
+  "name": "@waypoint/api",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Waypoint API — Express backend embedding the GitHub Copilot SDK",
+  "main": "src/server.ts",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "test": "vitest run --config vitest.config.ts",
+    "test:watch": "vitest --config vitest.config.ts"
+  },
+  "dependencies": {
+    "@github/copilot-sdk": "1.0.9-preview.3",
+    "express": "^5.0.0",
+    "pino": "^9.4.0",
+    "zod": "^3.23.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0"
+  }
+}

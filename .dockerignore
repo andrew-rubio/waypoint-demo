@@ -1,0 +1,11 @@
+node_modules
+**/node_modules
+**/.next
+**/dist
+test-results
+playwright-report
+.git
+.spec2cloud
+e2e
+tests
+*.log

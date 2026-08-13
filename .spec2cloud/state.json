@@ -1,0 +1,178 @@
+{
+  "mode": "greenfield",
+  "phase": "increment-delivery",
+  "step": "implementation",
+  "status": "awaiting-approval",
+  "currentIncrement": "INC-1",
+  "increments_progress": {
+    "INC-1": {
+      "frd": "FRD-001",
+      "gherkin": { "path": "specs/features/chat-and-agent-runtime.feature", "status": "approved", "scenarios": 18 },
+      "tests": {
+        "status": "approved",
+        "harness": ["package.json", "tsconfig.base.json", "cucumber.mjs", "src/api/vitest.config.ts", "e2e/playwright.config.ts"],
+        "e2e": ["e2e/pages/chat.page.ts", "e2e/chat-and-agent-runtime.spec.ts"],
+        "bdd": ["tests/features/support/world.ts", "tests/features/support/hooks.ts", "tests/features/step-definitions/common.steps.ts", "tests/features/step-definitions/chat-and-agent-runtime.steps.ts"],
+        "unit": ["src/api/tests/unit/chat.test.ts", "src/api/tests/integration/chat.test.ts"],
+        "baseline": "red (verified 2026-08-12: vitest run fails — createApp/validateChatRequest/redactSecrets/createSessionStore do not exist yet)"
+      },
+      "contracts": {
+        "status": "done",
+        "api": ["specs/contracts/api/chat-and-agent-runtime.yaml"],
+        "sharedTypes": ["src/shared/types/chat-and-agent-runtime.ts"],
+        "infra": "specs/contracts/infra/resources.yaml (pre-existing, INC-1 resources already covered — no change)",
+        "sseEvents": ["decision", "token", "tool_call", "tool_result", "done", "error"]
+      },
+      "implementation": {
+        "status": "approved",
+        "apiSlice": {
+          "status": "green",
+          "tests": "11/11 passing (vitest unit + supertest integration)",
+          "files": [
+            "src/api/src/app.ts",
+            "src/api/src/server.ts",
+            "src/api/src/logger.ts",
+            "src/api/src/validation/chat.ts",
+            "src/api/src/security/redact.ts",
+            "src/api/src/session/store.ts",
+            "src/api/src/agent/driver.ts",
+            "src/api/src/agent/local-driver.ts",
+            "src/api/src/agent/copilot-driver.ts",
+            "src/api/src/agent/runtime.ts"
+          ]
+        },
+        "webSlice": {
+          "status": "built",
+          "verification": "next build clean, tsc clean, UI verified in browser (all testids render)",
+          "files": [
+            "src/web/app/layout.tsx",
+            "src/web/app/page.tsx",
+            "src/web/app/page.module.css",
+            "src/web/app/globals.css",
+            "src/web/app/api/chat/route.ts",
+            "src/web/lib/useChat.ts",
+            "src/web/next.config.mjs"
+          ]
+        },
+        "integrationSlice": {
+          "status": "green-in-prod",
+          "harness": "scripts/e2e.mjs (starts API+Web, runs e2e/bdd)",
+          "e2e": "3/4 pass locally; smoke blocked only by sandbox process-reaping (proxy bug fixed)",
+          "rootCauseFixed": "Next rewrite IPv4/IPv6 proxy ECONNREFUSED -> replaced with app/api/chat/route.ts Route Handler targeting 127.0.0.1",
+          "openTestIssueResolved": "BDD ordering off-by-one fixed (approved): userMessage((this.sent-1)*2)."
+        }
+      },
+      "deployment": {
+        "status": "done",
+        "deployed_at": "2026-08-13",
+        "subscription": "ME-MngEnvMCAP241522-andrewrubio-1 (c7233dbc-6a6d-40da-83a7-738e54ffedef)",
+        "region": "swedencentral",
+        "resourceGroup": "rg-waypoint",
+        "tool": "azd up (Bicep infra/ + Docker + Container Apps)",
+        "endpoints": {
+          "web": "https://ca-web-dnszpz4hqfi7g.salmonflower-718a2dad.swedencentral.azurecontainerapps.io",
+          "api": "https://ca-api-dnszpz4hqfi7g.salmonflower-718a2dad.swedencentral.azurecontainerapps.io"
+        },
+        "smoke": "API /health ok; Web welcome renders; web->api /api/chat streams decision+done (200)",
+        "mode": "REAL Copilot SDK live (COPILOT_GITHUB_TOKEN set as Container App secret). Verified 2026-08-13: real model reply, not local canned text.",
+        "copilotFixes": [
+          "azd provision alone reverts container apps to the azd placeholder image (helloworld); must run azd deploy/azd up after to restore the real image",
+          "node:22-slim lacks ca-certificates -> Copilot native runtime TLS failed (builder error); added ca-certificates to src/api/Dockerfile",
+          "token lacked gpt-5 -> copilot-driver now picks an available model via client.listModels() (pickModel), COPILOT_MODEL override supported"
+        ],
+        "strayResources": "partial rg-waypoint in sub-andrewrubio/westeurope (efb26d53...) left in place per user; contains log/id/acr/appi/cae only, no running apps"
+      }
+    }
+  },
+  "artifacts": {
+    "prd": {
+      "path": "specs/prd.md",
+      "features_count": 12,
+      "personas_count": 3,
+      "generated_at": "2026-08-12T00:00:00Z",
+      "status": "approved",
+      "revised_at": "2026-08-12T00:00:00Z",
+      "revision": "Final spec review updates approved; accessibility recommendation intentionally excluded"
+    },
+    "frds": [
+      { "id": "FRD-001", "name": "chat-and-agent-runtime", "path": "specs/frd-chat-and-agent-runtime.md", "priority": "P0", "depends_on": [] },
+      { "id": "FRD-002", "name": "audit-trail", "path": "specs/frd-audit-trail.md", "priority": "P0", "depends_on": ["FRD-001"] },
+      { "id": "FRD-003", "name": "destination-advice", "path": "specs/frd-destination-advice.md", "priority": "P0", "depends_on": ["FRD-001"] },
+      { "id": "FRD-004", "name": "weather-and-timing", "path": "specs/frd-weather-and-timing.md", "priority": "P0", "depends_on": ["FRD-001"] },
+      { "id": "FRD-005", "name": "flight-hotel-search-booking", "path": "specs/frd-flight-hotel-search-booking.md", "priority": "P0", "depends_on": ["FRD-001", "FRD-003"] },
+      { "id": "FRD-006", "name": "personalisation-fabric", "path": "specs/frd-personalisation-fabric.md", "priority": "P1", "depends_on": ["FRD-001"] },
+      { "id": "FRD-007", "name": "trip-summary-and-budget", "path": "specs/frd-trip-summary-and-budget.md", "priority": "P1", "depends_on": ["FRD-004", "FRD-005", "FRD-006"] }
+    ],
+    "frdReview": {
+      "status": "approved",
+      "revised_at": "2026-08-12T00:00:00Z",
+      "accessibilityRecommendation": "excluded-by-stakeholder"
+    },
+    "ui": {
+      "status": "approved",
+      "generated_at": "2026-08-12T00:00:00Z",
+      "served_at": "http://localhost:3333",
+      "artifacts": {
+        "screen_map": "specs/ui/screen-map.md",
+        "design_system": "specs/ui/design-system.md",
+        "component_inventory": "specs/ui/component-inventory.md",
+        "prototypes": "specs/ui/prototypes/",
+        "flow_walkthrough": "specs/ui/flow-walkthrough.md",
+        "walkthrough_html": "specs/ui/walkthrough.html"
+      },
+      "screens": ["index", "welcome", "conversation", "trip-summary", "audit-panel", "error-states"],
+      "design_sources": ["ui-ux-pro-max", "emil-design-eng"],
+      "revisions": [
+        "mobile audit panel = bottom sheet",
+        "header chip = John Doe · Gold Tier · 7,463 Pts",
+        "B2C: replaced corporate-policy Fabric dataset with reward points + travel preferences (aisle seat, meal)"
+      ]
+    },
+    "incrementPlan": {
+      "path": "specs/increment-plan.md",
+      "status": "approved",
+      "generated_at": "2026-08-12T00:00:00Z",
+      "increments": [
+        { "id": "INC-1", "frd": "FRD-001", "name": "walking-skeleton-chat-runtime", "depends_on": [] },
+        { "id": "INC-2", "frd": "FRD-002", "name": "audit-trail", "depends_on": ["INC-1"] },
+        { "id": "INC-3", "frd": "FRD-003", "name": "destination-advice", "depends_on": ["INC-1"] },
+        { "id": "INC-4", "frd": "FRD-004", "name": "weather-and-timing", "depends_on": ["INC-1", "INC-3"] },
+        { "id": "INC-5", "frd": "FRD-005", "name": "flight-hotel-search-booking", "depends_on": ["INC-1", "INC-3"] },
+        { "id": "INC-6", "frd": "FRD-006", "name": "personalisation-fabric", "depends_on": ["INC-1"] },
+        { "id": "INC-7", "frd": "FRD-007", "name": "trip-summary-and-budget", "depends_on": ["INC-4", "INC-5", "INC-6"] }
+      ]
+    },
+    "techStack": {
+      "path": "specs/tech-stack.md",
+      "infra_contract": "specs/contracts/infra/resources.yaml",
+      "status": "approved",
+      "generated_at": "2026-08-12T00:00:00Z",
+      "adrs": [
+        "specs/adrs/adr-001-copilot-sdk.md",
+        "specs/adrs/adr-002-model-auth.md",
+        "specs/adrs/adr-003-hosting-aca.md",
+        "specs/adrs/adr-004-frontend-styling.md"
+      ],
+      "decisions": {
+        "agentRuntime": "@github/copilot-sdk (Node/TS)",
+        "modelAuth": "COPILOT_GITHUB_TOKEN (confirmed Option A; BYOK->Foundry deferred)",
+        "web": "Next.js 15 + React 19, CSS Modules + design tokens",
+        "api": "Express 5 on Node 22, Zod, pino, SSE",
+        "hosting": "Azure Container Apps via azd + Bicep; Aspire local",
+        "observability": "App Insights + OpenTelemetry + pino",
+        "testing": "Vitest + Cucumber.js + Playwright"
+      }
+    }
+  },
+  "decisions": {
+    "coreSdk": "GitHub Copilot SDK (Node/TypeScript, @github/copilot-sdk)",
+    "stack": "Next.js frontend + Node/Express backend (TypeScript)",
+    "booking": "simulated-only",
+    "auth": "single demo user, no login",
+    "mcpServers": ["routestack.ai", "open-meteo", "microsoft-fabric-data-agent", "currency-exchange"],
+    "currency": { "default": "GBP", "convertTo": ["EUR"] },
+    "syntheticPersona": "John Doe (Gold Tier, 7,463 points)",
+    "fabricDatasetsMvp": ["loyalty-profile-with-points", "past-trip-history", "travel-preferences (aisle seat, meal)"],
+    "productType": "B2C (no corporate travel policy)"
+  }
+}

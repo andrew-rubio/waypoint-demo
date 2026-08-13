@@ -1,0 +1,27 @@
+{
+  "name": "waypoint",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=22" },
+  "workspaces": ["src/shared", "src/api", "src/web"],
+  "scripts": {
+    "test": "npm run test:unit && npm run test:bdd && npm run test:e2e",
+    "test:unit": "vitest run --config src/api/vitest.config.ts",
+    "test:unit:watch": "vitest --config src/api/vitest.config.ts",
+    "test:bdd": "cross-env NODE_OPTIONS=\"--import tsx\" cucumber-js",
+    "test:e2e": "playwright test --config e2e/playwright.config.ts",
+    "build": "npm -ws --if-present run build",
+    "lint": "tsc -p tsconfig.base.json --noEmit"
+  },
+  "devDependencies": {
+    "@cucumber/cucumber": "^11.2.0",
+    "@playwright/test": "^1.48.0",
+    "@types/node": "^22.7.0",
+    "@types/supertest": "^6.0.2",
+    "cross-env": "^7.0.3",
+    "supertest": "^7.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

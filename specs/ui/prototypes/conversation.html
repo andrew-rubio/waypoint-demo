@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Waypoint — Conversation</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Noto+Sans:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap');
+  :root{
+    --color-primary:#0891B2;--color-primary-hover:#0E7490;--color-secondary:#22D3EE;
+    --color-accent:#F59E0B;--color-success:#16A34A;--color-warning:#D97706;--color-error:#DC2626;
+    --color-bg:#F5F9FB;--color-surface:#fff;--color-text:#164E63;--color-text-muted:#475569;--color-border:#CBD5E1;
+    --audit-bg:#0F172A;--audit-surface:#1E293B;--audit-text:#E2E8F0;--audit-muted:#94A3B8;--audit-border:#334155;
+    --font-heading:'Figtree',system-ui,sans-serif;--font-body:'Noto Sans',system-ui,sans-serif;--font-mono:'JetBrains Mono',ui-monospace,monospace;
+    --radius-sm:6px;--radius-md:10px;--radius-lg:16px;--radius-full:9999px;
+    --shadow-sm:0 1px 2px rgba(15,23,42,.06),0 1px 3px rgba(15,23,42,.10);
+    --shadow-md:0 4px 12px rgba(15,23,42,.08),0 2px 4px rgba(15,23,42,.06);
+    --shadow-lg:0 12px 32px rgba(15,23,42,.12),0 4px 8px rgba(15,23,42,.08);
+    --ease-out:cubic-bezier(0.23,1,0.32,1);--ease-drawer:cubic-bezier(0.32,0.72,0,1);
+    --dur-press:140ms;--dur-fast:180ms;--dur-card:220ms;--dur-panel:320ms;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0;font-family:var(--font-body);background:var(--color-bg);color:var(--color-text);display:flex;flex-direction:column;height:100vh;overflow:hidden}
+  header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px;background:var(--color-surface);border-bottom:1px solid var(--color-border);box-shadow:var(--shadow-sm);z-index:20;flex:0 0 auto}
+  .brand{display:flex;align-items:center;gap:10px;font-family:var(--font-heading);font-weight:700;font-size:18px}
+  .brand svg{width:24px;height:24px;color:var(--color-primary)}
+  .header-right{display:flex;align-items:center;gap:12px}
+  .user-chip{display:flex;align-items:center;gap:8px;background:#CFFAFE;color:var(--color-primary);border-radius:var(--radius-full);padding:5px 12px;font-weight:600;font-size:13px}
+  .user-chip .avatar{width:22px;height:22px;border-radius:50%;background:var(--color-primary);color:#fff;display:grid;place-items:center;font-size:11px}
+  .audit-toggle{display:flex;align-items:center;gap:8px;border:1px solid var(--color-border);background:var(--color-surface);color:var(--color-text);border-radius:var(--radius-md);padding:8px 12px;font-weight:600;font-size:14px;cursor:pointer;position:relative;transition:transform var(--dur-press) var(--ease-out),background var(--dur-fast),border-color var(--dur-fast)}
+  .audit-toggle svg{width:18px;height:18px}
+  .audit-toggle:hover{border-color:var(--color-primary);background:#F0FDFF}
+  .audit-toggle:active{transform:scale(.97)}
+  .audit-toggle[aria-pressed="true"]{background:var(--audit-bg);color:var(--audit-text);border-color:var(--audit-bg)}
+  .audit-toggle:focus-visible{outline:2px solid var(--color-secondary);outline-offset:2px}
+  .newchat{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--color-border);background:var(--color-surface);color:var(--color-text);border-radius:var(--radius-md);padding:8px 12px;font-weight:600;font-size:14px;cursor:pointer;text-decoration:none;transition:transform var(--dur-press) var(--ease-out),background var(--dur-fast),border-color var(--dur-fast)}
+  .newchat svg{width:16px;height:16px}
+  .newchat:hover{border-color:var(--color-primary);background:#F0FDFF}
+  .newchat:active{transform:scale(.97)}
+  .newchat:focus-visible{outline:2px solid var(--color-secondary);outline-offset:2px}
+  .unseen{position:absolute;top:-6px;right:-6px;min-width:18px;height:18px;padding:0 4px;background:var(--color-accent);color:#3a2500;border-radius:9999px;font-size:11px;font-weight:700;display:grid;place-items:center}
+  .layout{flex:1 1 auto;display:flex;min-height:0}
+  .chat{flex:1 1 auto;display:flex;flex-direction:column;min-width:0;align-items:center}
+  .chat-inner{width:100%;max-width:760px;flex:1 1 auto;display:flex;flex-direction:column;min-height:0;padding:0 20px}
+  .message-list{flex:1 1 auto;overflow-y:auto;padding:24px 0;display:flex;flex-direction:column;gap:16px}
+  /* Messages */
+  .msg{max-width:88%;animation:enter var(--dur-card) var(--ease-out) both}
+  @keyframes enter{from{opacity:0;transform:translateY(6px) scale(.98)}to{opacity:1;transform:none}}
+  .msg.user{align-self:flex-end}
+  .msg.user .bubble{background:var(--color-primary);color:#fff;border-radius:16px 16px 4px 16px;padding:12px 16px;box-shadow:var(--shadow-sm)}
+  .msg.assistant .bubble{background:var(--color-surface);border:1px solid var(--color-border);border-radius:16px 16px 16px 4px;padding:14px 16px;box-shadow:var(--shadow-sm)}
+  .bubble p{margin:0 0 8px;line-height:24px}.bubble p:last-child{margin:0}
+  .role{font-size:12px;font-weight:600;color:var(--color-text-muted);margin:0 4px 4px}
+  .msg.user .role{text-align:right}
+  .caret{display:inline-block;width:8px;height:18px;background:var(--color-primary);vertical-align:-3px;margin-left:2px;animation:blink 1s steps(2) infinite}
+  @keyframes blink{50%{opacity:0}}
+  /* Inline tool progress */
+  .tool-chip{display:inline-flex;align-items:center;gap:8px;background:#F0FDFF;border:1px solid #A5F3FC;color:var(--color-primary);border-radius:var(--radius-full);padding:6px 12px;font-size:13px;font-weight:600;margin:4px 0}
+  .tool-chip .spin{width:14px;height:14px;border:2px solid #A5F3FC;border-top-color:var(--color-primary);border-radius:50%;animation:spin .7s linear infinite}
+  .tool-chip.ok{background:#F0FDF4;border-color:#BBF7D0;color:var(--color-success)}
+  .tool-chip svg{width:14px;height:14px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  /* Cards */
+  .card{background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);box-shadow:var(--shadow-md);padding:16px;margin-top:10px;animation:enter var(--dur-card) var(--ease-out) both}
+  .card h3{font-family:var(--font-heading);font-size:15px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+  .card h3 svg{width:16px;height:16px;color:var(--color-primary)}
+  .pnote{display:flex;gap:10px;align-items:flex-start;background:#FFFBEB;border:1px solid #FDE68A;border-radius:var(--radius-md);padding:10px 12px;font-size:14px;color:#92400E;margin-top:10px}
+  .pnote svg{width:16px;height:16px;flex:0 0 auto;margin-top:2px}
+  /* Destination list */
+  .dest{display:flex;flex-direction:column;gap:10px}
+  .dest-item{border:1px solid var(--color-border);border-radius:var(--radius-md);padding:12px;display:flex;justify-content:space-between;gap:12px;align-items:flex-start;transition:border-color var(--dur-fast),box-shadow var(--dur-fast)}
+  .dest-item:hover{border-color:var(--color-primary);box-shadow:var(--shadow-sm)}
+  .dest-item h4{font-family:var(--font-heading);font-size:15px;margin:0 0 4px}
+  .dest-item p{margin:0 0 8px;font-size:14px;color:var(--color-text-muted);line-height:20px}
+  .tags{display:flex;flex-wrap:wrap;gap:6px}
+  .tag{font-size:12px;font-weight:600;color:var(--color-primary);background:#CFFAFE;border-radius:9999px;padding:2px 10px}
+  /* Weather */
+  .wx-row{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid #E2E8F0;font-size:14px}
+  .wx-row:last-child{border-bottom:0}
+  .wx-badge{font-size:12px;font-weight:700;border-radius:9999px;padding:2px 10px}
+  .wx-good{background:#DCFCE7;color:#166534}.wx-bad{background:#FEE2E2;color:#991B1B}
+  .wx-months{font-weight:600;min-width:96px}
+  .src{font-size:12px;color:var(--color-text-muted);margin-top:10px;display:flex;align-items:center;gap:6px}
+  .src svg{width:13px;height:13px}
+  /* Options */
+  .opt{border:1px solid var(--color-border);border-radius:var(--radius-md);padding:12px;display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;position:relative;transition:border-color var(--dur-fast),box-shadow var(--dur-fast)}
+  .opt:last-child{margin-bottom:0}
+  .opt:hover{border-color:var(--color-primary);box-shadow:var(--shadow-sm)}
+  .opt .meta{font-size:13px;color:var(--color-text-muted);margin-top:3px}
+  .opt .name{font-weight:600;font-family:var(--font-heading)}
+  .opt .price{text-align:right;font-family:var(--font-heading);font-weight:700;font-size:16px;white-space:nowrap}
+  .opt .price small{display:block;font-weight:500;font-size:11px;color:var(--color-text-muted)}
+  .best{position:absolute;top:-9px;left:12px;background:var(--color-accent);color:#3a2500;font-size:11px;font-weight:700;border-radius:9999px;padding:2px 8px;display:flex;align-items:center;gap:4px}
+  .best svg{width:11px;height:11px}
+  .stars{color:var(--color-accent);letter-spacing:1px;font-size:13px}
+  .policy{display:inline-flex;align-items:center;gap:4px;font-size:12px;font-weight:600;border-radius:9999px;padding:2px 8px;margin-top:6px}
+  .policy.out{background:#FEF3C7;color:#92400E}.policy.in{background:#DCFCE7;color:#166534}
+  .policy svg{width:12px;height:12px}
+  .select{border:0;background:var(--color-primary);color:#fff;border-radius:var(--radius-sm);padding:8px 14px;font-weight:600;font-size:13px;cursor:pointer;transition:transform var(--dur-press) var(--ease-out),background var(--dur-fast)}
+  .select:hover{background:var(--color-primary-hover)}.select:active{transform:scale(.97)}
+  .select:focus-visible{outline:2px solid var(--color-secondary);outline-offset:2px}
+  .cta-row{display:flex;justify-content:flex-end;margin-top:12px}
+  .cta{border:0;background:var(--color-success);color:#fff;border-radius:var(--radius-md);padding:10px 18px;font-weight:700;font-size:14px;cursor:pointer;display:inline-flex;gap:8px;align-items:center;transition:transform var(--dur-press) var(--ease-out)}
+  .cta:active{transform:scale(.98)}
+  .cta svg{width:16px;height:16px}
+  /* Composer */
+  .composer{flex:0 0 auto;padding:12px 0 20px;position:sticky;bottom:0;background:linear-gradient(180deg,transparent,var(--color-bg) 24%)}
+  .composer-inner{display:flex;gap:10px;align-items:flex-end;background:var(--color-surface);border:1px solid var(--color-border);border-radius:var(--radius-lg);padding:10px 10px 10px 16px;box-shadow:var(--shadow-md)}
+  .composer-inner:focus-within{border-color:var(--color-primary);box-shadow:0 0 0 3px #CFFAFE}
+  .composer textarea{flex:1;border:0;outline:0;resize:none;font-family:inherit;font-size:16px;line-height:24px;max-height:120px;background:transparent;color:var(--color-text)}
+  .send{flex:0 0 auto;width:44px;height:44px;border:0;border-radius:var(--radius-md);background:var(--color-primary);color:#fff;display:grid;place-items:center;cursor:pointer;transition:transform var(--dur-press) var(--ease-out),background var(--dur-fast)}
+  .send:hover{background:var(--color-primary-hover)}.send:active{transform:scale(.95)}.send:disabled{background:#94A3B8;cursor:not-allowed}
+  .send:focus-visible{outline:2px solid var(--color-secondary);outline-offset:2px}.send svg{width:20px;height:20px}
+  /* Audit panel */
+  .audit-panel{flex:0 0 380px;background:var(--audit-bg);color:var(--audit-text);border-left:1px solid var(--audit-border);display:flex;flex-direction:column;transform:translateX(100%);width:380px;transition:transform var(--dur-panel) var(--ease-drawer)}
+  .audit-panel[hidden]{display:none}
+  .layout.audit-open .audit-panel{transform:translateX(0)}
+  .audit-header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--audit-border)}
+  .audit-header h2{font-family:var(--font-heading);font-size:15px;margin:0;display:flex;align-items:center;gap:8px}
+  .audit-header h2 svg{width:16px;height:16px;color:var(--color-secondary)}
+  .audit-actions{display:flex;gap:6px}
+  .audit-actions button{background:transparent;border:1px solid var(--audit-border);color:var(--audit-muted);border-radius:var(--radius-sm);padding:5px 10px;font-size:12px;font-weight:600;cursor:pointer;transition:transform var(--dur-press) var(--ease-out),color var(--dur-fast),border-color var(--dur-fast)}
+  .audit-actions button:hover{color:var(--audit-text);border-color:var(--audit-muted)}.audit-actions button:active{transform:scale(.96)}
+  .audit-list{flex:1 1 auto;overflow-y:auto;padding:12px}
+  .turn-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--audit-muted);margin:8px 4px}
+  .entry{background:var(--audit-surface);border:1px solid var(--audit-border);border-radius:var(--radius-md);padding:10px 12px;margin-bottom:8px}
+  .entry-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .type-badge{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;border-radius:4px;padding:2px 6px}
+  .t-decision{background:rgba(129,140,248,.18);color:#A5B4FC}.t-skill{background:rgba(34,211,238,.18);color:#67E8F9}
+  .t-mcp{background:rgba(52,211,153,.18);color:#6EE7B7}.t-api{background:rgba(251,191,36,.18);color:#FCD34D}
+  .entry .name{font-family:var(--font-mono);font-size:12px;color:var(--audit-text)}
+  .entry .dur{margin-left:auto;font-size:11px;color:var(--audit-muted);font-family:var(--font-mono)}
+  .status{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600}
+  .s-ok{color:#6EE7B7}.s-err{color:#F87171}.s-pending{color:#94A3B8}
+  .status svg{width:11px;height:11px}
+  .entry .summary{font-size:12px;color:var(--audit-muted);margin-top:6px;line-height:18px}
+  .entry code{font-family:var(--font-mono);color:#CBD5E1}
+  .redact{color:#64748B;font-style:italic}
+  @media (max-width:1023px){.audit-panel{position:fixed;left:0;right:0;bottom:0;top:auto;width:100%;height:72vh;border-left:0;border-top:1px solid var(--audit-border);border-radius:16px 16px 0 0;transform:translateY(100%);z-index:40;box-shadow:var(--shadow-lg)}.layout.audit-open .audit-panel{transform:translateY(0)}}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+  <header data-testid="app-header">
+    <a href="index.html" class="brand" data-testid="brand-home" style="text-decoration:none;color:inherit;cursor:pointer" aria-label="Open the prototype menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>Waypoint</a>
+    <div class="header-right">
+      <div class="user-chip" data-testid="user-chip"><span class="avatar">JD</span>John Doe · Gold Tier · 7,463 Pts</div>
+      <a class="newchat" href="welcome.html" data-testid="new-chat" aria-label="Start a new chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>New chat</a>
+      <button class="audit-toggle" id="auditToggle" data-testid="audit-toggle" aria-pressed="false" aria-controls="auditPanel">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m9 12 2 2 4-4"/><path d="M15 3h4a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-4"/></svg>
+        Audit trail<span class="unseen" data-testid="audit-unseen">6</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="layout" id="layout">
+    <main class="chat">
+      <div class="chat-inner">
+        <div class="message-list" data-testid="message-list" role="log" aria-live="polite">
+
+          <div class="msg user" data-testid="message-user-0">
+            <div class="role">You</div>
+            <div class="bubble"><p>Somewhere warm in October — I love hiking, good seafood, and a relaxed pace.</p></div>
+          </div>
+
+          <div class="msg assistant" data-testid="message-assistant-1">
+            <div class="role">Waypoint</div>
+            <div class="bubble">
+              <span class="tool-chip ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Checked your profile · Fabric IQ</span>
+              <p>Great brief. A few warm, walkable spots with great food and easy hiking for October:</p>
+
+              <div class="pnote" data-testid="personalisation-note">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg>
+                <span>Because you're <strong>Gold Tier</strong> (7,463 pts) and rated your <strong>coastal Portugal</strong> trip 5/5, I've leaned towards warm coastal food spots — and I'll pre-select an <strong>aisle seat</strong> with a <strong>vegetarian meal</strong> from your preferences.</span>
+              </div>
+
+              <div class="card" data-testid="destination-list">
+                <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>Suggested destinations</h3>
+                <div class="dest">
+                  <div class="dest-item" data-testid="destination-item-0">
+                    <div><h4>Lisbon, Portugal</h4><p>Warm October, coastal walks in Sintra, world-class seafood, relaxed pace.</p><div class="tags"><span class="tag">warm</span><span class="tag">coastal</span><span class="tag">food</span><span class="tag">hiking</span></div></div>
+                  </div>
+                  <div class="dest-item" data-testid="destination-item-1">
+                    <div><h4>Palermo, Sicily</h4><p>Mild autumn, seafood markets, coastal trails near Cefalù.</p><div class="tags"><span class="tag">warm</span><span class="tag">food</span><span class="tag">coastal</span></div></div>
+                  </div>
+                  <div class="dest-item" data-testid="destination-item-2">
+                    <div><h4>Crete, Greece</h4><p>Still swimmable, Samaria Gorge hiking, fresh seafood tavernas.</p><div class="tags"><span class="tag">warm</span><span class="tag">hiking</span><span class="tag">beach</span></div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="msg user" data-testid="message-user-2">
+            <div class="role">You</div>
+            <div class="bubble"><p>Lisbon sounds perfect. What's the weather like in October, and can you find flights &amp; a hotel from London?</p></div>
+          </div>
+
+          <div class="msg assistant" data-testid="message-assistant-3">
+            <div class="role">Waypoint</div>
+            <div class="bubble">
+              <span class="tool-chip ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Open-Meteo · climate</span>
+              <span class="tool-chip ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>RouteStack · flights + hotels</span>
+              <p>Lisbon in October is lovely — here's the outlook and your best options from London (LHR):</p>
+
+              <div class="card" data-testid="weather-window-card">
+                <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M6.3 17.7l-1.4 1.4M19.1 4.9l-1.4 1.4"/><circle cx="12" cy="12" r="4"/></svg>Best time to visit — Lisbon</h3>
+                <div class="wx-row"><span class="wx-badge wx-good">Ideal</span><span class="wx-months">May–Oct</span><span>Warm &amp; dry — Oct averages 22°C high / 14°C low, ~70mm rain</span></div>
+                <div class="wx-row"><span class="wx-badge wx-bad">Avoid</span><span class="wx-months">Dec–Feb</span><span>Cooler and wettest — ~110mm rain, 15°C highs</span></div>
+                <div class="src"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>Source: Open-Meteo (ERA5 1991–2020 normals)</div>
+              </div>
+
+              <div class="card" data-testid="flight-options">
+                <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.8 19.2 16 11l3.5-3.5a2.1 2.1 0 0 0-3-3L13 8 4.8 6.2a1 1 0 0 0-.9.3l-.9.9 5 3-2 2-2-1-1 1 3 2 2 3 1-1-1-2 2-2 3 5 .9-.9a1 1 0 0 0 .3-.9Z"/></svg>Flights · London → Lisbon</h3>
+                <div class="opt" data-testid="flight-option-0">
+                  <span class="best"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m12 2 3 7 7 .5-5.5 4.5 2 7L12 17l-6.5 4 2-7L2 9.5 9 9Z"/></svg>Best</span>
+                  <div><div class="name">TAP Air Portugal</div><div class="meta">LHR → LIS · 2h 40m · Direct</div></div>
+                  <div class="price">£128<small>per traveller</small></div>
+                  <button class="select" data-testid="select-flight-0">Select</button>
+                </div>
+                <div class="opt" data-testid="flight-option-1">
+                  <div><div class="name">British Airways</div><div class="meta">LHR → LIS · 2h 45m · Direct</div></div>
+                  <div class="price">£146<small>per traveller</small></div>
+                  <button class="select" data-testid="select-flight-1">Select</button>
+                </div>
+                <div class="opt" data-testid="flight-option-2">
+                  <div><div class="name">easyJet</div><div class="meta">LGW → LIS · 2h 50m · Direct</div></div>
+                  <div class="price">£97<small>per traveller</small></div>
+                  <button class="select" data-testid="select-flight-2">Select</button>
+                </div>
+              </div>
+
+              <div class="card" data-testid="hotel-options">
+                <h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M4 21V7l8-4 8 4v14M9 21v-6h6v6"/></svg>Hotels · Lisbon</h3>
+                <div class="opt" data-testid="hotel-option-0">
+                  <span class="best"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m12 2 3 7 7 .5-5.5 4.5 2 7L12 17l-6.5 4 2-7L2 9.5 9 9Z"/></svg>Best</span>
+                  <div><div class="name">Memmo Alfama</div><div class="meta"><span class="stars">★★★★</span> · Alfama, city view</div></div>
+                  <div class="price">£175<small>per night</small></div>
+                  <button class="select" data-testid="select-hotel-0">Select</button>
+                </div>
+                <div class="opt" data-testid="hotel-option-1">
+                  <div><div class="name">Bairro Alto Hotel</div><div class="meta"><span class="stars">★★★★★</span> · central</div></div>
+                  <div class="price">£320<small>per night</small></div>
+                  <button class="select" data-testid="select-hotel-1">Select</button>
+                </div>
+                <div class="opt" data-testid="hotel-option-2">
+                  <div><div class="name">Lisbon Wine Hotel</div><div class="meta"><span class="stars">★★★★</span> · Baixa</div></div>
+                  <div class="price">£142<small>per night</small></div>
+                  <button class="select" data-testid="select-hotel-2">Select</button>
+                </div>
+              </div>
+
+              <div class="cta-row">
+                <a class="cta" href="trip-summary.html" data-testid="build-trip"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>Build my trip summary</a>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+        <div class="composer" data-testid="composer">
+          <div class="composer-inner">
+            <textarea data-testid="composer-input" rows="1" placeholder="Reply, or say 'show prices in euros'…" aria-label="Message Waypoint"></textarea>
+            <button class="send" data-testid="send-button" disabled aria-label="Send message"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </main>
+
+    <aside class="audit-panel" id="auditPanel" data-testid="audit-panel" role="complementary" aria-label="Audit trail" hidden>
+      <div class="audit-header" data-testid="audit-panel-header">
+        <h2><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m7 14 3-3 3 3 4-4"/></svg> Audit trail</h2>
+        <div class="audit-actions"><button data-testid="audit-clear">Clear</button><button data-testid="audit-export">Export</button></div>
+      </div>
+      <div class="audit-list" data-testid="audit-list">
+        <div class="turn-label">Turn 2 · flights &amp; hotels</div>
+        <div class="entry" data-testid="audit-entry-e6">
+          <div class="entry-top"><span class="type-badge t-decision">decision</span><span class="name">plan</span><span class="dur">4ms</span></div>
+          <div class="summary">Weather + live search required → selecting Open-Meteo, then RouteStack.</div>
+        </div>
+        <div class="entry" data-testid="audit-entry-e5">
+          <div class="entry-top"><span class="type-badge t-mcp">mcp</span><span class="name">open-meteo.climate</span><span class="dur">212ms</span></div>
+          <div class="summary"><code>{ place:"Lisbon", month:"October" }</code> → 22°C/14°C, 70mm · <span class="status s-ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>ok</span></div>
+        </div>
+        <div class="entry" data-testid="audit-entry-e4">
+          <div class="entry-top"><span class="type-badge t-mcp">mcp</span><span class="name">routestack.searchFlights</span><span class="dur">88ms</span></div>
+          <div class="summary"><code>{ from:"LON", to:"LIS", key:"<span class="redact">***redacted***</span>" }</code> → 3 results · <span class="status s-ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>ok</span></div>
+        </div>
+        <div class="entry" data-testid="audit-entry-e3">
+          <div class="entry-top"><span class="type-badge t-mcp">mcp</span><span class="name">routestack.searchHotels</span><span class="dur">94ms</span></div>
+          <div class="summary">3 results · GBP normalised · <span class="status s-ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>ok</span></div>
+        </div>
+        <div class="turn-label">Turn 1 · destinations</div>
+        <div class="entry" data-testid="audit-entry-e2">
+          <div class="entry-top"><span class="type-badge t-mcp">mcp</span><span class="name">fabric.getProfile</span><span class="dur">120ms</span></div>
+          <div class="summary">tier=Gold, points=7463, seat=Aisle, meal=Veg, lastTrip=Portugal(5/5) · <span class="status s-ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>ok</span></div>
+        </div>
+        <div class="entry" data-testid="audit-entry-e1">
+          <div class="entry-top"><span class="type-badge t-skill">skill</span><span class="name">destination-advisor</span><span class="dur">61ms</span></div>
+          <div class="summary">interests=[warm,hiking,seafood,relaxed] → 3 ranked · <span class="status s-ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>ok</span></div>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+    const layout=document.getElementById('layout'),toggle=document.getElementById('auditToggle'),panel=document.getElementById('auditPanel');
+    const unseen=document.querySelector('[data-testid="audit-unseen"]');
+    toggle.addEventListener('click',()=>{const open=layout.classList.toggle('audit-open');toggle.setAttribute('aria-pressed',String(open));
+      if(open){panel.hidden=false;if(unseen)unseen.style.display='none';}else{setTimeout(()=>panel.hidden=true,320);}});
+    const input=document.querySelector('[data-testid="composer-input"]'),send=document.querySelector('[data-testid="send-button"]');
+    input.addEventListener('input',()=>send.disabled=input.value.trim().length===0);
+    document.querySelectorAll('[data-testid^="select-"]').forEach(b=>b.addEventListener('click',()=>window.location.href='trip-summary.html'));
+    document.querySelector('[data-testid="audit-clear"]').addEventListener('click',()=>{document.querySelector('[data-testid="audit-list"]').innerHTML='<div class="audit-empty" style="margin:auto;text-align:center;color:var(--audit-muted);padding:32px;font-size:14px">No agent activity yet.</div>';});
+  </script>
+</body>
+</html>

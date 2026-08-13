@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Waypoint — Replayable Walkthrough</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Noto+Sans:wght@400;500;700&display=swap');
+  :root{--primary:#0891B2;--secondary:#22D3EE;--bg:#0F172A;--surface:#1E293B;--text:#E2E8F0;--muted:#94A3B8;--border:#334155;--accent:#F59E0B;
+    --font-h:'Figtree',system-ui,sans-serif;--font-b:'Noto Sans',system-ui,sans-serif;--ease-out:cubic-bezier(.23,1,.32,1)}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:var(--font-b);background:var(--bg);color:var(--text);height:100vh;display:flex;flex-direction:column;overflow:hidden}
+  header{display:flex;align-items:center;gap:12px;padding:12px 18px;border-bottom:1px solid var(--border);flex:0 0 auto}
+  .brand{display:flex;align-items:center;gap:8px;font-family:var(--font-h);font-weight:700}
+  .brand svg{width:22px;height:22px;color:var(--secondary)}
+  .count{margin-left:auto;font-size:13px;color:var(--muted)}
+  main{flex:1 1 auto;display:flex;min-height:0}
+  .stage{flex:1 1 auto;padding:16px;min-width:0}
+  .frame{width:100%;height:100%;border:1px solid var(--border);border-radius:12px;overflow:hidden;background:#F5F9FB;box-shadow:0 12px 32px rgba(0,0,0,.4)}
+  iframe{width:100%;height:100%;border:0;display:block}
+  aside{flex:0 0 340px;border-left:1px solid var(--border);display:flex;flex-direction:column;padding:18px}
+  .step-no{font-size:12px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--secondary)}
+  aside h2{font-family:var(--font-h);font-size:20px;margin:6px 0 6px}
+  .frd{display:inline-block;font-size:11px;font-weight:700;color:#3a2500;background:var(--accent);border-radius:9999px;padding:2px 10px;margin-bottom:12px}
+  aside p{color:var(--muted);line-height:22px;font-size:14px;margin:0 0 14px}
+  ul{margin:0 0 14px;padding-left:18px;color:var(--muted);font-size:13px;line-height:21px}
+  .nav{margin-top:auto;display:flex;gap:10px}
+  button{flex:1;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:10px;padding:11px;font-weight:700;font-size:14px;cursor:pointer;transition:transform 140ms var(--ease-out),background 160ms}
+  button:hover{background:#243247}button:active{transform:scale(.97)}
+  button.primary{background:var(--primary);border-color:var(--primary)}button.primary:hover{background:#0E7490}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  .dots{display:flex;gap:6px;justify-content:center;margin-top:12px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--border)}.dot.active{background:var(--secondary)}
+  @media (max-width:900px){main{flex-direction:column}aside{flex:0 0 auto;border-left:0;border-top:1px solid var(--border)}}
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>Waypoint — Walkthrough</div>
+    <div class="count" id="count"></div>
+  </header>
+  <main>
+    <div class="stage"><div class="frame"><iframe id="frame" title="Prototype preview"></iframe></div></div>
+    <aside>
+      <div class="step-no" id="stepNo"></div>
+      <h2 id="title"></h2>
+      <span class="frd" id="frd"></span>
+      <p id="desc"></p>
+      <ul id="points"></ul>
+      <div class="nav">
+        <button id="prev">← Back</button>
+        <button id="next" class="primary">Next →</button>
+      </div>
+      <div class="dots" id="dots"></div>
+    </aside>
+  </main>
+  <script>
+    const steps=[
+      {src:'prototypes/welcome.html',no:'Step 1 / 7',title:'First message',frd:'FRD-001',
+       desc:'The traveller lands on the welcome state and starts a conversation. Send stays disabled until the input is non-empty.',
+       points:['Greeting + suggested prompt chips','Composer: Enter to send, Shift+Enter for newline','Empty/whitespace never sends']},
+      {src:'prototypes/conversation.html',no:'Step 2 / 7',title:'Personalised destination advice',frd:'FRD-003 · FRD-006',
+       desc:'Interests become a ranked destination shortlist, tailored using synthetic Fabric IQ profile data.',
+       points:['Inline "Checked your profile · Fabric IQ" chip','Personalisation note explains the "why"','3 ranked destinations with rationale + tags']},
+      {src:'prototypes/conversation.html',no:'Step 3 / 7',title:'Weather & best time to travel',frd:'FRD-004',
+       desc:'Grounded weather guidance from the Open-Meteo MCP, with the data source cited.',
+       points:['Best months vs months to avoid','Temps in °C, precipitation in mm','Source: Open-Meteo (ERA5 1991–2020)']},
+      {src:'prototypes/conversation.html',no:'Step 4 / 7',title:'Flight & hotel search',frd:'FRD-005 · FRD-006',
+       desc:'Live options from the RouteStack MCP, prices normalised to GBP; aisle seat + meal applied from preferences.',
+       points:['≤3 flights, ≤3 hotels, "Best" badges','Aisle seat + vegetarian meal from preferences','Select to build the trip']},
+      {src:'prototypes/trip-summary.html',no:'Step 5 / 7',title:'Summary, budget & simulated booking',frd:'FRD-007 · FRD-005',
+       desc:'The itinerary card with transparent budget maths, GBP→EUR toggle, applied preferences & points, and a clearly-simulated confirmation.',
+       points:['£128×2 + £175×7×1 = £1,481','GBP default; EUR toggle shows rate','"Demo simulation" — no payment']},
+      {src:'prototypes/audit-panel.html',no:'Step 6 / 7',title:'The audit trail (hero)',frd:'FRD-002',
+       desc:'Every agent step is visible: decisions, skill/MCP/API calls, timing and status. Click an entry to expand; secrets are redacted.',
+       points:['Grouped by turn, newest in order','Live pending → ok with duration','Redacted secrets; no hidden reasoning']},
+      {src:'prototypes/error-states.html',no:'Step 7 / 7',title:'Degraded & error paths',frd:'FRD-004/005/006/007',
+       desc:'Graceful degradation for every failure path — surfaced in chat AND as error-status audit entries, never a crash.',
+       points:['Weather down → retry','No availability / quota reached','Fabric off → personalisation degrades','Currency fallback → GBP only']}
+    ];
+    let i=0;
+    const frame=document.getElementById('frame');
+    const dots=document.getElementById('dots');
+    steps.forEach(()=>{const d=document.createElement('span');d.className='dot';dots.appendChild(d);});
+    function render(){
+      const s=steps[i];
+      frame.src=s.src;
+      document.getElementById('stepNo').textContent=s.no;
+      document.getElementById('title').textContent=s.title;
+      document.getElementById('frd').textContent=s.frd;
+      document.getElementById('desc').textContent=s.desc;
+      document.getElementById('count').textContent=`${i+1} of ${steps.length}`;
+      const ul=document.getElementById('points');ul.innerHTML='';
+      s.points.forEach(p=>{const li=document.createElement('li');li.textContent=p;ul.appendChild(li);});
+      [...dots.children].forEach((d,idx)=>d.classList.toggle('active',idx===i));
+      document.getElementById('prev').disabled=i===0;
+      document.getElementById('next').textContent=i===steps.length-1?'Restart':'Next →';
+    }
+    document.getElementById('prev').addEventListener('click',()=>{if(i>0){i--;render();}});
+    document.getElementById('next').addEventListener('click',()=>{i=i===steps.length-1?0:i+1;render();});
+    document.addEventListener('keydown',e=>{if(e.key==='ArrowRight')document.getElementById('next').click();if(e.key==='ArrowLeft')document.getElementById('prev').click();});
+    render();
+  </script>
+</body>
+</html>

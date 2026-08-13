@@ -1,0 +1,140 @@
+'use client';
+
+import { useCallback, useRef, useState } from 'react';
+import type { AgentEvent } from '../../shared/types/chat-and-agent-runtime';
+
+/** A message as shown in the UI (flat list; index drives the data-testid). */
+export interface UiMessage {
+  role: 'user' | 'assistant';
+  content: string;
+}
+
+/** Anything longer than this is shortened for the agent (edge case). */
+const TRUNCATE_AT = 4000;
+
+const newSessionId = () => `sess-${Math.random().toString(36).slice(2)}-${Date.now()}`;
+
+/** Read the optional `?fault=` test hook so demos can simulate failures. */
+function faultParam(): string | null {
+  if (typeof window === 'undefined') return null;
+  return new URLSearchParams(window.location.search).get('fault');
+}
+
+/**
+ * useChat — the entire client side of the walking skeleton. It POSTs to
+ * `/api/chat`, reads the Server-Sent Events stream, and turns `token` events
+ * into a progressively-filled assistant reply. Decision/tool events are carried
+ * on the same stream (they feed the audit trail in a later increment).
+ */
+export function useChat() {
+  const [messages, setMessages] = useState<UiMessage[]>([]);
+  const [streaming, setStreaming] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [truncated, setTruncated] = useState(false);
+  const sessionId = useRef<string>(newSessionId());
+  const abortRef = useRef<AbortController | null>(null);
+
+  const started = messages.length > 0;
+
+  const send = useCallback(
+    async (raw: string) => {
+      const text = raw.trim();
+      if (!text || streaming) return; // empty/whitespace or busy → ignore
+
+      setError(null);
+      setTruncated(text.length > TRUNCATE_AT);
+
+      // Show the user's turn and an empty assistant bubble to stream into.
+      setMessages((prev) => [...prev, { role: 'user', content: text }, { role: 'assistant', content: '' }]);
+      setStreaming(true);
+
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      const fault = faultParam();
+      const url = fault ? `/api/chat?fault=${encodeURIComponent(fault)}` : '/api/chat';
+
+      try {
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ sessionId: sessionId.current, message: text }),
+          signal: controller.signal,
+        });
+        if (!res.ok || !res.body) throw new Error(`chat failed: ${res.status}`);
+
+        await readSse(res.body, (event) => applyEvent(event, setMessages, setError));
+      } catch (err) {
+        // A dropped connection (offline) keeps the partial reply visible.
+        if (typeof navigator !== 'undefined' && !navigator.onLine) {
+          setError('The connection was lost. Your reply so far is preserved — please try again.');
+        } else if ((err as Error).name !== 'AbortError') {
+          setError('Something went wrong. Please try again.');
+        }
+      } finally {
+        setStreaming(false);
+        abortRef.current = null;
+      }
+    },
+    [streaming],
+  );
+
+  /** Reset to a brand-new, empty session (New chat + logo/home). */
+  const reset = useCallback(() => {
+    abortRef.current?.abort();
+    sessionId.current = newSessionId();
+    setMessages([]);
+    setError(null);
+    setTruncated(false);
+    setStreaming(false);
+  }, []);
+
+  return { messages, streaming, error, truncated, started, send, reset };
+}
+
+/** Route a single AgentEvent into UI state. */
+function applyEvent(
+  event: AgentEvent,
+  setMessages: React.Dispatch<React.SetStateAction<UiMessage[]>>,
+  setError: React.Dispatch<React.SetStateAction<string | null>>,
+): void {
+  if (event.type === 'token') {
+    // Append to the last (assistant) message.
+    setMessages((prev) => {
+      const next = [...prev];
+      const last = next[next.length - 1];
+      if (last?.role === 'assistant') next[next.length - 1] = { ...last, content: last.content + event.value };
+      return next;
+    });
+  } else if (event.type === 'error') {
+    setError(event.message);
+  }
+  // `decision` / `tool_call` / `tool_result` / `done` are surfaced in the audit
+  // trail (later increment); the walking skeleton ignores them here.
+}
+
+/** Minimal SSE reader: split on blank lines, parse each `data:` JSON payload. */
+async function readSse(body: ReadableStream<Uint8Array>, onEvent: (e: AgentEvent) => void): Promise<void> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    let sep: number;
+    while ((sep = buffer.indexOf('\n\n')) !== -1) {
+      const block = buffer.slice(0, sep);
+      buffer = buffer.slice(sep + 2);
+      const line = block.split('\n').find((l) => l.startsWith('data:'));
+      if (!line) continue;
+      try {
+        onEvent(JSON.parse(line.slice(5).trim()) as AgentEvent);
+      } catch {
+        /* ignore malformed keep-alive lines */
+      }
+    }
+  }
+}

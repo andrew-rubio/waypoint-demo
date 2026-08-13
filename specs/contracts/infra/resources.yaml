@@ -1,0 +1,110 @@
+# Infrastructure contract — Waypoint
+# Phase 1d artifact. Source of truth for Azure resources across all increments.
+# infra/main.bicep is generated at INC-1 to match this contract; the
+# azure-deployment skill validates parity before shipping.
+
+metadata:
+  project: waypoint
+  hosting: azure-container-apps
+  iac: bicep
+  deploy: azd
+  authModel: user-assigned-managed-identity + container-app-secrets
+
+# Azure resources provisioned by azd/Bicep
+resources:
+  - name: containerAppsEnvironment
+    type: Microsoft.App/managedEnvironments
+    sku: Consumption
+    purpose: Host environment for API and Web container apps
+    dependsOn: [logAnalytics]
+    increment: INC-1
+
+  - name: api
+    type: Microsoft.App/containerApps
+    purpose: Express backend embedding the GitHub Copilot SDK (bundled Copilot CLI)
+    resources: { cpu: 0.5, memory: 1Gi }
+    scale: { minReplicas: 1, maxReplicas: 1 }   # 1 warm replica: avoids Copilot runtime cold-start on demos
+    ingress: { external: true, targetPort: 8080 }
+    identity: userAssignedManagedIdentity
+    env:
+      - APPLICATIONINSIGHTS_CONNECTION_STRING   # from Application Insights
+    secrets:
+      - COPILOT_GITHUB_TOKEN                     # INC-1 (Copilot auth; or Foundry BYOK vars)
+      - ROUTESTACK_API_KEY                       # INC-5
+      - CURRENCY_API_KEY                         # INC-5/INC-7 (omit if provider is keyless)
+      - FABRIC_ENDPOINT                          # INC-6
+      - FABRIC_CREDENTIAL                        # INC-6
+    increment: INC-1
+
+  - name: web
+    type: Microsoft.App/containerApps
+    purpose: Next.js frontend (chat UI + audit panel)
+    resources: { cpu: 0.25, memory: 0.5Gi }
+    scale: { minReplicas: 0, maxReplicas: 1 }   # scale-to-zero
+    ingress: { external: true, targetPort: 3000 }
+    identity: userAssignedManagedIdentity
+    env:
+      - API_BASE_URL                             # service discovery to `api`
+    increment: INC-1
+
+  - name: containerRegistry
+    type: Microsoft.ContainerRegistry/registries
+    sku: Basic   # cheapest registry tier
+    purpose: Container image storage
+    roleAssignments: [AcrPull -> userAssignedManagedIdentity]
+    increment: INC-1
+
+  - name: logAnalytics
+    type: Microsoft.OperationalInsights/workspaces
+    sku: PerGB2018
+    retentionInDays: 30        # cost cap
+    dailyQuotaGb: 1            # cost cap
+    purpose: Central logs for Container Apps + App Insights
+    increment: INC-1
+
+  - name: applicationInsights
+    type: Microsoft.Insights/components
+    samplingPercentage: 20     # reduce ingestion cost
+    purpose: Backend telemetry (OpenTelemetry via Aspire) mirroring the audit trail
+    dependsOn: [logAnalytics]
+    increment: INC-1
+
+  - name: userAssignedManagedIdentity
+    type: Microsoft.ManagedIdentity/userAssignedIdentities
+    purpose: ACR pull, App Insights ingestion, optional Foundry BYOK
+    increment: INC-1
+
+  # Optional hardening — enable if secrets should live in Key Vault vs Container App secrets
+  - name: keyVault
+    type: Microsoft.KeyVault/vaults
+    sku: Standard
+    purpose: (optional) secret storage referenced via managed identity
+    optional: true
+    increment: INC-1+
+
+# External dependencies NOT provisioned by azd (setup prerequisites)
+externalDependencies:
+  - name: microsoftFabricDataAgent
+    kind: mcp-endpoint
+    purpose: Serves synthetic MVP datasets (loyalty+points, trip history, travel preferences)
+    setup: Provision a Fabric workspace + Data Agent; expose over MCP; supply FABRIC_* creds
+    cost: Use the 60-day Fabric trial capacity, or smallest F2 and PAUSE when idle (biggest cost item)
+    increment: INC-6
+  - name: routestack
+    kind: mcp-api
+    purpose: Flights + hotels (sandbox), simulated booking
+    setup: RouteStack.ai sandbox account + ROUTESTACK_API_KEY
+    increment: INC-5
+  - name: openMeteo
+    kind: mcp-api
+    purpose: Weather/geocoding/climate
+    setup: Community Open-Meteo MCP; keyless
+    increment: INC-4
+  - name: currency
+    kind: mcp-api
+    purpose: GBP->EUR conversion
+    setup: Currency-exchange MCP; CURRENCY_API_KEY if the provider requires one
+    increment: INC-5
+
+# Runtime MCP allowlist enforced by the API (only these four)
+mcpAllowlist: [routestack, open-meteo, microsoft-fabric-data-agent, currency]

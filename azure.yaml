@@ -1,0 +1,21 @@
+# azd project — Waypoint (INC-1). Two Container Apps: web (Next.js) + api (Express).
+# Build context is the repo root so each image can install the npm workspaces.
+name: waypoint
+metadata:
+  template: waypoint@1.0.0
+
+services:
+  api:
+    project: ./src/api
+    language: ts
+    host: containerapp
+    docker:
+      path: ./Dockerfile
+      context: ../..
+  web:
+    project: ./src/web
+    language: ts
+    host: containerapp
+    docker:
+      path: ./Dockerfile
+      context: ../..

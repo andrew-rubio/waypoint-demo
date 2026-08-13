@@ -1,0 +1,8 @@
+{
+  "name": "@waypoint/shared",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared contract types used by the Waypoint API and Web apps",
+  "types": "types/index.ts"
+}
