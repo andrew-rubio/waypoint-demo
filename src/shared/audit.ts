@@ -90,7 +90,7 @@ export function applyAuditEvent(state: AuditState, turnId: string, event: AgentE
       if (idx === -1) return base;
       return resolveEntry(base, idx, {
         status: event.ok ? 'ok' : 'error',
-        responseSummary: summarise(event.result ?? (event.ok ? 'ok' : 'error')),
+        responseSummary: summariseToolResult(event.name, event.result ?? (event.ok ? 'ok' : 'error')),
         durationMs: elapsed(base.entries[idx].ts, now),
         reason: event.ok ? undefined : 'Tool call failed',
       });
@@ -167,6 +167,16 @@ function elapsed(startIso: string, now: number): number {
 function summarise(value: unknown): string {
   const text = typeof value === 'string' ? value : safeStringify(value);
   return text.length > MAX_SUMMARY ? text.slice(0, MAX_SUMMARY - 1) + '…' : text;
+}
+
+function summariseToolResult(name: string, value: unknown): string {
+  if (name !== 'destination-advisor' || !value || typeof value !== 'object') return summarise(value);
+  const result = value as { kind?: unknown; suggestions?: unknown[]; message?: unknown };
+  if (Array.isArray(result.suggestions)) {
+    const suffix = result.kind === 'no-match' ? ' closest alternatives' : ' ranked destinations';
+    return `${result.suggestions.length}${suffix}${typeof result.message === 'string' ? ` · ${result.message}` : ''}`;
+  }
+  return typeof result.message === 'string' ? result.message : summarise(value);
 }
 
 function safeStringify(value: unknown): string {

@@ -93,6 +93,12 @@ function Entry({ entry }: { entry: AuditEntry }) {
         <StatusPill status={entry.status} />
       </div>
 
+      {entry.name === 'destination-advisor' && (
+        <div className={styles.summary}>
+          {entry.requestSummary} → {entry.responseSummary || entry.reason || 'pending'}
+        </div>
+      )}
+
       {expanded && (
         <div className={styles.detail} data-testid="audit-entry-detail">
           <div>

@@ -4,11 +4,21 @@
 
 ## Overview
 
-A custom Copilot SDK skill, **`destination-advisor`**, that turns free-text interests
-("warm, walkable, great food, not too touristy") into a ranked shortlist of destinations
-with a short rationale for each. It optionally consults personalisation data (FRD-006) but
-functions without it. It is the entry point that later drives weather (FRD-004) and
-flight/hotel search (FRD-005).
+A custom Copilot SDK Markdown skill, **`destination-advice`**, that guides the agent's
+destination-discovery workflow, backed by an executable **`destination-advisor`** tool.
+Together they turn free-text interests ("warm, walkable, great food, not too touristy")
+into a ranked shortlist of destinations with a short rationale for each. The skill
+optionally consults personalisation data (FRD-006) but functions without it. It is the
+entry point that later drives weather (FRD-004) and flight/hotel search (FRD-005).
+
+### Skill and Tool Responsibilities
+
+- `destination-advice` (`SKILL.md`) contains reusable procedural instructions:
+  preference gathering, clarification, tool-selection, grounding, and response guidance.
+- `destination-advisor` (TypeScript tool) owns runtime validation, deterministic domain
+  rules, canonical destination data, and the structured result consumed by the UI.
+- The Copilot SDK loads the Markdown skill natively from an application-owned skill
+  directory and preloads it for the Waypoint runtime agent.
 
 ## Personas
 
@@ -23,11 +33,11 @@ flight/hotel search (FRD-005).
 
 ## Functional Requirements
 
-- **FR-003-1** The `destination-advisor` skill accepts the traveller's stated interests/constraints and returns a **ranked list** (3–5) of destinations, each with a one-line rationale.
+- **FR-003-1** The `destination-advice` skill applies the destination workflow and invokes the `destination-advisor` tool, which accepts the traveller's stated interests/constraints and returns a **ranked list** (3–5) of destinations, each with a one-line rationale.
 - **FR-003-2** When input is insufficient to recommend (e.g. no preferences at all), the agent asks **one** clarifying question instead of returning a list.
 - **FR-003-3** The skill supports **refinement**: a follow-up message adjusts the previous shortlist rather than restarting.
 - **FR-003-4** Each suggestion includes a canonical place name usable by downstream skills (geocoding in FRD-004, search in FRD-005).
-- **FR-003-5** The skill invocation and its result are emitted as audit events (type `skill`).
+- **FR-003-5** The skill-driven tool invocation and its result are emitted as audit events (type `skill`).
 
 ## Acceptance Criteria
 
@@ -67,7 +77,7 @@ flight/hotel search (FRD-005).
 
 ## API & Data Requirements
 
-Internal skill (no external HTTP). Suggested shape emitted to the model/UI:
+Internal Markdown skill plus in-process tool (no external HTTP). Suggested tool result shape emitted to the model/UI:
 
 ```ts
 type DestinationSuggestion = {

@@ -147,11 +147,124 @@
 
 .assistant {
   align-self: flex-start;
+  width: min(100%, 680px);
   background: var(--color-surface);
   color: var(--color-text);
   border: 1px solid var(--color-border);
   border-bottom-left-radius: var(--radius-sm);
   white-space: normal;
+}
+
+.destinationBubble {
+  align-self: flex-start;
+  width: min(100%, 680px);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  border-bottom-left-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: #f0fdff;
+  box-shadow: var(--shadow-sm);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .destinationBubble {
+    animation: enter var(--dur-card) var(--ease-out);
+  }
+}
+
+.destinationList {
+  margin: 0;
+}
+
+.destinationList h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  color: var(--color-text);
+  font-family: var(--font-heading);
+  font-size: var(--text-base);
+}
+
+.destinationList h2 svg {
+  color: var(--color-primary);
+}
+
+.destinations {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.destinationItem {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.destinationCopy {
+  min-width: 0;
+}
+
+.destinationItem h4 {
+  margin: 0 0 var(--space-1);
+  font-family: var(--font-heading);
+  font-size: var(--text-base);
+}
+
+.destinationItem p {
+  margin: 0 0 var(--space-2);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.tag {
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-full);
+  background: #cffafe;
+  color: var(--color-primary-hover);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.explore {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-primary-hover);
+  font-weight: 600;
+}
+
+.explore:hover {
+  background: #f0fdff;
+}
+
+@media (max-width: 560px) {
+  .destinationItem {
+    flex-direction: column;
+  }
+
+  .explore {
+    align-self: stretch;
+    justify-content: center;
+  }
 }
 
 .caret {

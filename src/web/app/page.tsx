@@ -1,7 +1,8 @@
 'use client';
 
-import { useState, type KeyboardEvent } from 'react';
-import { useChat } from '../lib/useChat';
+import { Fragment, useState, type KeyboardEvent } from 'react';
+import type { DestinationSuggestion } from '../../shared/types/destination-advice';
+import { useChat, type UiMessage } from '../lib/useChat';
 import { AuditPanel } from './AuditPanel';
 import { Markdown } from './Markdown';
 import styles from './page.module.css';
@@ -17,13 +18,16 @@ export default function ChatPage() {
   const [draft, setDraft] = useState('');
 
   const canSend = draft.trim().length > 0 && !streaming;
+  const activeDestinationMessage = latestDestinationMessageIndex(messages);
 
   const submit = async () => {
     if (!canSend) return;
     const text = draft;
-    // Keep the text in the composer if the send fails so the traveller can resend.
+    // Clear immediately on send; the message is already in the thread. Restore
+    // the draft only if the send fails so the traveller can resend.
+    setDraft('');
     const ok = await send(text);
-    if (ok) setDraft('');
+    if (!ok) setDraft(text);
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -73,15 +77,20 @@ export default function ChatPage() {
           <div className={styles.thread} data-testid="message-list" role="log" aria-live="polite">
             {messages.map((m, i) => {
               const isStreamingBubble = streaming && i === messages.length - 1 && m.role === 'assistant';
+              const showDestinations = m.role === 'assistant' && i === activeDestinationMessage && !isStreamingBubble;
               return (
-                <div
-                  key={i}
-                  data-testid={`message-${m.role}-${i}`}
-                  className={`${styles.bubble} ${m.role === 'user' ? styles.user : styles.assistant}`}
-                >
-                  {m.role === 'assistant' ? <Markdown>{m.content}</Markdown> : m.content}
-                  {isStreamingBubble && <span className={styles.caret} data-testid="streaming-caret" aria-hidden />}
-                </div>
+                <Fragment key={i}>
+                  <div
+                    data-testid={`message-${m.role}-${i}`}
+                    className={`${styles.bubble} ${m.role === 'user' ? styles.user : styles.assistant}`}
+                  >
+                    {m.role === 'assistant' ? <Markdown>{m.content}</Markdown> : m.content}
+                    {isStreamingBubble && <span className={styles.caret} data-testid="streaming-caret" aria-hidden />}
+                  </div>
+                  {showDestinations && (
+                    <DestinationList message={m} onExplore={(name) => setDraft(`Tell me more about ${name}`)} />
+                  )}
+                </Fragment>
               );
             })}
           </div>
@@ -125,6 +134,65 @@ export default function ChatPage() {
   );
 }
 
+function latestDestinationMessageIndex(messages: UiMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const advice = messages[index].destinationAdvice;
+    if (advice && 'suggestions' in advice) return index;
+  }
+  return -1;
+}
+
+function DestinationList({ message, onExplore }: { message: UiMessage; onExplore: (name: string) => void }) {
+  const advice = message.destinationAdvice;
+  if (!advice || !('suggestions' in advice)) return null;
+
+  return (
+    <section className={styles.destinationBubble} aria-label="Suggested destinations">
+      <div className={styles.destinationList} data-testid="destination-list">
+        <h2>
+          <MapPinIcon />
+          Suggested destinations
+        </h2>
+        <div className={styles.destinations}>
+          {advice.suggestions.map((destination, index) => (
+            <DestinationItem key={destination.name} destination={destination} index={index} onExplore={onExplore} />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function DestinationItem({
+  destination,
+  index,
+  onExplore,
+}: {
+  destination: DestinationSuggestion;
+  index: number;
+  onExplore: (name: string) => void;
+}) {
+  return (
+    <article className={styles.destinationItem} data-testid={`destination-item-${index}`}>
+      <div className={styles.destinationCopy}>
+        <h4>{destination.name}</h4>
+        <p>{destination.rationale}</p>
+        <div className={styles.tags} aria-label="Destination qualities">
+          {destination.tags.map((tag) => (
+            <span className={styles.tag} data-testid={`tag-${tag}`} key={tag}>
+              {tag}
+            </span>
+          ))}
+        </div>
+      </div>
+      <button className={styles.explore} type="button" onClick={() => onExplore(destination.name)}>
+        Explore
+        <ArrowRightIcon />
+      </button>
+    </article>
+  );
+}
+
 /* Inline Lucide-style SVG icons (never emoji, per the design system). */
 function CompassIcon() {
   return (
@@ -154,6 +222,22 @@ function SendIcon() {
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
       <line x1="22" y1="2" x2="11" y2="13" />
       <polygon points="22 2 15 22 11 13 2 9 22 2" />
+    </svg>
+  );
+}
+function MapPinIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 1 1 16 0Z" />
+      <circle cx="12" cy="10" r="3" />
+    </svg>
+  );
+}
+function ArrowRightIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <path d="M5 12h14" />
+      <path d="m13 6 6 6-6 6" />
     </svg>
   );
 }

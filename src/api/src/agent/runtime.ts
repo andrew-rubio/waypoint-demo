@@ -79,6 +79,13 @@ async function* runFault(kind: string): AsyncIterable<AgentEvent> {
       yield { type: 'error', code: 'stream_error', message: 'The reply was interrupted. Please try again.' };
       return;
 
+    case 'destination-advisor-error':
+      yield { type: 'decision', summary: 'Use destination-advisor to recommend suitable places.' };
+      yield { type: 'tool_call', name: 'destination-advisor', args: { interests: ['destination advice'] } };
+      yield { type: 'tool_result', name: 'destination-advisor', ok: false, result: 'Destination advice failed.' };
+      yield { type: 'error', code: 'destination_advisor_error', message: "I couldn't work that out — could you rephrase?" };
+      return;
+
     case 'slow-reply': {
       yield { type: 'decision', summary: 'Attempt to answer the traveller.' };
       const words = 'Working on your holiday plan, one moment while I gather a few details...'.split(' ');

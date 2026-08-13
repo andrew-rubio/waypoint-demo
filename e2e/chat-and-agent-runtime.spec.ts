@@ -29,6 +29,20 @@ test.describe('Chat & agent runtime (FRD-001)', () => {
     await expect(chat.userMessage(0)).toHaveCount(0);
   });
 
+  test('the composer clears as soon as a message is sent, before the reply finishes (FR-001-2)', async ({ page }) => {
+    const chat = new ChatPage(page);
+    // slow-reply keeps the assistant streaming, so this proves the input clears
+    // on send rather than only after the whole reply completes.
+    await page.goto('/?fault=slow-reply');
+    await chat.type('Plan me a holiday');
+    await chat.input.press('Enter');
+
+    await expect(chat.userMessage(0)).toContainText('Plan me a holiday');
+    await expect(page.getByTestId('streaming-caret')).toBeVisible();
+    expect(await chat.input.inputValue()).toBe('');
+  });
+
+
   test('new chat clears the conversation (AC-001-6)', async ({ page }) => {
     const chat = new ChatPage(page);
     await chat.goto();

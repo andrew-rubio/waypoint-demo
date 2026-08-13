@@ -1,0 +1,111 @@
+# API contract — Destination Advice (FRD-003, INC-3)
+# This feature extends the existing POST /api/chat SSE stream. It adds no public
+# endpoint: destination-advisor is an internal Copilot SDK skill whose invocation
+# is observable through the FRD-001 tool_call/tool_result event contract.
+feature: destination-advice
+version: "1.0"
+extends: chat-and-agent-runtime
+basePath: /api
+
+endpoints:
+  - path: /chat
+    method: POST
+    inheritedFrom: chat-and-agent-runtime
+    description: >-
+      Destination requests use the destination-advisor skill within the existing
+      chat turn. The response remains text/event-stream and includes a skill
+      tool_call followed by a tool_result carrying DestinationAdviceResult.
+    auth: none
+    request:
+      body:
+        type: ChatRequest
+    responses:
+      200:
+        contentType: text/event-stream
+        addedEventContract:
+          toolCall:
+            type: tool_call
+            name: destination-advisor
+            args: DestinationAdviceRequest
+          toolResult:
+            type: tool_result
+            name: destination-advisor
+            ok: boolean
+            result: DestinationAdviceResult
+      error:
+        description: >-
+          A destination-advisor failure emits an error-status skill audit entry
+          and a traveller-facing rephrase prompt without terminating the session.
+        message: "I couldn't work that out — could you rephrase?"
+
+schemas:
+  DestinationAdviceRequest:
+    type: object
+    required: [interests]
+    properties:
+      interests:
+        type: array
+        items: { type: string }
+      constraints:
+        type: array
+        items: { type: string }
+      previousSuggestions:
+        type: array
+        items: { type: DestinationSuggestion }
+
+  DestinationSuggestion:
+    type: object
+    required: [name, rationale, tags]
+    properties:
+      name:
+        type: string
+        description: Canonical city-or-region and country, e.g. Lisbon, Portugal.
+      rationale: { type: string }
+      tags:
+        type: array
+        minItems: 1
+        items: { type: string }
+
+  DestinationAdviceResult:
+    oneOf:
+      - kind: shortlist
+        required: [suggestions]
+        properties:
+          suggestions:
+            type: array
+            minItems: 3
+            maxItems: 5
+            items: { type: DestinationSuggestion }
+          message: { type: string, optional: true }
+      - kind: clarification
+        required: [message]
+        properties:
+          message: { type: string, description: Exactly one focused question. }
+      - kind: no-match
+        required: [message, suggestions]
+        properties:
+          message: { type: string }
+          suggestions:
+            type: array
+            minItems: 1
+            maxItems: 5
+            items: { type: DestinationSuggestion }
+      - kind: redirect
+        required: [message]
+        properties:
+          message: { type: string }
+
+coverage:
+  AC-003-1: shortlist result with 3-5 ranked suggestions, rationales and tags
+  AC-003-2: clarification result with exactly one question and no suggestions
+  AC-003-3: request carries prior context; shortlist reflects new constraints
+  AC-003-4: every suggestion name is canonical and downstream-ready
+  FR-003-5: destination-advisor tool_call/tool_result events produce skill audit entries
+  edge-contradictory: shortlist message acknowledges both interpretations
+  edge-niche: no-match result includes closest alternatives
+  edge-non-travel: redirect result contains no suggestions
+  error-skill: failed skill produces an error audit entry and rephrase message
+
+infrastructure:
+  changes: none
+  reason: Internal deterministic skill; no external HTTP service, secret, environment variable, or Azure resource.

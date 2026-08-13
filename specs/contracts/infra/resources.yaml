@@ -123,3 +123,6 @@ externalDependencies:
 
 # Runtime MCP allowlist enforced by the API (only these four)
 mcpAllowlist: [routestack, open-meteo, microsoft-fabric-data-agent, currency]
+
+# INC-3 contract review: destination-advisor is an in-process skill. It adds no
+# Azure resource, secret, environment variable, network dependency, or Bicep change.

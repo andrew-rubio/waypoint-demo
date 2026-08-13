@@ -2,12 +2,14 @@
 
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { AgentEvent } from '../../shared/types/chat-and-agent-runtime';
+import type { DestinationAdviceResult } from '../../shared/types/destination-advice';
 import { applyAuditEvent, auditTurns, emptyAuditState, type AuditState } from '../../shared/audit';
 
 /** A message as shown in the UI (flat list; index drives the data-testid). */
 export interface UiMessage {
   role: 'user' | 'assistant';
   content: string;
+  destinationAdvice?: DestinationAdviceResult;
 }
 
 /** Anything longer than this is shortened for the agent (edge case). */
@@ -148,11 +150,26 @@ function applyEvent(
       if (last?.role === 'assistant') next[next.length - 1] = { ...last, content: last.content + event.value };
       return next;
     });
+  } else if (event.type === 'tool_result' && event.name === 'destination-advisor' && event.ok && isDestinationAdvice(event.result)) {
+    const destinationAdvice = event.result;
+    setMessages((prev) => {
+      const next = [...prev];
+      const last = next[next.length - 1];
+      if (last?.role === 'assistant') next[next.length - 1] = { ...last, destinationAdvice };
+      return next;
+    });
   } else if (event.type === 'error') {
     setError(event.message);
   }
-  // `decision` / `tool_call` / `tool_result` / `done` are surfaced in the audit
-  // trail (later increment); the walking skeleton ignores them here.
+  // Other observable events are surfaced in the audit trail.
+}
+
+function isDestinationAdvice(value: unknown): value is DestinationAdviceResult {
+  if (!value || typeof value !== 'object' || !('kind' in value)) return false;
+  const kind = (value as { kind: unknown }).kind;
+  if (kind === 'clarification' || kind === 'redirect') return typeof (value as { message?: unknown }).message === 'string';
+  if (kind !== 'shortlist' && kind !== 'no-match') return false;
+  return Array.isArray((value as { suggestions?: unknown }).suggestions);
 }
 
 /** Minimal SSE reader: split on blank lines, parse each `data:` JSON payload. */

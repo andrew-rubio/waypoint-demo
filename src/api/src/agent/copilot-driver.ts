@@ -2,7 +2,14 @@ import type { AgentEvent } from '../../../shared/types/chat-and-agent-runtime.js
 import type { AgentDriver, AgentInput } from './driver.js';
 import type { ProviderConfig } from '@github/copilot-sdk';
 import type { TokenCredential } from '@azure/identity';
+import type { DestinationCandidate } from '../../../shared/types/destination-advice.js';
 import { logger } from '../logger.js';
+import { waypointSkillSessionConfig } from './runtime-skills.js';
+import {
+  adviseDestinations,
+  destinationAdvisorParameters,
+  destinationRequestFromConversation,
+} from '../tools/destination-advisor.js';
 
 /**
  * The showcase: a real agent powered by the GitHub Copilot SDK.
@@ -94,7 +101,7 @@ export class CopilotAgentDriver implements AgentDriver {
   async *run(input: AgentInput): AsyncIterable<AgentEvent> {
     // Lazy import so the SDK (and its bundled runtime) is only loaded when a
     // real credential is present — tests and offline demos never touch it.
-    const { CopilotClient } = await import('@github/copilot-sdk');
+    const { CopilotClient, defineTool } = await import('@github/copilot-sdk');
 
     // ── B1 / ADR-005: BYOK → Microsoft Foundry. No GitHub auth; the model is a
     //    Foundry deployment reached via an OpenAI-compatible endpoint + API key. ──
@@ -117,11 +124,31 @@ export class CopilotAgentDriver implements AgentDriver {
     // environment disables API keys, so we authenticate with the Container App's
     // managed identity via a bearerTokenProvider (Entra); key-based is the fallback.
     const provider = await buildFoundryProvider(this.foundry);
+    const conversationContext = destinationRequestFromConversation(input.message, input.history);
+    const destinationAdvisor = defineTool('destination-advisor', {
+      description:
+        'Recommend a ranked destination shortlist, ask one focused clarification, offer closest alternatives, or redirect non-travel requests.',
+      parameters: destinationAdvisorParameters,
+      defer: 'never',
+      handler: (args) => {
+        const proposed = args as { candidates?: DestinationCandidate[] };
+        const result = adviseDestinations({ ...conversationContext, candidates: proposed?.candidates });
+        queue.push({ type: 'tool_result', name: 'destination-advisor', ok: true, result });
+        return result;
+      },
+    });
 
     const session = await client.createSession({
+      ...waypointSkillSessionConfig,
       model,
       streaming: true,
       provider,
+      tools: [destinationAdvisor],
+      systemMessage: {
+        mode: 'append',
+        content:
+          'You are Waypoint, a concise holiday-planning assistant. For destination recommendations, refinements or travel-fit questions, call destination-advisor and propose three to five candidate destinations (each a canonical "City, Country" name with a one-line rationale and matchedPreferences) drawn from the traveller\'s stated preferences. Ground your reply only in the tool\'s validated, ranked result and preserve canonical place names exactly. Never invent prices, live weather, availability or travel times.',
+      },
 
       // Called before every tool / MCP call. This is where the audit trail is
       // born: we record the decision, enforce the allowlist, then approve.
@@ -145,7 +172,9 @@ export class CopilotAgentDriver implements AgentDriver {
           return { permissionDecision: 'allow' };
         },
         onPostToolUse: async (i: any) => {
-          queue.push({ type: 'tool_result', name: i.toolName, ok: true, result: i.result });
+          if (i.toolName !== 'destination-advisor') {
+            queue.push({ type: 'tool_result', name: i.toolName, ok: true, result: i.result });
+          }
           return {};
         },
         onPostToolUseFailure: async (i: any) => {
@@ -164,7 +193,7 @@ export class CopilotAgentDriver implements AgentDriver {
     });
     session.on('session.idle', () => {
       // Close out the model-generation audit entry with the reply that was sent.
-      queue.push({ type: 'tool_result', name: 'copilot.chat', ok: true, result: reply || 'Response generated.' });
+      queue.push({ type: 'tool_result', name: 'copilot.chat', ok: true, result: markdownToPlainText(reply) || 'Response generated.' });
       queue.close();
     });
 
@@ -191,6 +220,15 @@ export class CopilotAgentDriver implements AgentDriver {
       await client.stop();
     }
   }
+}
+
+function markdownToPlainText(value: string): string {
+  return value
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/\[([^\]]+)]\([^)]*\)/g, '$1')
+    .replace(/[*_~`]/g, '')
+    .trim();
 }
 
 /**
