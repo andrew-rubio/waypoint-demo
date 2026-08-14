@@ -462,3 +462,218 @@
   opacity: 0.5;
   cursor: not-allowed;
 }
+
+/* ── Flight & hotel options + simulated booking (FRD-005) ── */
+.travelBubble {
+  align-self: flex-start;
+  width: min(100%, 680px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  border-bottom-left-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: #f0fdff;
+  box-shadow: var(--shadow-sm);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .travelBubble {
+    animation: enter var(--dur-card) var(--ease-out);
+  }
+}
+
+.optionGroup h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  color: var(--color-text);
+  font-family: var(--font-heading);
+  font-size: var(--text-base);
+}
+
+.optionGroup h2 svg {
+  color: var(--color-primary);
+}
+
+.optionCards {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.optionCard {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.optionMain {
+  min-width: 0;
+}
+
+.optionTitleRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.optionCard h4 {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: var(--text-base);
+}
+
+.optionMeta {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+}
+
+.bestBadge {
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-full);
+  background: var(--color-primary);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.optionAside {
+  flex: 0 0 auto;
+  text-align: right;
+}
+
+.optionPrice {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: var(--text-lg);
+  color: var(--color-text);
+}
+
+.optionPriceNote {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.selectBtn {
+  margin-top: var(--space-2);
+  padding: var(--space-1) var(--space-3);
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-primary-hover);
+  font-weight: 600;
+}
+
+.selectBtn:hover {
+  background: #f0fdff;
+}
+
+.optionCardSelected {
+  border-color: var(--color-primary);
+  border-width: 2px;
+  background: #eff9fb;
+  box-shadow: 0 0 0 1px var(--color-primary) inset;
+}
+
+.selectBtnSelected,
+.selectBtnSelected:hover {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  background: var(--color-primary);
+  color: #fff;
+  border-color: var(--color-primary);
+}
+
+.optionCode {
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.optionSub {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.stars {
+  color: #f59e0b;
+  letter-spacing: 1px;
+}
+
+.bookingBubble {
+  align-self: flex-start;
+  width: min(100%, 680px);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  border-bottom-left-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: #ecfdf5;
+  box-shadow: var(--shadow-sm);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .bookingBubble {
+    animation: enter var(--dur-card) var(--ease-out);
+  }
+}
+
+.simRibbon {
+  display: inline-block;
+  margin-bottom: var(--space-2);
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-full);
+  background: #fde68a;
+  color: var(--color-warning);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.bookingCard h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  color: var(--color-text);
+  font-family: var(--font-heading);
+  font-size: var(--text-base);
+}
+
+.bookingCard h2 svg {
+  color: var(--color-success, #059669);
+}
+
+.bookingRef,
+.bookingItinerary,
+.bookingTotal {
+  margin: 0 0 var(--space-1);
+  font-size: var(--text-sm);
+  color: var(--color-text);
+}
+
+.bookingItinerary {
+  color: var(--color-text-muted);
+}
+
+@media (max-width: 560px) {
+  .optionCard {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .optionAside {
+    text-align: left;
+  }
+}

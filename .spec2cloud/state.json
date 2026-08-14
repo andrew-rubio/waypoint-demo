@@ -3,9 +3,168 @@
   "phase": "increment-delivery",
   "step": "delivered",
   "status": "in-progress",
-  "currentIncrement": "INC-4",
-  "lastUpdated": "2026-08-14T12:05:00Z",
+  "currentIncrement": "INC-5",
+  "lastUpdated": "2026-08-15T00:00:00Z",
   "increments_progress": {
+    "UI-003": {
+      "type": "ui-refinement",
+      "frd": "FRD-005",
+      "status": "deployment-verified",
+      "requested_at": "2026-08-14T17:40:00Z",
+      "request": "Richer flight/hotel cards (flight number, depart/arrive times; hotel address + '5-star'); incremental Select that composes 'Book the first flight (Airline FlightNo)' then appends the hotel with its name; selected card shows a 'Selected' state (button + highlighted border).",
+      "change": [
+        "shared types: FlightOption += flightNumber?/departTime?/arriveTime?; HotelOption += address?",
+        "routestack.ts offline mapper synthesises flight number + times + a coarse address; routestack-client parses live flightCode+flightNumber, depart/arrive HH:mm, and hotel address when present",
+        "page.tsx: TravelOptions tracks per-side selection and composes the booking phrase incrementally with (airline flightNo) / (hotel name); FlightOptionCard/HotelOptionCard show the new details + selected state; page.module.css adds selected + detail styles",
+        "propagated: FR-005-3 [UI-REVISED 2026-08-14], component-inventory, contract FlightOption/HotelOption schemas"
+      ],
+      "validation": "58/58 unit; API tsc clean; next build clean; Playwright 31/31 + Cucumber 60/60",
+      "deployment": {
+        "status": "verified",
+        "services": "api + web",
+        "activeApiRevision": "ca-api-dnszpz4hqfi7g--uicards",
+        "activeWebRevision": "ca-web-dnszpz4hqfi7g--uicards",
+        "liveVerified": "Lisbon offline flight 'TAP Air Portugal TP2076 departs 07:35'; live hotel 'Sheraton Lisboa' 5*; Paris live flight 'Air France AF1281 departs 17:35 £241.79'",
+        "knownGap": "Live hotels have no street address — RouteStack search-hotels omits it (only get-hotel-details returns it); card shows address for offline hotels only. Offered to the user as an optional follow-up (extra per-hotel detail call).",
+        "verified_at": "2026-08-14T17:50:00Z"
+      },
+      "humanGates": { "deployment": true }
+    },
+    "BUG-004": {
+      "type": "enhancement",
+      "frd": "FRD-005",
+      "status": "deployment-verified",
+      "requested_at": "2026-08-14T17:30:00Z",
+      "report": "Live-only cities (any the RouteStack sandbox covers but the 6-city offline catalogue does not, e.g. Paris) returned outside-coverage, showed no options, and could not be booked — same 'booking failed' symptom.",
+      "rootCause": "groundTravel gated the live RouteStack call on the offline catalogue already returning 'options'; non-catalogue cities short-circuited to outside-coverage before any live search.",
+      "test": "src/api/tests/unit/travel-coverage.test.ts (4 tests) — pure mergeTravelResult",
+      "fix": [
+        "routestack.ts: mergeTravelResult(request, offlineBase, live) — pure combine of offline + live (live preferred per side, offline fallback); short-circuits only on user-input problems; returns outside-coverage/no-results only when neither has anything",
+        "copilot-driver.ts groundTravel: validate input, ALWAYS attempt live RouteStack for a valid request, then mergeTravelResult; per-side source + currency audit",
+        "routestack-client.ts: searchLiveTravel returns resolved place (search-destinations fullName); normaliseFlight parses the real flight offer (legs, airline, IATA, triptime, ourprice/quantity -> per-traveller GBP, includes taxes); flight search requests currency:GBP"
+      ],
+      "validation": "58/58 unit (4 BUG-004); tsc clean; Playwright 31/31 + Cucumber 60/60",
+      "deployment": {
+        "status": "verified",
+        "service": "api",
+        "activeApiRevision": "ca-api-dnszpz4hqfi7g--flights2",
+        "liveVerified": "Paris (live-only city) 2-turn search->book: flights + hotels both source=routestack-sandbox; real flight 'Air France LHR->CDG 85min direct £241.79/traveller (GBP incl taxes)'; live hotel 'Hotel Korner Saint Marcel'; booking ok ref WP-PAR-3ZR total £2031.35. Lisbon still books live TURIM hotel.",
+        "verified_at": "2026-08-14T17:15:00Z"
+      },
+      "humanGates": { "testCode": true, "deployment": true }
+    },
+    "BUG-003": {
+      "type": "bug-fix",
+      "frd": "FRD-005",
+      "status": "deployment-verified",
+      "requested_at": "2026-08-14T16:30:00Z",
+      "report": "Live site: after being shown flight/hotel options, simulating a booking returned 'The demo booking failed for that selection, so nothing was reserved.'",
+      "rootCause": "booking-simulator re-derived the options by re-parsing the chat text through the offline searchTravel (6-city catalogue); it failed when the model supplied the dates (not typed as ISO) or when the destination could not be re-extracted, so it returned a non-options result and booking failed. It also would have echoed offline options, not the live hotels shown.",
+      "test": "src/api/tests/unit/booking-context.test.ts (3 tests)",
+      "redBaseline": "Failed to compile — booking-context module absent",
+      "fix": [
+        "src/api/src/tools/booking-context.ts — per-session cache: rememberSearchOptions + resolveBookingOptions (prefers the remembered options, falls back to re-derivation)",
+        "local-driver.ts + copilot-driver.ts: travel-search remembers the shown options; booking-simulator resolves from the cache"
+      ],
+      "validation": "54/54 unit (3 BUG-003); API tsc clean; harness Playwright 31/31 + Cucumber 60/60 (314 steps) after clearing zombie dev servers on ports 3000/8080 (EADDRINUSE from earlier killed harness runs)",
+      "deployment": {
+        "status": "verified",
+        "service": "api",
+        "activeApiRevision": "ca-api-dnszpz4hqfi7g--bug003",
+        "liveVerified": "2-turn Lisbon search->book: booking ok, ref WP-LIS-7ID, itinerary echoes the LIVE hotel 'TURIM Boulevard Hotel, Lisbon' (not offline 'Hotel do Mar'), estimatedTotalGBP 2149.65 (live £271/night x7 + offline flight) — proves the cache holds the real shown options",
+        "verified_at": "2026-08-14T17:00:00Z"
+      },
+      "knownLimitation": "groundTravel only attempts live RouteStack when the OFFLINE catalogue already covers the city; a live-only city (e.g. Paris) returns outside-coverage and shows no options, so it cannot be booked. Reported to user as a follow-up (needs its own test + approval).",
+      "humanGates": { "testCode": true, "deployment": true }
+    },
+    "INC-5": {
+      "frd": "FRD-005",
+      "name": "flight-hotel-search-booking",
+      "depends_on": ["INC-1", "INC-3"],
+      "status": "done",
+      "decision": {
+        "routestack": "Option A — real sandbox via direct HTTPS to mcp.routestack.ai/mcp/* (HMAC partner-token -> JWT); deterministic offline catalogue backs tests/local; live path activates when ROUTESTACK_API_KEY + ROUTESTACK_SECRET present (user will add to azd env)",
+        "currency": "Frankfurter (api.frankfurter.dev, ECB daily, keyless); stores amountGBP + rate + rateTimestamp; CURRENCY_API_KEY dropped",
+        "booking": "simulated only — local booking-simulator; RouteStack get-payment-url never called",
+        "auditNaming": "routestack.flights + routestack.hotels + currency.convert (mcp), booking-simulator (skill)"
+      },
+      "humanGates": { "gherkin": true, "testCode": true, "implementation": true, "deployment": true },
+      "tests": {
+        "status": "approved",
+        "gherkin": { "path": "specs/features/flight-hotel-search-booking.feature", "status": "approved", "scenarios": 14 },
+        "e2e": { "files": ["e2e/flight-hotel-search-booking.spec.ts", "e2e/pages/chat.page.ts"], "tests": 7, "status": "approved" },
+        "bdd": { "files": ["tests/features/step-definitions/flight-hotel-search-booking.steps.ts"], "status": "approved" },
+        "unit": { "files": ["src/api/tests/unit/travel-search.test.ts"], "tests": 13, "status": "approved" },
+        "redBaseline": "11 new unit assertions failed / 40 passed; cucumber 60 mapped; playwright 31 discovered; skip scan clean"
+      },
+      "contracts": {
+        "status": "done",
+        "sharedTypes": ["src/shared/types/flight-hotel-search-booking.ts"],
+        "api": ["specs/contracts/api/flight-hotel-search-booking.yaml"],
+        "infra": "specs/contracts/infra/resources.yaml (added ROUTESTACK_SECRET; Currency keyless via Frankfurter)"
+      },
+      "implementation": {
+        "status": "review-pending",
+        "slices": {
+          "api": {
+            "status": "green",
+            "files": [
+              "src/api/src/tools/currency.ts",
+              "src/api/src/tools/routestack.ts",
+              "src/api/src/tools/routestack-client.ts",
+              "src/api/src/agent/local-driver.ts",
+              "src/api/src/agent/copilot-driver.ts",
+              "src/api/src/agent/runtime.ts",
+              "src/api/src/agent/runtime-skills.ts",
+              "src/api/src/agent/skills/travel-search/SKILL.md"
+            ],
+            "validation": "51/51 unit (13 INC-5); API typecheck clean"
+          },
+          "web": {
+            "status": "green",
+            "files": ["src/web/lib/useChat.ts", "src/web/app/page.tsx", "src/web/app/page.module.css"],
+            "validation": "Next.js production build passes with type-check"
+          },
+          "integration": {
+            "status": "green",
+            "validation": "Co-hosted harness: Playwright 31/31 passed; Cucumber 60/60 scenarios (314 steps) passed"
+          }
+        },
+        "productionPath": {
+          "note": "copilot-driver registers travel-search + booking-simulator SDK tools; groundTravel tries real RouteStack (routestack-client.ts, HMAC->JWT + flight/hotel search + live Frankfurter conversion) and falls back to the offline catalogue. Live RouteStack response parsing is lenient and validated at deploy (ADR-006 precedent).",
+          "harnessFix": "scripts/e2e.mjs bdd runner: NODE_OPTIONS passed via env object instead of cross-env (shell:true was splitting '--import tsx')."
+        },
+        "testFix": {
+          "note": "Two BDD failures fixed during implementation: (1) booking ribbon reworded 'no payment taken' -> 'no charge, no real booking' to avoid colliding with the approved no-payment negative assertion; (2) currency-rate BDD step corrected to expand the currency.convert entry instead of the first mcp entry (test-code defect authored this session). Disclosed for PR review."
+        }
+      },
+      "deployment": {
+        "status": "verified",
+        "deployed_at": "2026-08-14T15:20:00Z",
+        "tool": "azd up, then azd provision (push prod RouteStack secrets) + az acr build/az containerapp update iterations to roll the live RouteStack fixes",
+        "resourceGroup": "rg-waypoint",
+        "region": "swedencentral",
+        "azdEnvironment": "waypoint",
+        "activeApiRevision": "ca-api-dnszpz4hqfi7g--hotels2",
+        "endpoints": {
+          "web": "https://ca-web-dnszpz4hqfi7g.salmonflower-718a2dad.swedencentral.azurecontainerapps.io",
+          "api": "https://ca-api-dnszpz4hqfi7g.salmonflower-718a2dad.swedencentral.azurecontainerapps.io"
+        },
+        "health": "API /health 200; Web / 200",
+        "liveVerified": {
+          "hotels": "LIVE from RouteStack sandbox (prod keys) — real Lisbon hotels e.g. 'TURIM Boulevard Hotel' 5* £271.15/night, 'Altis Prime' 4* £195.78/night; GBP requested directly (rate 1); nightly rate derived from total-stay/nights; source=routestack-sandbox",
+          "flights": "offline-catalogue fallback — sandbox returns code 1051 'Flights not found' for London->Lisbon (cached routes are US-centric); realistic offline flights shown, source=offline-catalogue",
+          "booking": "2-turn same-session -> booking-simulator ref WP-LIS-7ID simulated total £1037",
+          "gracefulDegrade": "per-side fallback proven live (live hotels + offline flights, no crash)"
+        },
+        "routestackResolution": {
+          "auth": "prod keys via partner-token (HMAC base64url, matches RouteStackAI/routestack-starters reference); sandbox keys were rejected 401",
+          "hotelFix": "destinationId=dest.id; coordinates nested at dest.coordinates.lat/long; request currency:GBP; price=ourprice (total-stay) / nights; rating=starRating",
+          "flightNote": "flight/locations + flight/search wired; sandbox has no cached EU short-haul so returns 1051 -> guarded to fall back cleanly (no garbage records)"
+        }
+      },
+      "started_at": "2026-08-14T13:05:00Z"
+    },
     "BUG-002": {
       "type": "bug-fix",
       "frd": "FRD-004",

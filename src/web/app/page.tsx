@@ -3,6 +3,7 @@
 import { Fragment, useState, type KeyboardEvent } from 'react';
 import type { DestinationSuggestion } from '../../shared/types/destination-advice';
 import type { WeatherCardResult } from '../../shared/types/weather-and-timing';
+import type { FlightOption, HotelOption } from '../../shared/types/flight-hotel-search-booking';
 import { useChat, type UiMessage } from '../lib/useChat';
 import { AuditPanel } from './AuditPanel';
 import { Markdown } from './Markdown';
@@ -21,6 +22,8 @@ export default function ChatPage() {
   const canSend = draft.trim().length > 0 && !streaming;
   const activeDestinationMessage = latestDestinationMessageIndex(messages);
   const activeWeatherMessage = latestWeatherMessageIndex(messages);
+  const activeTravelMessage = latestTravelMessageIndex(messages);
+  const activeBookingMessage = latestBookingMessageIndex(messages);
 
   const submit = async () => {
     if (!canSend) return;
@@ -81,6 +84,8 @@ export default function ChatPage() {
               const isStreamingBubble = streaming && i === messages.length - 1 && m.role === 'assistant';
               const showDestinations = m.role === 'assistant' && i === activeDestinationMessage && !isStreamingBubble;
               const showWeather = m.role === 'assistant' && i === activeWeatherMessage && !isStreamingBubble;
+              const showTravel = m.role === 'assistant' && i === activeTravelMessage && !isStreamingBubble;
+              const showBooking = m.role === 'assistant' && i === activeBookingMessage && !isStreamingBubble;
               return (
                 <Fragment key={i}>
                   <div
@@ -94,6 +99,10 @@ export default function ChatPage() {
                     <DestinationList message={m} onExplore={(name) => setDraft(`Tell me more about ${name}`)} />
                   )}
                   {showWeather && <WeatherCard message={m} />}
+                  {showTravel && (
+                    <TravelOptions message={m} onSelect={(phrase) => setDraft(phrase)} />
+                  )}
+                  {showBooking && <BookingConfirmationCard message={m} />}
                 </Fragment>
               );
             })}
@@ -149,6 +158,20 @@ function latestDestinationMessageIndex(messages: UiMessage[]): number {
 function latestWeatherMessageIndex(messages: UiMessage[]): number {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     if (messages[index].weatherAdvice) return index;
+  }
+  return -1;
+}
+
+function latestTravelMessageIndex(messages: UiMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].travelOptions) return index;
+  }
+  return -1;
+}
+
+function latestBookingMessageIndex(messages: UiMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].booking) return index;
   }
   return -1;
 }
@@ -274,6 +297,219 @@ function DestinationItem({
   );
 }
 
+const ORDINALS = ['first', 'second', 'third'];
+const gbp = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' });
+
+function formatDuration(min: number): string {
+  const h = Math.floor(min / 60);
+  const m = min % 60;
+  return m ? `${h}h ${m}m` : `${h}h`;
+}
+
+function stopsLabel(stops: number): string {
+  if (stops === 0) return 'Direct';
+  return stops === 1 ? '1 stop' : `${stops} stops`;
+}
+
+function TravelOptions({ message, onSelect }: { message: UiMessage; onSelect: (phrase: string) => void }) {
+  const options = message.travelOptions;
+  const [selFlight, setSelFlight] = useState<number | null>(null);
+  const [selHotel, setSelHotel] = useState<number | null>(null);
+  if (!options) return null;
+
+  // Build the booking instruction incrementally as the traveller selects each side.
+  const compose = (flightIdx: number | null, hotelIdx: number | null): string => {
+    const parts: string[] = [];
+    if (flightIdx !== null) {
+      const flight = options.flights[flightIdx];
+      const detail = [flight.airline, flight.flightNumber].filter(Boolean).join(' ');
+      parts.push(`the ${ORDINALS[flightIdx] ?? 'first'} flight (${detail})`);
+    }
+    if (hotelIdx !== null) {
+      parts.push(`the ${ORDINALS[hotelIdx] ?? 'first'} hotel (${options.hotels[hotelIdx].name})`);
+    }
+    return parts.length ? `Book ${parts.join(' and ')}` : '';
+  };
+
+  const chooseFlight = (index: number) => {
+    setSelFlight(index);
+    onSelect(compose(index, selHotel));
+  };
+  const chooseHotel = (index: number) => {
+    setSelHotel(index);
+    onSelect(compose(selFlight, index));
+  };
+
+  return (
+    <section className={styles.travelBubble} aria-label="Flight and hotel options">
+      <div className={styles.optionGroup} data-testid="flight-options">
+        <h2>
+          <PlaneIcon />
+          Flights to {options.place}
+        </h2>
+        <div className={styles.optionCards}>
+          {options.flights.map((flight, index) => (
+            <FlightOptionCard
+              key={`${flight.airline}-${index}`}
+              flight={flight}
+              index={index}
+              selected={selFlight === index}
+              onSelect={() => chooseFlight(index)}
+            />
+          ))}
+        </div>
+      </div>
+      <div className={styles.optionGroup} data-testid="hotel-options">
+        <h2>
+          <BedIcon />
+          Hotels in {options.place}
+        </h2>
+        <div className={styles.optionCards}>
+          {options.hotels.map((hotel, index) => (
+            <HotelOptionCard
+              key={`${hotel.name}-${index}`}
+              hotel={hotel}
+              index={index}
+              selected={selHotel === index}
+              onSelect={() => chooseHotel(index)}
+            />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FlightOptionCard({
+  flight,
+  index,
+  selected,
+  onSelect,
+}: {
+  flight: FlightOption;
+  index: number;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <article
+      className={`${styles.optionCard} ${selected ? styles.optionCardSelected : ''}`}
+      data-testid={`flight-option-${index}`}
+      aria-selected={selected}
+    >
+      <div className={styles.optionMain}>
+        <div className={styles.optionTitleRow}>
+          <h4>
+            {flight.airline}
+            {flight.flightNumber ? <span className={styles.optionCode}> · {flight.flightNumber}</span> : null}
+          </h4>
+          {flight.best && (
+            <span className={styles.bestBadge} data-testid="best-badge">
+              Best
+            </span>
+          )}
+        </div>
+        <p className={styles.optionMeta}>
+          {flight.from} → {flight.to} · {formatDuration(flight.durationMin)} · {stopsLabel(flight.stops)}
+        </p>
+        {(flight.departTime || flight.arriveTime) && (
+          <p className={styles.optionSub}>
+            Departs {flight.departTime ?? '—'} · Arrives {flight.arriveTime ?? '—'}
+          </p>
+        )}
+      </div>
+      <div className={styles.optionAside}>
+        <p className={styles.optionPrice}>{gbp.format(flight.pricePerTraveller.amountGBP)}</p>
+        <p className={styles.optionPriceNote}>per traveller</p>
+        <button
+          className={`${styles.selectBtn} ${selected ? styles.selectBtnSelected : ''}`}
+          type="button"
+          onClick={onSelect}
+          aria-pressed={selected}
+        >
+          {selected ? 'Selected' : 'Select'}
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function HotelOptionCard({
+  hotel,
+  index,
+  selected,
+  onSelect,
+}: {
+  hotel: HotelOption;
+  index: number;
+  selected: boolean;
+  onSelect: () => void;
+}) {
+  const included = hotel.nightlyRate.source.includesTaxesAndFees;
+  return (
+    <article
+      className={`${styles.optionCard} ${selected ? styles.optionCardSelected : ''}`}
+      data-testid={`hotel-option-${index}`}
+      aria-selected={selected}
+    >
+      <div className={styles.optionMain}>
+        <div className={styles.optionTitleRow}>
+          <h4>{hotel.name}</h4>
+          {hotel.best && (
+            <span className={styles.bestBadge} data-testid="best-badge">
+              Best
+            </span>
+          )}
+        </div>
+        <p className={styles.optionMeta} aria-label={`${hotel.rating}-star rating`}>
+          <span className={styles.stars} aria-hidden>
+            {'★'.repeat(hotel.rating)}
+            {'☆'.repeat(Math.max(0, 5 - hotel.rating))}
+          </span>{' '}
+          · {hotel.rating}-star
+        </p>
+        {hotel.address && <p className={styles.optionSub}>{hotel.address}</p>}
+        <p className={styles.optionPriceNote}>{included ? 'Taxes & fees included' : 'Excludes taxes & fees'}</p>
+      </div>
+      <div className={styles.optionAside}>
+        <p className={styles.optionPrice}>{gbp.format(hotel.nightlyRate.amountGBP)}</p>
+        <p className={styles.optionPriceNote}>per night</p>
+        <button
+          className={`${styles.selectBtn} ${selected ? styles.selectBtnSelected : ''}`}
+          type="button"
+          onClick={onSelect}
+          aria-pressed={selected}
+        >
+          {selected ? 'Selected' : 'Select'}
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function BookingConfirmationCard({ message }: { message: UiMessage }) {
+  const booking = message.booking;
+  if (!booking) return null;
+  return (
+    <section className={styles.bookingBubble} aria-label="Booking confirmation">
+      <div className={styles.bookingCard} data-testid="booking-confirmation">
+        <span className={styles.simRibbon}>Demo simulation — no charge, no real booking</span>
+        <h2>
+          <CheckIcon />
+          Booking confirmed
+        </h2>
+        <p className={styles.bookingRef}>
+          Ref <strong>{booking.ref}</strong>
+        </p>
+        <p className={styles.bookingItinerary}>{booking.itinerary}</p>
+        <p className={styles.bookingTotal}>
+          Estimated total <strong>{gbp.format(booking.estimatedTotalGBP)}</strong>
+        </p>
+      </div>
+    </section>
+  );
+}
+
 /* Inline Lucide-style SVG icons (never emoji, per the design system). */
 function CompassIcon() {
   return (
@@ -327,6 +563,27 @@ function ArrowRightIcon() {
     <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
       <path d="M5 12h14" />
       <path d="m13 6 6 6-6 6" />
+    </svg>
+  );
+}
+function PlaneIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <path d="M17.8 19.2 16 11l3.5-3.5C21 6 21.5 4 21 3.5c-.5-.5-2.5 0-4 1.5L13.5 8.5 5.3 6.7c-.5-.1-.9.1-1.1.5l-.3.5c-.2.5-.1 1 .3 1.3L8 12l-1.7 4.2c-.1.3 0 .6.3.8L8 18l3-3 3 3 .9.9c.2.2.5.3.8.3l.5-.3c.3-.2.5-.6.4-1.1Z" />
+    </svg>
+  );
+}
+function BedIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <path d="M2 4v16M2 8h18a2 2 0 0 1 2 2v10M2 17h20M6 8v3" />
+    </svg>
+  );
+}
+function CheckIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <path d="M20 6 9 17l-5-5" />
     </svg>
   );
 }

@@ -34,8 +34,9 @@ resources:
       - AZURE_CLIENT_ID                          # ADR-005 (selects the user-assigned identity)
     secrets:
       # - COPILOT_GITHUB_TOKEN                   # ADR-002 (superseded by ADR-005; kept for the demo)
-      - ROUTESTACK_API_KEY                       # INC-5
-      - CURRENCY_API_KEY                         # INC-5/INC-7 (omit if provider is keyless)
+      - ROUTESTACK_API_KEY                       # INC-5 (public partner identifier)
+      - ROUTESTACK_SECRET                        # INC-5 (HMAC signing secret for partner-token)
+      # - CURRENCY_API_KEY                       # INC-5/INC-7 dropped: Frankfurter FX is keyless
       - FABRIC_ENDPOINT                          # INC-6
       - FABRIC_CREDENTIAL                        # INC-6
     increment: INC-1
@@ -108,7 +109,11 @@ externalDependencies:
   - name: routestack
     kind: mcp-api
     purpose: Flights + hotels (sandbox), simulated booking
-    setup: RouteStack.ai sandbox account + ROUTESTACK_API_KEY
+    setup: >-
+      RouteStack.ai sandbox account (Hiker tier, free). ROUTESTACK_API_KEY +
+      ROUTESTACK_SECRET for the HMAC partner-token -> JWT exchange. Reached by
+      direct HTTPS from the API (mcp.routestack.ai/mcp/*); payment endpoints are
+      never called (booking is simulated locally).
     increment: INC-5
   - name: openMeteo
     kind: mcp-api
@@ -117,8 +122,8 @@ externalDependencies:
     increment: INC-4
   - name: currency
     kind: mcp-api
-    purpose: GBP->EUR conversion
-    setup: Currency-exchange MCP; CURRENCY_API_KEY if the provider requires one
+    purpose: GBP normalisation now (INC-5) and GBP<->EUR display later (INC-7)
+    setup: Frankfurter (api.frankfurter.dev, ECB daily rates) — keyless, direct HTTPS from the API
     increment: INC-5
 
 # Runtime MCP allowlist enforced by the API (only these four)

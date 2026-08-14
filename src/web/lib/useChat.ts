@@ -4,6 +4,7 @@ import { useCallback, useMemo, useRef, useState } from 'react';
 import type { AgentEvent } from '../../shared/types/chat-and-agent-runtime';
 import type { DestinationAdviceResult } from '../../shared/types/destination-advice';
 import type { WeatherCardResult } from '../../shared/types/weather-and-timing';
+import type { BookingConfirmation, TravelCardResult } from '../../shared/types/flight-hotel-search-booking';
 import { applyAuditEvent, auditTurns, emptyAuditState, type AuditState } from '../../shared/audit';
 
 /** A message as shown in the UI (flat list; index drives the data-testid). */
@@ -12,6 +13,8 @@ export interface UiMessage {
   content: string;
   destinationAdvice?: DestinationAdviceResult;
   weatherAdvice?: WeatherCardResult;
+  travelOptions?: TravelCardResult;
+  booking?: BookingConfirmation;
 }
 
 /** Anything longer than this is shortened for the agent (edge case). */
@@ -168,6 +171,22 @@ function applyEvent(
       if (last?.role === 'assistant') next[next.length - 1] = { ...last, weatherAdvice };
       return next;
     });
+  } else if (event.type === 'tool_result' && event.name === 'travel-search' && event.ok && isTravelOptions(event.result)) {
+    const travelOptions = event.result;
+    setMessages((prev) => {
+      const next = [...prev];
+      const last = next[next.length - 1];
+      if (last?.role === 'assistant') next[next.length - 1] = { ...last, travelOptions };
+      return next;
+    });
+  } else if (event.type === 'tool_result' && event.name === 'booking-simulator' && event.ok && isBooking(event.result)) {
+    const booking = event.result;
+    setMessages((prev) => {
+      const next = [...prev];
+      const last = next[next.length - 1];
+      if (last?.role === 'assistant') next[next.length - 1] = { ...last, booking };
+      return next;
+    });
   } else if (event.type === 'error') {
     setError(event.message);
   }
@@ -189,6 +208,22 @@ function isWeatherAdvice(value: unknown): value is WeatherCardResult {
   if (kind === 'month-weather') return typeof (value as { tempMaxC?: unknown }).tempMaxC === 'number';
   if (kind === 'weather-window') return Array.isArray((value as { recommendedMonths?: unknown }).recommendedMonths);
   return false;
+}
+
+/** Only the options result renders flight/hotel cards; other kinds are reply text only. */
+function isTravelOptions(value: unknown): value is TravelCardResult {
+  if (!value || typeof value !== 'object' || !('kind' in value)) return false;
+  if ((value as { kind: unknown }).kind !== 'options') return false;
+  return Array.isArray((value as { flights?: unknown }).flights) && Array.isArray((value as { hotels?: unknown }).hotels);
+}
+
+function isBooking(value: unknown): value is BookingConfirmation {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    (value as { simulated?: unknown }).simulated === true &&
+    typeof (value as { ref?: unknown }).ref === 'string'
+  );
 }
 
 /** Minimal SSE reader: split on blank lines, parse each `data:` JSON payload. */

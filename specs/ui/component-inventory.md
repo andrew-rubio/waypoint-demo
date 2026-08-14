@@ -91,16 +91,18 @@
 
 ### FlightOptionCard / FlightOptionList
 - **testid:** `flight-options`, items `flight-option-{index}`
-- **Props:** airline, from, to, durationMin, stops, pricePerTraveller (GBP/EUR), best
-- **Elements:** airline, route, duration, stops, price, `BestBadge`, "Select"
-- **States:** default, best, selected, no-results
+- **Props:** airline, flightNumber?, from, to, durationMin, stops, departTime?, arriveTime?, pricePerTraveller (GBP/EUR), best
+- **Elements:** airline · flight number, route, departs/arrives times, duration, stops, price, `BestBadge`, "Select"/"Selected"
+- **States:** default, best, selected (button "Selected" + highlighted border), no-results
+- **Select behaviour:** adds `the {ordinal} flight (Airline FlightNo)` to the composer; appends the hotel leg when a hotel is also selected
 - **Screens:** S2, S3, S5 · **FRD-005**
 
 ### HotelOptionCard / HotelOptionList
 - **testid:** `hotel-options`, items `hotel-option-{index}`
-- **Props:** name, rating, nightlyRate (GBP/EUR)
-- **Elements:** name, `RatingStars`, nightly rate, "Select"
-- **States:** default, selected, no-results
+- **Props:** name, rating, address?, nightlyRate (GBP/EUR), best
+- **Elements:** name, `RatingStars` + "{n}-star", address, nightly rate, taxes/fees note, "Select"/"Selected"
+- **States:** default, selected (button "Selected" + highlighted border), no-results
+- **Select behaviour:** adds `the {ordinal} hotel (Name)` to the composer
 - **Screens:** S2, S3, S5 · **FRD-005**
 
 ### PersonalisationNote

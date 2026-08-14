@@ -1,0 +1,238 @@
+# API contract — Flight & Hotel Search + Simulated Booking (FRD-005, INC-5)
+# This feature extends the existing POST /api/chat SSE stream. It adds no public
+# endpoint: travel-search and booking-simulator are internal Copilot SDK skills.
+# RouteStack (flights + hotels) and Currency (GBP normalisation) are reached by
+# direct HTTPS from the API and surfaced through the FRD-001 tool_call/tool_result
+# event contract as mcp-typed audit entries. Booking is simulated only — the
+# RouteStack payment endpoints are never called.
+feature: flight-hotel-search-booking
+version: "1.0"
+extends: chat-and-agent-runtime
+basePath: /api
+
+endpoints:
+  - path: /chat
+    method: POST
+    inheritedFrom: chat-and-agent-runtime
+    description: >-
+      Flight/hotel search and simulated booking run inside the existing chat
+      turn. On a search turn the agent searches RouteStack for flights and
+      hotels, normalises each supplier price to GBP through the Currency
+      service, and emits a travel-search tool_result carrying a
+      TravelSearchResult. On a booking turn the booking-simulator skill returns
+      a clearly-simulated BookingConfirmation. The response remains
+      text/event-stream.
+    auth: none
+    request:
+      body:
+        type: ChatRequest
+    responses:
+      200:
+        contentType: text/event-stream
+        addedEventContract:
+          mcpFlights:
+            type: tool_call
+            name: routestack.flights
+            args: { from: string, to: string, depart: string, return: string, party: number }
+            note: RouteStack /mcp/flight/* (locations + search), normalised to routestack.flights in the audit trail
+          mcpFlightsResult:
+            type: tool_result
+            name: routestack.flights
+            ok: boolean
+            result: { count: number, currency: string }
+          mcpCurrency:
+            type: tool_call
+            name: currency.convert
+            args: { from: string, to: GBP, amount: number }
+            note: Frankfurter/ECB conversion; only emitted when a supplier currency is not GBP
+          mcpCurrencyResult:
+            type: tool_result
+            name: currency.convert
+            ok: boolean
+            result: { amountGBP: number, rate: number, rateTimestamp: string }
+          mcpHotels:
+            type: tool_call
+            name: routestack.hotels
+            args: { destination: string, checkIn: string, checkOut: string, rooms: number }
+            note: RouteStack /mcp/hotel/* (search-destinations + search-hotels), normalised to routestack.hotels
+          mcpHotelsResult:
+            type: tool_result
+            name: routestack.hotels
+            ok: boolean
+            result: { count: number, currency: string }
+          toolCall:
+            type: tool_call
+            name: travel-search
+            args: TravelSearchRequest
+          toolResult:
+            type: tool_result
+            name: travel-search
+            ok: boolean
+            result: TravelSearchResult
+          bookingCall:
+            type: tool_call
+            name: booking-simulator
+            args: { flightIndex: number, hotelIndex: number }
+          bookingResult:
+            type: tool_result
+            name: booking-simulator
+            ok: boolean
+            result: BookingConfirmation
+      error:
+        description: >-
+          A RouteStack failure emits an error-status mcp audit entry and a
+          traveller-facing notice (one retry, then give up). A reached sandbox
+          quota is not retried. A booking-simulator failure emits an
+          error-status skill entry and issues no confirmation.
+        messages:
+          routestackError: "Travel search is unavailable right now. Please try again shortly."
+          routestackQuota: "Search quota reached for the demo."
+          bookingError: "Couldn't complete the (simulated) booking. Please try again."
+
+schemas:
+  TravelSearchRequest:
+    type: object
+    required: [destination, checkIn, checkOut, party]
+    properties:
+      destination: { type: string, description: The destination as the traveller said it. }
+      origin: { type: string, description: Departure city/airport; may be inferred from personalisation (FRD-006). }
+      checkIn: { type: string, description: Outbound date, ISO 8601 (yyyy-mm-dd). }
+      checkOut: { type: string, description: Return date, ISO 8601 (yyyy-mm-dd). }
+      party: { type: number, description: Number of travellers. }
+      rooms: { type: number, optional: true }
+
+  Money:
+    type: object
+    required: [amount, currency, includesTaxesAndFees]
+    properties:
+      amount: { type: number }
+      currency: { type: string, description: ISO 4217 supplier currency. }
+      includesTaxesAndFees: { type: boolean }
+
+  ConvertedMoney:
+    type: object
+    required: [source, amountGBP, rate, rateTimestamp]
+    properties:
+      source: { type: Money }
+      amountGBP: { type: number }
+      rate: { type: number, description: GBP per one unit of the source currency (1 when already GBP). }
+      rateTimestamp: { type: string, description: ISO 8601 timestamp of the exchange rate used. }
+
+  FlightOption:
+    type: object
+    required: [airline, from, to, durationMin, stops, pricePerTraveller]
+    properties:
+      airline: { type: string }
+      from: { type: string }
+      to: { type: string }
+      durationMin: { type: number }
+      stops: { type: number }
+      pricePerTraveller: { type: ConvertedMoney }
+      flightNumber: { type: string, optional: true, description: Marketing flight number, e.g. TP2039. }
+      departTime: { type: string, optional: true, description: Outbound departure clock time, e.g. 08:15. }
+      arriveTime: { type: string, optional: true, description: Outbound arrival clock time, e.g. 10:40. }
+      best: { type: boolean, optional: true }
+
+  HotelOption:
+    type: object
+    required: [name, rating, nightlyRate]
+    properties:
+      name: { type: string }
+      rating: { type: number }
+      nightlyRate: { type: ConvertedMoney }
+      address: { type: string, optional: true, description: Street/area address. }
+      best: { type: boolean, optional: true }
+
+  TravelSearchResult:
+    oneOf:
+      - kind: options
+        required: [place, origin, checkIn, checkOut, nights, party, flights, hotels]
+        properties:
+          place: { type: string, description: Canonical resolved destination, e.g. Lisbon, Portugal. }
+          origin: { type: string }
+          checkIn: { type: string }
+          checkOut: { type: string }
+          nights: { type: number }
+          party: { type: number }
+          flights:
+            type: array
+            maxItems: 3
+            items: { type: FlightOption }
+          hotels:
+            type: array
+            maxItems: 3
+            items: { type: HotelOption }
+      - kind: missing-origin
+        required: [message]
+        properties:
+          message: { type: string }
+      - kind: invalid-dates
+        required: [reason, message]
+        properties:
+          reason: { type: string, enum: [past, reversed] }
+          message: { type: string }
+      - kind: no-results
+        required: [message]
+        properties:
+          message: { type: string }
+      - kind: outside-coverage
+        required: [message]
+        properties:
+          message: { type: string }
+      - kind: party-clarify
+        required: [message]
+        properties:
+          message: { type: string }
+
+  BookingConfirmation:
+    type: object
+    required: [ref, simulated, itinerary, estimatedTotalGBP]
+    properties:
+      ref: { type: string }
+      simulated: { const: true }
+      itinerary: { type: string, description: Human-readable itinerary echo. }
+      estimatedTotalGBP: { type: number }
+
+coverage:
+  AC-005-1: options result returns up to 3 flights + 3 hotels with required facts, prices normalised to GBP, inclusions labelled
+  AC-005-2: missing-origin result asks for the departure city before searching, no options shown
+  AC-005-3: booking-simulator returns a mock confirmation (ref + itinerary echo), clearly marked simulated, no payment
+  AC-005-4: no-results result explains no availability and suggests adjusting dates/destination
+  FR-005-1: travel-search collects origin, destination, dates, party; missing inputs prompted
+  FR-005-2: up to 3 options each, at most one "best" per list
+  FR-005-3: flights show airline/route/duration/stops; hotels show name/rating/nightly rate + inclusions
+  FR-005-4: supplier Money preserved; ConvertedMoney records amountGBP + rate + rateTimestamp when currency != GBP
+  FR-005-5: booking-simulator produces a deterministic mock confirmation with no payment or reservation
+  FR-005-6: confirmation is clearly labelled a demo simulation
+  FR-005-7: RouteStack calls emit mcp audit entries; booking simulation emits a skill audit entry
+  edge-past-dates: invalid-dates(past) flags the issue and asks for valid dates
+  edge-reversed-dates: invalid-dates(reversed) detects return-before-outbound and asks to correct
+  edge-outside-coverage: outside-coverage explains limited demo coverage and suggests a covered city
+  edge-party-size: party-clarify caps/clarifies unusually large parties before searching
+  error-routestack: a RouteStack failure emits an error-status mcp entry and a degrade notice (one retry)
+  error-quota: a reached sandbox quota is explained and not retried
+  error-booking: a booking-simulator failure emits an error-status skill entry and issues no confirmation
+
+infrastructure:
+  changes: >-
+    Adds the RouteStack HMAC secret. Currency uses a keyless provider, so no
+    currency secret is required.
+  grounding:
+    routestack:
+      provider: RouteStack.ai (sandbox / Hiker tier — real cached data, free)
+      client: direct HTTPS from the API (src/api/src/tools/routestack.ts)
+      endpoints: [mcp.routestack.ai/mcp/auth/partner-token, mcp.routestack.ai/mcp/flight/*, mcp.routestack.ai/mcp/hotel/*]
+      auth: HMAC partner-token (apiKey + secret) exchanged for a short-lived JWT bearer
+      note: >-
+        Booking is simulated locally; the RouteStack get-payment-url endpoints
+        are never called. Offline (tests/demo) a deterministic embedded
+        catalogue backs travel-search, emitting the same routestack.flights /
+        routestack.hotels audit entries.
+    currency:
+      provider: Frankfurter (api.frankfurter.dev — ECB daily rates, keyless, free)
+      client: direct HTTPS from the API (src/api/src/tools/currency.ts)
+      note: Stores amountGBP + rate + rateTimestamp; reused by FRD-007 for EUR display.
+  secrets:
+    - ROUTESTACK_API_KEY     # public partner identifier
+    - ROUTESTACK_SECRET      # HMAC signing secret for partner-token exchange
+  azureResources: none

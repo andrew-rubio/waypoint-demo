@@ -16,6 +16,14 @@ param location string
 @description('GitHub/Copilot service token for the agent (ADR-002, superseded by ADR-005). Kept for the demo; unused while Foundry BYOK is active.')
 param copilotGitHubToken string = ''
 
+@secure()
+@description('RouteStack sandbox public API key (INC-5). Empty = deterministic offline catalogue fallback.')
+param routestackApiKey string = ''
+
+@secure()
+@description('RouteStack HMAC signing secret for the partner-token exchange (INC-5).')
+param routestackSecret string = ''
+
 @description('Use BYOK → Microsoft Foundry for the agent model (ADR-005). When false, falls back to the GitHub-token path.')
 param useFoundry bool = true
 
@@ -94,7 +102,7 @@ module foundry 'modules/foundry.bicep' = if (useFoundry) {
 // ── B1 / ADR-005: BYOK → Foundry with managed identity (this environment disables
 //    API keys). No secret to wire — the agent authenticates with Entra. ──
 // ── ORIGINAL (ADR-002, swapped out): a GitHub Copilot service token secret. ──
-var apiSecrets = useFoundry
+var baseApiSecrets = useFoundry
   ? []
   : (empty(copilotGitHubToken)
       ? []
@@ -104,6 +112,37 @@ var apiSecrets = useFoundry
             value: copilotGitHubToken
           }
         ])
+
+// INC-5: RouteStack sandbox credentials (public key + HMAC secret). Wired only
+// when both are set; otherwise the travel-search tool uses the offline catalogue.
+var hasRoutestack = !empty(routestackApiKey) && !empty(routestackSecret)
+var routestackSecrets = hasRoutestack
+  ? [
+      {
+        name: 'routestack-api-key'
+        value: routestackApiKey
+      }
+      {
+        name: 'routestack-secret'
+        value: routestackSecret
+      }
+    ]
+  : []
+
+var apiSecrets = concat(baseApiSecrets, routestackSecrets)
+
+var routestackEnv = hasRoutestack
+  ? [
+      {
+        name: 'ROUTESTACK_API_KEY'
+        secretRef: 'routestack-api-key'
+      }
+      {
+        name: 'ROUTESTACK_SECRET'
+        secretRef: 'routestack-secret'
+      }
+    ]
+  : []
 
 var apiEnv = concat(
   [
@@ -139,7 +178,8 @@ var apiEnv = concat(
               name: 'COPILOT_GITHUB_TOKEN'
               secretRef: 'copilot-github-token'
             }
-          ])
+          ]),
+  routestackEnv
 )
 
 module api 'modules/container-app.bicep' = {

@@ -61,7 +61,7 @@ await waitFor(WEB, 'Web');
 const mode = process.argv[2] ?? 'e2e';
 const runner =
   mode === 'bdd'
-    ? start('npx', ['cross-env', 'NODE_OPTIONS=--import tsx', 'cucumber-js'], { env })
+    ? start('npx', ['cucumber-js'], { env: { ...env, NODE_OPTIONS: '--import tsx' } })
     : start('npx', ['playwright', 'test', '--config', 'e2e/playwright.config.ts'], { env });
 
 runner.on('exit', (code) => {

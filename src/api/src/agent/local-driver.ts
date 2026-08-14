@@ -1,5 +1,6 @@
 import type { AgentEvent } from '../../../shared/types/chat-and-agent-runtime.js';
 import type { WeatherResult } from '../../../shared/types/weather-and-timing.js';
+import type { BookingConfirmation, TravelSearchResult } from '../../../shared/types/flight-hotel-search-booking.js';
 import type { AgentDriver, AgentInput } from './driver.js';
 import { adviseDestinations, destinationRequestFromConversation } from '../tools/destination-advisor.js';
 import {
@@ -9,6 +10,16 @@ import {
   offlineGeocode,
   weatherRequestFromConversation,
 } from '../tools/weather-window.js';
+import {
+  bookingSelectionFromMessage,
+  isBookingQuery,
+  isTravelSearchQuery,
+  searchTravel,
+  simulateBooking,
+  supplierCurrencyFor,
+  travelRequestFromConversation,
+} from '../tools/routestack.js';
+import { rememberSearchOptions, resolveBookingOptions } from '../tools/booking-context.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -26,6 +37,14 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
  */
 export class LocalAgentDriver implements AgentDriver {
   async *run(input: AgentInput): AsyncIterable<AgentEvent> {
+    if (isBookingQuery(input.message, input.history)) {
+      yield* this.runBooking(input);
+      return;
+    }
+    if (isTravelSearchQuery(input.message)) {
+      yield* this.runTravelSearch(input);
+      return;
+    }
     if (isWeatherQuery(input.message)) {
       yield* this.runWeather(input);
       return;
@@ -118,6 +137,91 @@ export class LocalAgentDriver implements AgentDriver {
     yield { type: 'tool_result', name: 'copilot.chat', ok: true, result: reply };
     yield { type: 'done' };
   }
+
+  private async *runTravelSearch(input: AgentInput): AsyncIterable<AgentEvent> {
+    const request = travelRequestFromConversation(input.message, input.history);
+    const result = searchTravel(request);
+
+    yield { type: 'decision', summary: `Search RouteStack for flights and hotels for "${preview(input.message)}".` };
+    yield { type: 'tool_call', name: 'copilot.chat', args: { model: 'local', prompt: input.message } };
+
+    // Only a valid, in-coverage search actually reaches the RouteStack sandbox;
+    // clarifications/validation short-circuit before any MCP call.
+    if (result.kind === 'options') {
+      const currency = supplierCurrencyFor(request.destination) ?? result.flights[0]?.pricePerTraveller.source.currency ?? 'GBP';
+
+      yield {
+        type: 'tool_call',
+        name: 'routestack.flights',
+        args: { from: result.flights[0]?.from, to: result.flights[0]?.to, depart: result.checkIn, return: result.checkOut, party: result.party },
+      };
+      yield { type: 'tool_result', name: 'routestack.flights', ok: true, result: { count: result.flights.length, currency } };
+
+      // Normalise supplier prices to GBP when the supplier does not quote GBP (FR-005-4).
+      if (currency !== 'GBP') {
+        const sample = result.flights[0]?.pricePerTraveller;
+        yield { type: 'tool_call', name: 'currency.convert', args: { from: currency, to: 'GBP', amount: sample?.source.amount } };
+        yield {
+          type: 'tool_result',
+          name: 'currency.convert',
+          ok: true,
+          result: { amountGBP: sample?.amountGBP, rate: sample?.rate, rateTimestamp: sample?.rateTimestamp },
+        };
+      }
+
+      yield {
+        type: 'tool_call',
+        name: 'routestack.hotels',
+        args: { destination: result.place, checkIn: result.checkIn, checkOut: result.checkOut, rooms: request.rooms ?? 1 },
+      };
+      yield { type: 'tool_result', name: 'routestack.hotels', ok: true, result: { count: result.hotels.length, currency } };
+    }
+
+    yield { type: 'tool_call', name: 'travel-search', args: { ...request } };
+    yield { type: 'tool_result', name: 'travel-search', ok: true, result };
+    if (result.kind === 'options') rememberSearchOptions(input.sessionId, result);
+
+    const reply = composeTravelReply(result);
+    for (const word of reply.split(' ')) {
+      await sleep(8);
+      yield { type: 'token', value: word + ' ' };
+    }
+
+    yield { type: 'tool_result', name: 'copilot.chat', ok: true, result: reply };
+    yield { type: 'done' };
+  }
+
+  private async *runBooking(input: AgentInput): AsyncIterable<AgentEvent> {
+    yield { type: 'decision', summary: 'Simulate a booking for the selected flight and hotel.' };
+    yield { type: 'tool_call', name: 'copilot.chat', args: { model: 'local', prompt: input.message } };
+
+    const options = resolveBookingOptions(input.sessionId, input.history);
+    const selection = bookingSelectionFromMessage(input.message);
+
+    if (!options || options.kind !== 'options') {
+      const reply = "I don't have any options to book yet — search for flights and hotels first.";
+      for (const word of reply.split(' ')) {
+        await sleep(8);
+        yield { type: 'token', value: word + ' ' };
+      }
+      yield { type: 'tool_result', name: 'copilot.chat', ok: true, result: reply };
+      yield { type: 'done' };
+      return;
+    }
+
+    const confirmation = simulateBooking(options, selection, 1);
+    yield { type: 'tool_call', name: 'booking-simulator', args: { ...selection } };
+    yield { type: 'tool_result', name: 'booking-simulator', ok: true, result: confirmation };
+
+    const reply = composeBookingReply(confirmation);
+    for (const word of reply.split(' ')) {
+      await sleep(8);
+      yield { type: 'token', value: word + ' ' };
+    }
+
+    yield { type: 'tool_result', name: 'copilot.chat', ok: true, result: reply };
+    yield { type: 'done' };
+  }
 }
 
 /** A concise conversational wrapper around the structured destination result. */
@@ -147,6 +251,35 @@ function composeWeatherReply(result: WeatherResult): string {
     case 'no-data':
       return `I couldn't find climate data for that point — it looks like open ocean with no nearby land station, so I won't guess the weather.`;
   }
+}
+
+/** A concise conversational wrapper around the structured travel-search result. */
+function composeTravelReply(result: TravelSearchResult): string {
+  switch (result.kind) {
+    case 'options':
+      return `Here are your best flight and hotel options for ${result.place}, priced in GBP. Tell me which flight and hotel to book.`;
+    case 'missing-origin':
+      return 'I need a departure city before I can search flights. Which city are you flying from?';
+    case 'invalid-dates':
+      return result.reason === 'past'
+        ? 'Those dates are in the past. Could you give me valid travel dates in the future?'
+        : 'The return date is before the outbound date. Could you correct the dates?';
+    case 'no-results':
+      return "I couldn't find any availability for those dates. Try adjusting your dates or choosing another destination.";
+    case 'outside-coverage':
+      return 'The demo sandbox only covers a limited set of cities. Try a covered city such as Lisbon or Barcelona.';
+    case 'party-clarify':
+      return `${result.message} Let me know if you'd like to adjust the number of travellers.`;
+  }
+}
+
+/** A concise conversational wrapper around a simulated booking confirmation. */
+function composeBookingReply(confirmation: BookingConfirmation): string {
+  return (
+    'Done — this is a demo simulation, so no payment was taken and no real reservation was made. ' +
+    `Your reference is ${confirmation.ref}. Itinerary: ${confirmation.itinerary}. ` +
+    `Estimated total £${confirmation.estimatedTotalGBP}.`
+  );
 }
 
 function preview(text: string): string {

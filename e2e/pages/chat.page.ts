@@ -23,6 +23,9 @@ export class ChatPage {
   readonly weatherSource: Locator;
   readonly weatherRecommended: Locator;
   readonly weatherAvoid: Locator;
+  readonly flightOptions: Locator;
+  readonly hotelOptions: Locator;
+  readonly bookingConfirmation: Locator;
 
   constructor(page: Page) {
     this.page = page;
@@ -41,6 +44,9 @@ export class ChatPage {
     this.weatherSource = page.getByTestId('weather-source');
     this.weatherRecommended = page.getByTestId('weather-recommended');
     this.weatherAvoid = page.getByTestId('weather-avoid');
+    this.flightOptions = page.getByTestId('flight-options');
+    this.hotelOptions = page.getByTestId('hotel-options');
+    this.bookingConfirmation = page.getByTestId('booking-confirmation');
   }
 
   async goto(): Promise<void> {
@@ -66,6 +72,14 @@ export class ChatPage {
 
   destinationItem(index: number): Locator {
     return this.page.getByTestId(`destination-item-${index}`);
+  }
+
+  flightOption(index: number): Locator {
+    return this.page.getByTestId(`flight-option-${index}`);
+  }
+
+  hotelOption(index: number): Locator {
+    return this.page.getByTestId(`hotel-option-${index}`);
   }
 
   async expectSendDisabled(): Promise<void> {

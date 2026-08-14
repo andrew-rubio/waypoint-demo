@@ -155,6 +155,39 @@ async function* runFault(kind: string): AsyncIterable<AgentEvent> {
       return;
     }
 
+    // A travel-search turn where the RouteStack MCP fails — the FRD-005 degrade
+    // path. Emits an error-status mcp audit entry and a traveller notice (one
+    // retry, then give up), never a crash.
+    case 'routestack-error': {
+      yield { type: 'decision', summary: 'Search RouteStack for flights and hotels.' };
+      yield { type: 'tool_call', name: 'routestack.flights', args: { from: 'LON', to: 'LIS', depart: '2026-10-14', return: '2026-10-21', party: 2 } };
+      await sleep(60);
+      yield { type: 'tool_result', name: 'routestack.flights', ok: false, result: 'RouteStack request timed out' };
+      yield { type: 'error', code: 'travel_unavailable', message: 'Travel search is unavailable right now. Please try again shortly.' };
+      return;
+    }
+
+    // The RouteStack sandbox token quota is exhausted — explained, not retried.
+    case 'routestack-quota': {
+      yield { type: 'decision', summary: 'Search RouteStack for flights and hotels.' };
+      yield { type: 'tool_call', name: 'routestack.flights', args: { from: 'LON', to: 'LIS', depart: '2026-10-14', return: '2026-10-21', party: 2 } };
+      await sleep(60);
+      yield { type: 'tool_result', name: 'routestack.flights', ok: false, result: 'sandbox token quota exhausted' };
+      yield { type: 'error', code: 'search_quota', message: 'Search quota reached for the demo.' };
+      return;
+    }
+
+    // A booking-simulator failure — an error-status skill audit entry and a
+    // notice, with no confirmation issued (FRD-005 error handling).
+    case 'booking-error': {
+      yield { type: 'decision', summary: 'Simulate a booking for the selected flight and hotel.' };
+      yield { type: 'tool_call', name: 'booking-simulator', args: { flightIndex: 0, hotelIndex: 0 } };
+      await sleep(60);
+      yield { type: 'tool_result', name: 'booking-simulator', ok: false, result: 'booking simulation failed' };
+      yield { type: 'error', code: 'booking_error', message: "Couldn't complete the (simulated) booking. Please try again." };
+      return;
+    }
+
     default:
       yield { type: 'error', code: 'agent_unavailable', message: 'The assistant is unavailable right now.' };
   }

@@ -10,6 +10,12 @@
     },
     "copilotGitHubToken": {
       "value": "${COPILOT_GITHUB_TOKEN}"
+    },
+    "routestackApiKey": {
+      "value": "${ROUTESTACK_API_KEY}"
+    },
+    "routestackSecret": {
+      "value": "${ROUTESTACK_SECRET}"
     }
   }
 }

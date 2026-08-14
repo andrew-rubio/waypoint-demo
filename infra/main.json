@@ -5,7 +5,7 @@
     "_generator": {
       "name": "bicep",
       "version": "0.44.1.10279",
-      "templateHash": "14905024529038258453"
+      "templateHash": "12215534857183685321"
     }
   },
   "parameters": {
@@ -28,6 +28,20 @@
       "defaultValue": "",
       "metadata": {
         "description": "GitHub/Copilot service token for the agent (ADR-002, superseded by ADR-005). Kept for the demo; unused while Foundry BYOK is active."
+      }
+    },
+    "routestackApiKey": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "RouteStack sandbox public API key (INC-5). Empty = deterministic offline catalogue fallback."
+      }
+    },
+    "routestackSecret": {
+      "type": "securestring",
+      "defaultValue": "",
+      "metadata": {
+        "description": "RouteStack HMAC signing secret for the partner-token exchange (INC-5)."
       }
     },
     "useFoundry": {
@@ -57,7 +71,11 @@
     "tags": {
       "azd-env-name": "[parameters('environmentName')]"
     },
-    "apiSecrets": "[if(parameters('useFoundry'), createArray(), if(empty(parameters('copilotGitHubToken')), createArray(), createArray(createObject('name', 'copilot-github-token', 'value', parameters('copilotGitHubToken')))))]"
+    "baseApiSecrets": "[if(parameters('useFoundry'), createArray(), if(empty(parameters('copilotGitHubToken')), createArray(), createArray(createObject('name', 'copilot-github-token', 'value', parameters('copilotGitHubToken')))))]",
+    "hasRoutestack": "[and(not(empty(parameters('routestackApiKey'))), not(empty(parameters('routestackSecret'))))]",
+    "routestackSecrets": "[if(variables('hasRoutestack'), createArray(createObject('name', 'routestack-api-key', 'value', parameters('routestackApiKey')), createObject('name', 'routestack-secret', 'value', parameters('routestackSecret'))), createArray())]",
+    "apiSecrets": "[concat(variables('baseApiSecrets'), variables('routestackSecrets'))]",
+    "routestackEnv": "[if(variables('hasRoutestack'), createArray(createObject('name', 'ROUTESTACK_API_KEY', 'secretRef', 'routestack-api-key'), createObject('name', 'ROUTESTACK_SECRET', 'secretRef', 'routestack-secret')), createArray())]"
   },
   "resources": [
     {
@@ -667,7 +685,7 @@
             "value": 1
           },
           "envVars": {
-            "value": "[concat(createArray(createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'monitoring'), '2025-04-01').outputs.applicationInsightsConnectionString.value)), if(parameters('useFoundry'), createArray(createObject('name', 'FOUNDRY_MODEL_URL', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'foundry'), '2025-04-01').outputs.openAiEndpoint.value), createObject('name', 'FOUNDRY_MODEL', 'value', parameters('foundryModelName')), createObject('name', 'FOUNDRY_USE_MANAGED_IDENTITY', 'value', 'true'), createObject('name', 'AZURE_CLIENT_ID', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'identity'), '2025-04-01').outputs.clientId.value)), if(empty(parameters('copilotGitHubToken')), createArray(), createArray(createObject('name', 'COPILOT_GITHUB_TOKEN', 'secretRef', 'copilot-github-token')))))]"
+            "value": "[concat(createArray(createObject('name', 'APPLICATIONINSIGHTS_CONNECTION_STRING', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'monitoring'), '2025-04-01').outputs.applicationInsightsConnectionString.value)), if(parameters('useFoundry'), createArray(createObject('name', 'FOUNDRY_MODEL_URL', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'foundry'), '2025-04-01').outputs.openAiEndpoint.value), createObject('name', 'FOUNDRY_MODEL', 'value', parameters('foundryModelName')), createObject('name', 'FOUNDRY_USE_MANAGED_IDENTITY', 'value', 'true'), createObject('name', 'AZURE_CLIENT_ID', 'value', reference(extensionResourceId(format('/subscriptions/{0}/resourceGroups/{1}', subscription().subscriptionId, format('rg-{0}', parameters('environmentName'))), 'Microsoft.Resources/deployments', 'identity'), '2025-04-01').outputs.clientId.value)), if(empty(parameters('copilotGitHubToken')), createArray(), createArray(createObject('name', 'COPILOT_GITHUB_TOKEN', 'secretRef', 'copilot-github-token')))), variables('routestackEnv'))]"
           },
           "secrets": {
             "value": "[variables('apiSecrets')]"

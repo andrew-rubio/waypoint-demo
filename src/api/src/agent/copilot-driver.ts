@@ -4,6 +4,7 @@ import type { ProviderConfig } from '@github/copilot-sdk';
 import type { TokenCredential } from '@azure/identity';
 import type { DestinationCandidate } from '../../../shared/types/destination-advice.js';
 import type { WeatherIntent, WeatherRequest, WeatherResult } from '../../../shared/types/weather-and-timing.js';
+import type { TravelSearchRequest, TravelSearchResult } from '../../../shared/types/flight-hotel-search-booking.js';
 import { logger } from '../logger.js';
 import { waypointSkillSessionConfig } from './runtime-skills.js';
 import {
@@ -13,6 +14,18 @@ import {
 } from '../tools/destination-advisor.js';
 import { assessWeather, weatherRequestFromConversation, weatherWindowParameters } from '../tools/weather-window.js';
 import { climateNormals, geocode } from '../tools/open-meteo.js';
+import {
+  bookingSelectionFromMessage,
+  bookingSimulatorParameters,
+  mergeTravelResult,
+  searchTravel,
+  simulateBooking,
+  travelRequestFromConversation,
+  travelSearchParameters,
+  type LiveTravelResult,
+} from '../tools/routestack.js';
+import { rememberSearchOptions, resolveBookingOptions } from '../tools/booking-context.js';
+import { hasRouteStackCredentials, searchLiveTravel } from '../tools/routestack-client.js';
 
 /**
  * The showcase: a real agent powered by the GitHub Copilot SDK.
@@ -162,16 +175,62 @@ export class CopilotAgentDriver implements AgentDriver {
       },
     });
 
+    const travelContext = travelRequestFromConversation(input.message, input.history);
+    const travelSearch = defineTool('travel-search', {
+      description:
+        'Search flights and hotels for a destination and dates, normalise prices to GBP, and return up to three of each. Ask for a departure city if none is known; flag invalid dates and out-of-coverage destinations.',
+      parameters: travelSearchParameters,
+      defer: 'never',
+      handler: async (args) => {
+        const proposed = args as Partial<TravelSearchRequest>;
+        const request: TravelSearchRequest = {
+          destination: proposed.destination ?? travelContext.destination,
+          origin: proposed.origin ?? travelContext.origin,
+          checkIn: proposed.checkIn ?? travelContext.checkIn,
+          checkOut: proposed.checkOut ?? travelContext.checkOut,
+          party: proposed.party ?? travelContext.party,
+          rooms: proposed.rooms ?? travelContext.rooms,
+        };
+        const result = await groundTravel(request, (event) => queue.push(event));
+        if (result.kind === 'options') rememberSearchOptions(input.sessionId, result);
+        queue.push({ type: 'tool_result', name: 'travel-search', ok: true, result });
+        return result;
+      },
+    });
+
+    const bookingSimulator = defineTool('booking-simulator', {
+      description:
+        'Produce a clearly-simulated booking confirmation for a chosen flight and hotel from the last search. No payment is taken and no real reservation is made.',
+      parameters: bookingSimulatorParameters,
+      defer: 'never',
+      handler: (args) => {
+        const proposed = args as { flightIndex?: number; hotelIndex?: number };
+        const selection = {
+          flightIndex: proposed.flightIndex ?? bookingSelectionFromMessage(input.message).flightIndex,
+          hotelIndex: proposed.hotelIndex ?? bookingSelectionFromMessage(input.message).hotelIndex,
+        };
+        const options = resolveBookingOptions(input.sessionId, input.history);
+        if (!options || options.kind !== 'options') {
+          const result = { error: 'No options to book — search for flights and hotels first.' };
+          queue.push({ type: 'tool_result', name: 'booking-simulator', ok: false, result: result.error });
+          return result;
+        }
+        const confirmation = simulateBooking(options, selection, 1);
+        queue.push({ type: 'tool_result', name: 'booking-simulator', ok: true, result: confirmation });
+        return confirmation;
+      },
+    });
+
     const session = await client.createSession({
       ...waypointSkillSessionConfig,
       model,
       streaming: true,
       provider,
-      tools: [destinationAdvisor, weatherWindow],
+      tools: [destinationAdvisor, weatherWindow, travelSearch, bookingSimulator],
       systemMessage: {
         mode: 'append',
         content:
-          'You are Waypoint, a concise holiday-planning assistant. For destination recommendations, refinements or travel-fit questions, call destination-advisor and propose three to five candidate destinations (each a canonical "City, Country" name with a one-line rationale and matchedPreferences) drawn from the traveller\'s stated preferences. For any weather or best-time-to-travel question, call weather-window with the place (and the month if the traveller named one); it geocodes the place and reads Open-Meteo ERA5 1991–2020 climate normals for you. Ground every reply only in the tools\' validated results, preserve canonical place names exactly, always attribute weather figures to Open-Meteo, and never invent prices, weather, availability or travel times.',
+          'You are Waypoint, a concise holiday-planning assistant. For destination recommendations, refinements or travel-fit questions, call destination-advisor and propose three to five candidate destinations (each a canonical "City, Country" name with a one-line rationale and matchedPreferences) drawn from the traveller\'s stated preferences. For any weather or best-time-to-travel question, call weather-window with the place (and the month if the traveller named one); it geocodes the place and reads Open-Meteo ERA5 1991–2020 climate normals for you. To search flights and hotels, call travel-search with the destination, departure city, outbound and return dates (ISO yyyy-mm-dd) and party size; it searches the RouteStack sandbox and normalises prices to GBP — if the traveller has not given a departure city, ask for it. When the traveller chooses options to book, call booking-simulator; the booking is always a clearly-labelled demo simulation with no payment. Ground every reply only in the tools\' validated results, preserve canonical place names exactly, always attribute weather figures to Open-Meteo, and never invent prices, weather, availability or travel times.',
       },
 
       // Called before every tool call. This is where the audit trail is born: we
@@ -198,7 +257,7 @@ export class CopilotAgentDriver implements AgentDriver {
           return { permissionDecision: 'allow' };
         },
         onPostToolUse: async (i: any) => {
-          if (i.toolName !== 'destination-advisor' && i.toolName !== 'weather-window') {
+          if (!['destination-advisor', 'weather-window', 'travel-search', 'booking-simulator'].includes(i.toolName)) {
             queue.push({ type: 'tool_result', name: i.toolName, ok: true, result: i.result });
           }
           return {};
@@ -328,6 +387,73 @@ async function groundWeather(
   push({ type: 'tool_result', name: 'open-meteo.climate', ok: true, result: { place: resolved.name, baseline: '1991–2020', months: climate.length } });
 
   return assessWeather({ place, resolvedName: resolved.name, intent: req.intent, month: req.month, climate });
+}
+
+/**
+ * Ground a travel-search turn in the RouteStack sandbox (direct HTTPS) with GBP
+ * normalisation via the Currency tool. Emits the observable routestack.flights /
+ * currency.convert / routestack.hotels audit calls. Validation and clarification
+ * kinds short-circuit before any MCP call. Falls back to the deterministic
+ * offline catalogue if the live sandbox is unavailable, so the demo always works.
+ */
+async function groundTravel(
+  request: TravelSearchRequest,
+  push: (event: AgentEvent) => void,
+): Promise<TravelSearchResult> {
+  const base = searchTravel(request);
+  // A user-input problem short-circuits before any search.
+  if (base.kind === 'missing-origin' || base.kind === 'invalid-dates' || base.kind === 'party-clarify') {
+    return base;
+  }
+
+  // Always attempt live RouteStack for a valid request — not gated on whether the
+  // offline catalogue covers the city (BUG-004). Offline is the fallback.
+  let live: LiveTravelResult | undefined;
+  if (hasRouteStackCredentials()) {
+    try {
+      live = await searchLiveTravel(request);
+    } catch (err) {
+      logger.warn({ err: String(err) }, 'RouteStack live search failed; using offline catalogue');
+    }
+  }
+
+  const result = mergeTravelResult(request, base, live);
+  if (result.kind !== 'options') return result;
+
+  const flightSource = live?.flights.length ? 'routestack-sandbox' : 'offline-catalogue';
+  const hotelSource = live?.hotels.length ? 'routestack-sandbox' : 'offline-catalogue';
+  const flightCurrency = result.flights[0]?.pricePerTraveller.source.currency ?? 'GBP';
+  const hotelCurrency = result.hotels[0]?.nightlyRate.source.currency ?? 'GBP';
+
+  push({
+    type: 'tool_call',
+    name: 'routestack.flights',
+    args: { from: result.flights[0]?.from, to: result.flights[0]?.to, depart: request.checkIn, return: request.checkOut, party: request.party },
+  });
+  push({ type: 'tool_result', name: 'routestack.flights', ok: true, result: { count: result.flights.length, currency: flightCurrency, source: flightSource } });
+
+  // A supplier price not already in GBP was normalised via the Currency tool (FR-005-4).
+  const converted = [...result.flights.map((f) => f.pricePerTraveller), ...result.hotels.map((h) => h.nightlyRate)].find(
+    (money) => money.source.currency !== 'GBP',
+  );
+  if (converted) {
+    push({ type: 'tool_call', name: 'currency.convert', args: { from: converted.source.currency, to: 'GBP', amount: converted.source.amount } });
+    push({
+      type: 'tool_result',
+      name: 'currency.convert',
+      ok: true,
+      result: { amountGBP: converted.amountGBP, rate: converted.rate, rateTimestamp: converted.rateTimestamp },
+    });
+  }
+
+  push({
+    type: 'tool_call',
+    name: 'routestack.hotels',
+    args: { destination: result.place, checkIn: request.checkIn, checkOut: request.checkOut, rooms: request.rooms ?? 1 },
+  });
+  push({ type: 'tool_result', name: 'routestack.hotels', ok: true, result: { count: result.hotels.length, currency: hotelCurrency, source: hotelSource } });
+
+  return result;
 }
 
 /**

@@ -14,8 +14,8 @@ const waypointAgent = {
   description: 'A concise holiday-planning agent with trusted travel tools.',
   prompt:
     'Help travellers plan holidays. Apply the preloaded skills and ground structured recommendations in their trusted tools.',
-  skills: ['destination-advice', 'weather-window'],
-  tools: ['destination-advisor', 'weather-window'],
+  skills: ['destination-advice', 'weather-window', 'travel-search'],
+  tools: ['destination-advisor', 'weather-window', 'travel-search', 'booking-simulator'],
 };
 
 /** Native Copilot SDK skill discovery and preload configuration for Waypoint. */
