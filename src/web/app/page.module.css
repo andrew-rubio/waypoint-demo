@@ -267,6 +267,106 @@
   }
 }
 
+.weatherBubble {
+  align-self: flex-start;
+  width: min(100%, 680px);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-lg);
+  border-bottom-left-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: #f0f9ff;
+  box-shadow: var(--shadow-sm);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .weatherBubble {
+    animation: enter var(--dur-card) var(--ease-out);
+  }
+}
+
+.weatherCard h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-3);
+  color: var(--color-text);
+  font-family: var(--font-heading);
+  font-size: var(--text-base);
+}
+
+.weatherCard h2 svg {
+  color: #f59e0b;
+}
+
+.weatherMonthName {
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-heading);
+  font-size: var(--text-base);
+  color: var(--color-text);
+}
+
+.weatherFigures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.weatherFig {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.weatherFig strong {
+  color: var(--color-text);
+}
+
+.weatherWindow {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-3);
+}
+
+.weatherCol h3 {
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-heading);
+  font-size: var(--text-sm);
+  color: var(--color-text);
+}
+
+.weatherList {
+  margin: 0;
+  padding-left: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.weatherList li {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: 1.5;
+}
+
+.weatherList li strong {
+  color: var(--color-text);
+}
+
+.weatherSource {
+  margin: var(--space-3) 0 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+@media (max-width: 560px) {
+  .weatherWindow {
+    grid-template-columns: 1fr;
+  }
+}
+
 .caret {
   display: inline-block;
   width: 8px;

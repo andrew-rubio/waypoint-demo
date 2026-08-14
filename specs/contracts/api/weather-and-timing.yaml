@@ -1,0 +1,162 @@
+# API contract — Weather & Best-Time-to-Travel (FRD-004, INC-4)
+# This feature extends the existing POST /api/chat SSE stream. It adds no public
+# endpoint: weather-window is an internal Copilot SDK skill, and Open-Meteo is a
+# real MCP server (ADR-006) whose calls are observable through the FRD-001
+# tool_call/tool_result event contract.
+feature: weather-and-timing
+version: "1.0"
+extends: chat-and-agent-runtime
+basePath: /api
+
+endpoints:
+  - path: /chat
+    method: POST
+    inheritedFrom: chat-and-agent-runtime
+    description: >-
+      Weather and best-time questions run inside the existing chat turn. The
+      agent geocodes and reads climate from the Open-Meteo MCP, then the
+      weather-window skill structures the result. The response remains
+      text/event-stream and adds the MCP call lifecycle plus a weather-window
+      tool_result carrying a WeatherResult.
+    auth: none
+    request:
+      body:
+        type: ChatRequest
+    responses:
+      200:
+        contentType: text/event-stream
+        addedEventContract:
+          mcpGeocoding:
+            type: tool_call
+            name: open-meteo.geocoding
+            args: { query: string }
+            note: openmeteo_search_locations, normalised to open-meteo.geocoding in the audit trail
+          mcpClimate:
+            type: tool_call
+            name: open-meteo.climate
+            args: { latitude: number, longitude: number, baseline: string }
+            note: openmeteo_get_historical / openmeteo_get_forecast, normalised to open-meteo.climate
+          toolCall:
+            type: tool_call
+            name: weather-window
+            args: WeatherRequest
+          toolResult:
+            type: tool_result
+            name: weather-window
+            ok: boolean
+            result: WeatherResult
+      error:
+        description: >-
+          An Open-Meteo MCP failure emits an error-status mcp audit entry and a
+          traveller-facing notice without terminating the session (one retry,
+          then give up).
+        message: "Weather data is unavailable right now. Please try again shortly."
+
+schemas:
+  WeatherRequest:
+    type: object
+    required: [place]
+    properties:
+      place: { type: string, description: The destination as the traveller said it. }
+      intent: { type: string, enum: [month-weather, best-time] }
+      month: { type: string, description: Target calendar month for month-weather. }
+      resolvedName: { type: string, description: Canonical "City, Country" from geocoding. }
+      country: { type: string }
+      climate:
+        type: array
+        description: Monthly climate normals from the Open-Meteo MCP.
+        items: { type: MonthlyClimate }
+
+  MonthlyClimate:
+    type: object
+    required: [month, tempMaxC, tempMinC, precipMm]
+    properties:
+      month: { type: string }
+      tempMaxC: { type: number }
+      tempMinC: { type: number }
+      precipMm: { type: number }
+
+  WeatherResult:
+    oneOf:
+      - kind: month-weather
+        required: [place, month, tempMaxC, tempMinC, precipMm, basis, source]
+        properties:
+          place: { type: string, description: Canonical resolved place, e.g. Lisbon, Portugal. }
+          month: { type: string }
+          tempMaxC: { type: number, description: Average daily maximum in °C. }
+          tempMinC: { type: number, description: Average daily minimum in °C. }
+          precipMm: { type: number, description: Monthly total precipitation in mm. }
+          basis: { type: string, enum: [climate-normal, forecast] }
+          baseline: { type: string, optional: true, description: e.g. "1991–2020". }
+          source: { const: open-meteo }
+      - kind: weather-window
+        required: [place, recommendedMonths, avoidMonths, source]
+        properties:
+          place: { type: string }
+          recommendedMonths:
+            type: array
+            minItems: 1
+            items: { type: WeatherMonthReason }
+          avoidMonths:
+            type: array
+            minItems: 1
+            items: { type: WeatherMonthReason }
+          source: { const: open-meteo }
+      - kind: unknown-place
+        required: [message]
+        properties:
+          message: { type: string }
+      - kind: ambiguous-place
+        required: [message, candidates]
+        properties:
+          message: { type: string }
+          candidates:
+            type: array
+            minItems: 2
+            items:
+              type: object
+              required: [name, country]
+              properties:
+                name: { type: string }
+                country: { type: string }
+      - kind: no-data
+        required: [message]
+        properties:
+          message: { type: string }
+          place: { type: string, optional: true }
+
+  WeatherMonthReason:
+    type: object
+    required: [month, reason]
+    properties:
+      month: { type: string }
+      reason: { type: string }
+
+coverage:
+  AC-004-1: month-weather result reports the monthly °C range and mm precipitation for a resolved place
+  AC-004-2: weather-window result lists recommended and avoid months, each with a reason
+  AC-004-3: figures derive from the open-meteo.geocoding + open-meteo.climate MCP calls in the audit trail
+  AC-004-4: unknown-place result asks for a real destination and shows no card
+  FR-004-1: geocoding precedes any weather request (open-meteo.geocoding)
+  FR-004-2: ERA5 1991–2020 climate normals, °C and mm
+  FR-004-4: replies attribute figures to Open-Meteo
+  FR-004-5: geocoding + climate calls emit mcp audit entries with request/response summaries
+  edge-ambiguous: ambiguous-place result lists candidates to choose from
+  edge-open-ocean: no-data result reports missing data and shows no fabricated figures
+  error-mcp: an Open-Meteo failure emits an error-status mcp audit entry and a degrade notice
+
+infrastructure:
+  changes: none
+  grounding:
+    provider: Open-Meteo (keyless, CC BY 4.0)
+    client: direct REST from the API (src/api/src/tools/open-meteo.ts)
+    endpoints: [geocoding-api.open-meteo.com, archive-api.open-meteo.com]
+    adr: specs/adrs/adr-006-open-meteo-mcp.md
+    note: >-
+      A self-hosted Open-Meteo MCP container app was implemented first (ADR-006),
+      but @github/copilot-sdk 1.0.9-preview.3 did not surface MCP tools to the
+      Foundry-BYOK session, so the weather-window tool grounds via a direct REST
+      client instead — emitting the same open-meteo.geocoding / open-meteo.climate
+      audit entries backed by live ERA5 1991–2020 data.
+  secrets: none
+  azureResources: none

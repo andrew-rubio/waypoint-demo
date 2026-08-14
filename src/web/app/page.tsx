@@ -2,6 +2,7 @@
 
 import { Fragment, useState, type KeyboardEvent } from 'react';
 import type { DestinationSuggestion } from '../../shared/types/destination-advice';
+import type { WeatherCardResult } from '../../shared/types/weather-and-timing';
 import { useChat, type UiMessage } from '../lib/useChat';
 import { AuditPanel } from './AuditPanel';
 import { Markdown } from './Markdown';
@@ -19,6 +20,7 @@ export default function ChatPage() {
 
   const canSend = draft.trim().length > 0 && !streaming;
   const activeDestinationMessage = latestDestinationMessageIndex(messages);
+  const activeWeatherMessage = latestWeatherMessageIndex(messages);
 
   const submit = async () => {
     if (!canSend) return;
@@ -78,6 +80,7 @@ export default function ChatPage() {
             {messages.map((m, i) => {
               const isStreamingBubble = streaming && i === messages.length - 1 && m.role === 'assistant';
               const showDestinations = m.role === 'assistant' && i === activeDestinationMessage && !isStreamingBubble;
+              const showWeather = m.role === 'assistant' && i === activeWeatherMessage && !isStreamingBubble;
               return (
                 <Fragment key={i}>
                   <div
@@ -90,6 +93,7 @@ export default function ChatPage() {
                   {showDestinations && (
                     <DestinationList message={m} onExplore={(name) => setDraft(`Tell me more about ${name}`)} />
                   )}
+                  {showWeather && <WeatherCard message={m} />}
                 </Fragment>
               );
             })}
@@ -140,6 +144,83 @@ function latestDestinationMessageIndex(messages: UiMessage[]): number {
     if (advice && 'suggestions' in advice) return index;
   }
   return -1;
+}
+
+function latestWeatherMessageIndex(messages: UiMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].weatherAdvice) return index;
+  }
+  return -1;
+}
+
+function WeatherCard({ message }: { message: UiMessage }) {
+  const weather = message.weatherAdvice;
+  if (!weather) return null;
+  const baseline = weather.kind === 'month-weather' ? weather.baseline ?? '1991–2020' : '1991–2020';
+  return (
+    <section className={styles.weatherBubble} aria-label="Weather summary">
+      <div className={styles.weatherCard} data-testid="weather-card">
+        <h2>
+          <SunIcon />
+          {weather.place}
+        </h2>
+        {weather.kind === 'month-weather' ? (
+          <WeatherMonth weather={weather} />
+        ) : (
+          <WeatherWindow weather={weather} />
+        )}
+        <p className={styles.weatherSource} data-testid="weather-source">
+          Source: Open-Meteo (ERA5 {baseline} normals)
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function WeatherMonth({ weather }: { weather: Extract<WeatherCardResult, { kind: 'month-weather' }> }) {
+  return (
+    <div className={styles.weatherMonth}>
+      <p className={styles.weatherMonthName}>{weather.month}</p>
+      <div className={styles.weatherFigures}>
+        <span className={styles.weatherFig}>
+          <strong>{weather.tempMaxC}°C</strong> day
+        </span>
+        <span className={styles.weatherFig}>
+          <strong>{weather.tempMinC}°C</strong> night
+        </span>
+        <span className={styles.weatherFig}>
+          <strong>{weather.precipMm} mm</strong> rain
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function WeatherWindow({ weather }: { weather: Extract<WeatherCardResult, { kind: 'weather-window' }> }) {
+  return (
+    <div className={styles.weatherWindow}>
+      <div className={styles.weatherCol}>
+        <h3>Best months</h3>
+        <ul className={styles.weatherList} data-testid="weather-recommended">
+          {weather.recommendedMonths.map((m) => (
+            <li key={m.month}>
+              <strong>{m.month}</strong> — {m.reason}
+            </li>
+          ))}
+        </ul>
+      </div>
+      <div className={styles.weatherCol}>
+        <h3>Months to avoid</h3>
+        <ul className={styles.weatherList} data-testid="weather-avoid">
+          {weather.avoidMonths.map((m) => (
+            <li key={m.month}>
+              <strong>{m.month}</strong> — {m.reason}
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
 }
 
 function DestinationList({ message, onExplore }: { message: UiMessage; onExplore: (name: string) => void }) {
@@ -230,6 +311,14 @@ function MapPinIcon() {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
       <path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 1 1 16 0Z" />
       <circle cx="12" cy="10" r="3" />
+    </svg>
+  );
+}
+function SunIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />
     </svg>
   );
 }

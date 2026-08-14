@@ -143,6 +143,18 @@ async function* runFault(kind: string): AsyncIterable<AgentEvent> {
       return;
     }
 
+    // A weather turn where the Open-Meteo MCP fails — the FRD-004 degrade path.
+    // Geocoding is attempted, fails, and surfaces both a chat notice and an
+    // error-status MCP audit entry (never a crash). One retry, then give up.
+    case 'weather-mcp-error': {
+      yield { type: 'decision', summary: 'Use the Open-Meteo MCP to check the weather.' };
+      yield { type: 'tool_call', name: 'open-meteo.geocoding', args: { query: 'Lisbon' } };
+      await sleep(60);
+      yield { type: 'tool_result', name: 'open-meteo.geocoding', ok: false, result: 'Open-Meteo request timed out' };
+      yield { type: 'error', code: 'weather_unavailable', message: 'Weather data is unavailable right now. Please try again shortly.' };
+      return;
+    }
+
     default:
       yield { type: 'error', code: 'agent_unavailable', message: 'The assistant is unavailable right now.' };
   }

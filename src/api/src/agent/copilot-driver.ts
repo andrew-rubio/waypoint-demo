@@ -1,8 +1,9 @@
-import type { AgentEvent } from '../../../shared/types/chat-and-agent-runtime.js';
+import type { AgentEvent, ChatMessage } from '../../../shared/types/chat-and-agent-runtime.js';
 import type { AgentDriver, AgentInput } from './driver.js';
 import type { ProviderConfig } from '@github/copilot-sdk';
 import type { TokenCredential } from '@azure/identity';
 import type { DestinationCandidate } from '../../../shared/types/destination-advice.js';
+import type { WeatherIntent, WeatherRequest, WeatherResult } from '../../../shared/types/weather-and-timing.js';
 import { logger } from '../logger.js';
 import { waypointSkillSessionConfig } from './runtime-skills.js';
 import {
@@ -10,6 +11,8 @@ import {
   destinationAdvisorParameters,
   destinationRequestFromConversation,
 } from '../tools/destination-advisor.js';
+import { assessWeather, weatherRequestFromConversation, weatherWindowParameters } from '../tools/weather-window.js';
+import { climateNormals, geocode } from '../tools/open-meteo.js';
 
 /**
  * The showcase: a real agent powered by the GitHub Copilot SDK.
@@ -138,20 +141,41 @@ export class CopilotAgentDriver implements AgentDriver {
       },
     });
 
+    const weatherContext = weatherRequestFromConversation(input.message, input.history);
+    const weatherWindow = defineTool('weather-window', {
+      description:
+        'Answer a weather or best-time-to-travel question for a place. It geocodes the place and reads ERA5 1991–2020 climate normals from Open-Meteo, then returns a grounded monthly summary or best-time window.',
+      parameters: weatherWindowParameters,
+      defer: 'never',
+      handler: async (args) => {
+        const proposed = args as Partial<WeatherRequest>;
+        const result = await groundWeather(
+          {
+            place: proposed.place ?? weatherContext.place,
+            intent: proposed.intent ?? weatherContext.intent,
+            month: proposed.month ?? weatherContext.month,
+          },
+          (event) => queue.push(event),
+        );
+        queue.push({ type: 'tool_result', name: 'weather-window', ok: true, result });
+        return result;
+      },
+    });
+
     const session = await client.createSession({
       ...waypointSkillSessionConfig,
       model,
       streaming: true,
       provider,
-      tools: [destinationAdvisor],
+      tools: [destinationAdvisor, weatherWindow],
       systemMessage: {
         mode: 'append',
         content:
-          'You are Waypoint, a concise holiday-planning assistant. For destination recommendations, refinements or travel-fit questions, call destination-advisor and propose three to five candidate destinations (each a canonical "City, Country" name with a one-line rationale and matchedPreferences) drawn from the traveller\'s stated preferences. Ground your reply only in the tool\'s validated, ranked result and preserve canonical place names exactly. Never invent prices, live weather, availability or travel times.',
+          'You are Waypoint, a concise holiday-planning assistant. For destination recommendations, refinements or travel-fit questions, call destination-advisor and propose three to five candidate destinations (each a canonical "City, Country" name with a one-line rationale and matchedPreferences) drawn from the traveller\'s stated preferences. For any weather or best-time-to-travel question, call weather-window with the place (and the month if the traveller named one); it geocodes the place and reads Open-Meteo ERA5 1991–2020 climate normals for you. Ground every reply only in the tools\' validated results, preserve canonical place names exactly, always attribute weather figures to Open-Meteo, and never invent prices, weather, availability or travel times.',
       },
 
-      // Called before every tool / MCP call. This is where the audit trail is
-      // born: we record the decision, enforce the allowlist, then approve.
+      // Called before every tool call. This is where the audit trail is born: we
+      // record the decision, enforce the MCP allowlist, then approve.
       onPermissionRequest: (request: any) => {
         const name: string = request.toolName ?? request.kind ?? 'tool';
         queue.push({ type: 'decision', summary: `Use ${name} to help answer the request.` });
@@ -166,13 +190,15 @@ export class CopilotAgentDriver implements AgentDriver {
       },
 
       // Observe tool execution start/finish and surface them to the audit trail.
+      // destination-advisor and weather-window emit their own results from their
+      // handlers (weather-window also emits its nested open-meteo.* calls).
       hooks: {
         onPreToolUse: async (i: any) => {
           queue.push({ type: 'tool_call', name: i.toolName, args: i.toolArgs });
           return { permissionDecision: 'allow' };
         },
         onPostToolUse: async (i: any) => {
-          if (i.toolName !== 'destination-advisor') {
+          if (i.toolName !== 'destination-advisor' && i.toolName !== 'weather-window') {
             queue.push({ type: 'tool_result', name: i.toolName, ok: true, result: i.result });
           }
           return {};
@@ -202,7 +228,7 @@ export class CopilotAgentDriver implements AgentDriver {
       // no external tool is called (a plain conversational reply).
       queue.push({ type: 'decision', summary: 'Plan a reply for the traveller.' });
       queue.push({ type: 'tool_call', name: 'copilot.chat', args: { model: model ?? 'copilot', prompt: input.message } });
-      await session.send({ prompt: input.message });
+      await session.send({ prompt: buildContextualPrompt(input.message, input.history) });
       // Drain events until the session goes idle.
       for await (const event of queue) {
         yield event;
@@ -229,6 +255,79 @@ function markdownToPlainText(value: string): string {
     .replace(/\[([^\]]+)]\([^)]*\)/g, '$1')
     .replace(/[*_~`]/g, '')
     .trim();
+}
+
+/**
+ * The session is stateless per request, so give the model the recent conversation
+ * as context. This lets it resolve references like "there" / "that place" to the
+ * destination discussed earlier (the audit `copilot.chat` entry still shows only
+ * the traveller's actual message).
+ */
+function buildContextualPrompt(message: string, history: ChatMessage[]): string {
+  const prior = history
+    .filter((m) => m.content?.trim() && m.content !== message)
+    .slice(-6)
+    .map((m) => `${m.role === 'user' ? 'Traveller' : 'Assistant'}: ${truncate(m.content, 500)}`)
+    .join('\n');
+  return prior ? `Conversation so far:\n${prior}\n\nTraveller: ${message}` : message;
+}
+
+function truncate(value: string, max: number): string {
+  return value.length > max ? value.slice(0, max - 1) + '…' : value;
+}
+
+/**
+ * Ground a weather turn in real Open-Meteo data (ADR-006, Option C). Emits the
+ * observable `open-meteo.geocoding` and `open-meteo.climate` audit calls, then
+ * hands the resolved place + real climate normals to the pure weather-window
+ * tool. Degrades gracefully (embedded model / unknown-place) on failure.
+ */
+async function groundWeather(
+  req: { place: string; intent?: WeatherIntent; month?: string },
+  push: (event: AgentEvent) => void,
+): Promise<WeatherResult> {
+  const place = req.place.trim();
+
+  push({ type: 'tool_call', name: 'open-meteo.geocoding', args: { query: place } });
+  let geo;
+  try {
+    geo = await geocode(place);
+  } catch (err) {
+    push({ type: 'tool_result', name: 'open-meteo.geocoding', ok: false, result: String(err) });
+    return assessWeather({ place, intent: req.intent, month: req.month });
+  }
+  if (geo.kind === 'none') {
+    push({ type: 'tool_result', name: 'open-meteo.geocoding', ok: true, result: { query: place, matches: 0 } });
+    return { kind: 'unknown-place', message: `could not locate "${place}"` };
+  }
+  if (geo.kind === 'ambiguous') {
+    push({ type: 'tool_result', name: 'open-meteo.geocoding', ok: true, result: { query: place, matches: geo.candidates.length, candidates: geo.candidates } });
+    return { kind: 'ambiguous-place', message: `Several places are called ${place}.`, candidates: geo.candidates };
+  }
+
+  const resolved = geo.place;
+  push({
+    type: 'tool_result',
+    name: 'open-meteo.geocoding',
+    ok: true,
+    result: { name: resolved.name, country: resolved.country, latitude: resolved.latitude, longitude: resolved.longitude, timezone: resolved.timezone },
+  });
+
+  push({
+    type: 'tool_call',
+    name: 'open-meteo.climate',
+    args: { latitude: resolved.latitude, longitude: resolved.longitude, baseline: '1991-2020', daily: ['temperature_2m_max', 'temperature_2m_min', 'precipitation_sum'] },
+  });
+  let climate;
+  try {
+    climate = await climateNormals(resolved.latitude, resolved.longitude);
+  } catch (err) {
+    push({ type: 'tool_result', name: 'open-meteo.climate', ok: false, result: String(err) });
+    return assessWeather({ place, resolvedName: resolved.name, intent: req.intent, month: req.month });
+  }
+  push({ type: 'tool_result', name: 'open-meteo.climate', ok: true, result: { place: resolved.name, baseline: '1991–2020', months: climate.length } });
+
+  return assessWeather({ place, resolvedName: resolved.name, intent: req.intent, month: req.month, climate });
 }
 
 /**

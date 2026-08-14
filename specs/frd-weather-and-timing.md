@@ -75,6 +75,14 @@ plain-English recommendation of ideal (and poor) travel months.
 - Weather: forecast or ERA5 historical daily series → temperature and precipitation series.
 - Climate aggregation: 1991–2020 inclusive; group by calendar month; require >=90% daily completeness; output °C and mm.
 
+> **Implementation (ADR-006, Option C):** weather is grounded by a **direct Open-Meteo
+> REST client** (`src/api/src/tools/open-meteo.ts`) called from the `weather-window` tool
+> — `geocoding-api.open-meteo.com` for geocoding and `archive-api.open-meteo.com` for the
+> ERA5 1991–2020 archive (aggregated to monthly normals). It emits the observable
+> `open-meteo.geocoding` and `open-meteo.climate` audit entries. (A self-hosted Open-Meteo
+> MCP was implemented first but the `@github/copilot-sdk` preview could not surface MCP
+> tools to the Foundry-BYOK session — see ADR-006.)
+
 ```ts
 type WeatherWindow = {
   place: string;

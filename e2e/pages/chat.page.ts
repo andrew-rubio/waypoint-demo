@@ -19,6 +19,10 @@ export class ChatPage {
   readonly sendButton: Locator;
   readonly errorNotice: Locator;
   readonly destinationList: Locator;
+  readonly weatherCard: Locator;
+  readonly weatherSource: Locator;
+  readonly weatherRecommended: Locator;
+  readonly weatherAvoid: Locator;
 
   constructor(page: Page) {
     this.page = page;
@@ -33,6 +37,10 @@ export class ChatPage {
     this.sendButton = page.getByTestId('send-button');
     this.errorNotice = page.getByTestId('error-notice');
     this.destinationList = page.getByTestId('destination-list');
+    this.weatherCard = page.getByTestId('weather-card');
+    this.weatherSource = page.getByTestId('weather-source');
+    this.weatherRecommended = page.getByTestId('weather-recommended');
+    this.weatherAvoid = page.getByTestId('weather-avoid');
   }
 
   async goto(): Promise<void> {

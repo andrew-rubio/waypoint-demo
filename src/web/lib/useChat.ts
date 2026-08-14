@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { AgentEvent } from '../../shared/types/chat-and-agent-runtime';
 import type { DestinationAdviceResult } from '../../shared/types/destination-advice';
+import type { WeatherCardResult } from '../../shared/types/weather-and-timing';
 import { applyAuditEvent, auditTurns, emptyAuditState, type AuditState } from '../../shared/audit';
 
 /** A message as shown in the UI (flat list; index drives the data-testid). */
@@ -10,6 +11,7 @@ export interface UiMessage {
   role: 'user' | 'assistant';
   content: string;
   destinationAdvice?: DestinationAdviceResult;
+  weatherAdvice?: WeatherCardResult;
 }
 
 /** Anything longer than this is shortened for the agent (edge case). */
@@ -158,6 +160,14 @@ function applyEvent(
       if (last?.role === 'assistant') next[next.length - 1] = { ...last, destinationAdvice };
       return next;
     });
+  } else if (event.type === 'tool_result' && event.name === 'weather-window' && event.ok && isWeatherAdvice(event.result)) {
+    const weatherAdvice = event.result;
+    setMessages((prev) => {
+      const next = [...prev];
+      const last = next[next.length - 1];
+      if (last?.role === 'assistant') next[next.length - 1] = { ...last, weatherAdvice };
+      return next;
+    });
   } else if (event.type === 'error') {
     setError(event.message);
   }
@@ -170,6 +180,15 @@ function isDestinationAdvice(value: unknown): value is DestinationAdviceResult {
   if (kind === 'clarification' || kind === 'redirect') return typeof (value as { message?: unknown }).message === 'string';
   if (kind !== 'shortlist' && kind !== 'no-match') return false;
   return Array.isArray((value as { suggestions?: unknown }).suggestions);
+}
+
+/** Only month-weather and best-time windows render as a card; other kinds are reply text only. */
+function isWeatherAdvice(value: unknown): value is WeatherCardResult {
+  if (!value || typeof value !== 'object' || !('kind' in value)) return false;
+  const kind = (value as { kind: unknown }).kind;
+  if (kind === 'month-weather') return typeof (value as { tempMaxC?: unknown }).tempMaxC === 'number';
+  if (kind === 'weather-window') return Array.isArray((value as { recommendedMonths?: unknown }).recommendedMonths);
+  return false;
 }
 
 /** Minimal SSE reader: split on blank lines, parse each `data:` JSON payload. */

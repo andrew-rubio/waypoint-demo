@@ -1,11 +1,136 @@
 {
   "mode": "greenfield",
   "phase": "increment-delivery",
-  "step": "deployment",
+  "step": "delivered",
   "status": "in-progress",
-  "currentIncrement": "INC-3",
-  "lastUpdated": "2026-08-14T00:05:00Z",
+  "currentIncrement": "INC-4",
+  "lastUpdated": "2026-08-14T12:05:00Z",
   "increments_progress": {
+    "BUG-002": {
+      "type": "bug-fix",
+      "frd": "FRD-004",
+      "status": "deployment-verified",
+      "requested_at": "2026-08-14T12:20:00Z",
+      "report": "Multi-turn: ask for mountain destinations, drill into one, then ask 'best months to travel there without it being too hot' — the agent returned Open-Meteo temps for a completely different place because it lost conversation context.",
+      "rootCause": "The Copilot session is created fresh per request and only the current message was sent (session.send({prompt: input.message})); conversation history was never given to the model, so contextual references like 'there' could not be resolved. The tool-context helpers also ignored their history argument.",
+      "test": "src/api/tests/unit/weather-window.test.ts — 'resolves a contextual place (\"there\") from the conversation (BUG-002)'",
+      "redBaseline": "Failed: no weather-window result / resolved to the wrong place",
+      "fix": [
+        "weather-window.ts: weatherRequestFromConversation now inherits the most recently discussed place from history when the current turn names no recognisable place; isWeatherQuery broadened to catch 'best months'/'too hot'/'when...travel' and to exclude 'somewhere'/'anywhere'; added Innsbruck + Zermatt to the embedded climate table (align with the destination pool)",
+        "copilot-driver.ts: buildContextualPrompt sends the model a short recent-conversation transcript so it resolves references in production (audit copilot.chat still shows only the user's message)"
+      ],
+      "validation": "38/38 unit tests; skip scan clean; live 3-turn smoke — turn 3 'there' resolved to Innsbruck, Austria via real open-meteo.geocoding+climate",
+      "deployment": { "status": "verified", "service": "api", "verified_at": "2026-08-14T12:40:00Z" },
+      "humanGates": { "testCode": true, "deployment": true }
+    },
+    "INC-4": {
+      "frd": "FRD-004",
+      "name": "weather-and-timing",
+      "depends_on": ["INC-1", "INC-3"],
+      "status": "done",
+      "started_at": "2026-08-14T00:30:00Z",
+      "decision": {
+        "openMeteoIntegration": "Option A — real MCP server (user-selected 2026-08-14)",
+        "mcpServer": "@cyanheads/open-meteo-mcp-server (Apache-2.0, keyless), stdio transport, bundled as src/api dependency; API image node:22-slim -> node:24-slim",
+        "adr": "specs/adrs/adr-006-open-meteo-mcp.md",
+        "tools": ["openmeteo_search_locations", "openmeteo_get_historical", "openmeteo_get_forecast"],
+        "auditNaming": "open-meteo.geocoding + open-meteo.climate (mcp type)",
+        "determinism": "LocalAgentDriver + weather-window tool fall back to embedded ERA5-style climate table for tests/offline"
+      },
+      "humanGates": {
+        "gherkin": true,
+        "testCode": true,
+        "implementation": true,
+        "deployment": true
+      },
+      "tests": {
+        "status": "approved",
+        "gherkin": {
+          "path": "specs/features/weather-and-timing.feature",
+          "status": "approved",
+          "scenarios": 8,
+          "coverage": "AC-004-1 month weather, AC-004-2 best time, AC-004-3 grounded+source, AC-004-4 unknown place, ambiguous name, open-ocean no-data (no fabrication), weather MCP failure degrade, audit visibility (FR-004-5)"
+        },
+        "e2e": {
+          "status": "approved",
+          "files": ["e2e/weather-and-timing.spec.ts", "e2e/pages/chat.page.ts"],
+          "tests": 6,
+          "validation": "playwright --list: 24/24 discovered across the full suite (18 prior + 6 weather)"
+        },
+        "bdd": {
+          "files": ["tests/features/step-definitions/weather-and-timing.steps.ts"],
+          "status": "approved",
+          "validation": "Cucumber dry-run: 46 scenarios / 227 steps mapped; zero undefined or ambiguous"
+        },
+        "unit": {
+          "files": ["src/api/tests/unit/weather-window.test.ts"],
+          "status": "approved",
+          "tests": 7,
+          "baseline": "red->green: 7/7 pass after implementation (1 is a destination regression guard)"
+        },
+        "regression": "Full unit suite 37/37 pass; skip scan clean; Cucumber 46 mapped; Playwright 24 discovered"
+      },
+      "contracts": {
+        "status": "done",
+        "sharedTypes": ["src/shared/types/weather-and-timing.ts"],
+        "api": ["specs/contracts/api/weather-and-timing.yaml"],
+        "infra": "MCP added (open-meteo stdio); no new Azure resource; API image node:22-slim -> node:24-slim",
+        "validation": "shared type + WeatherCardResult compile; Next.js production build type-checks clean"
+      },
+      "implementation": {
+        "status": "approved",
+        "slices": {
+          "api": {
+            "status": "green",
+            "modifiedFiles": [
+              "src/api/src/tools/weather-window.ts",
+              "src/api/src/agent/local-driver.ts",
+              "src/api/src/agent/runtime.ts",
+              "src/api/src/agent/runtime-skills.ts",
+              "src/api/src/agent/copilot-driver.ts",
+              "src/api/src/agent/skills/weather-window/SKILL.md",
+              "src/api/package.json",
+              "src/api/Dockerfile"
+            ],
+            "validation": "37/37 unit tests pass; weather 7/7; destination regression intact; diagnostics clean"
+          },
+          "web": {
+            "status": "green",
+            "modifiedFiles": ["src/web/lib/useChat.ts", "src/web/app/page.tsx", "src/web/app/page.module.css"],
+            "validation": "Next.js optimized production build passes with type-check"
+          },
+          "integration": {
+            "status": "verified-via-unit-and-build",
+            "note": "Full co-hosted e2e/BDD is unreliable in this sandbox (server reaping); validated via unit + build + discovery here and by deploy smoke at Step 4, as with INC-3."
+          }
+        },
+        "productionPath": {
+          "note": "copilot-driver + runtime-skills register the real Open-Meteo MCP (stdio) and normalize tool names to open-meteo.geocoding/climate; not exercised by local tests; validate at deploy (ADR-006).",
+          "riskFallback": "Self-host MCP as a Container App (Streamable HTTP) or Option B HTTP client if the stdio subprocess is unreliable in ACA."
+        },
+        "specsPropagated": ["specs/tech-stack.md", "specs/frd-weather-and-timing.md"]
+      },
+      "deployment": {
+        "status": "smoke-verified",
+        "deployed_at": "2026-08-14T11:55:00Z",
+        "tool": "azd up (Option C infra: removed ca-openmeteo, API node:22) + azd deploy api iterations",
+        "resourceGroup": "rg-waypoint",
+        "region": "swedencentral",
+        "approach": "ADR-006 Option C — direct Open-Meteo REST grounding after the SDK preview could not surface MCP tools to the Foundry-BYOK session (5 deploys, 3 registration paths, public MCP all failed).",
+        "health": "API /health 200; MCP container app deleted; API on node:22-slim; Foundry gpt-5.4-mini",
+        "liveWeatherVerified": {
+          "monthWeather": "Lisbon June -> real open-meteo.geocoding (Lisbon, Portugal 38.72/-9.15) + open-meteo.climate (ERA5 1991-2020, 12 months) -> 24C/17C/11mm; reply cites Open-Meteo",
+          "bestTime": "Iceland -> real geocoding+climate -> recommended Jul/May/Jun, avoid Jan/Dec (real ERA5)",
+          "ambiguous": "Springfield -> real geocoding -> ambiguous-place with MO/IL/MA/OH candidates (population-based disambiguation; Lisbon resolves outright)",
+          "namePolish": "country-dedup so Iceland shows 'Iceland' not 'Iceland, Iceland'"
+        },
+        "auditEntries": "open-meteo.geocoding + open-meteo.climate emitted as real mcp-typed entries with request/response summaries",
+        "builtInToolLeak": "fixed (availableTools ['custom:*'])",
+        "regression": "destination-advisor + plain chat verified live on the final revision (Madeira/Gran Canaria/Bali)",
+        "cleanup": "ca-openmeteo container app deleted; Bicep MCP module removed; @cyanheads dep + Node24 reverted; dead MCP-registration code removed",
+        "userVerified": "User confirmed the live weather flow looks great (deployment gate approved 2026-08-14)"
+      }
+    },
     "INC-3": {
       "frd": "FRD-003",
       "name": "destination-advice",
@@ -452,7 +577,8 @@
         "specs/adrs/adr-002-model-auth.md",
         "specs/adrs/adr-003-hosting-aca.md",
         "specs/adrs/adr-004-frontend-styling.md",
-        "specs/adrs/adr-005-byok-foundry-model.md"
+        "specs/adrs/adr-005-byok-foundry-model.md",
+        "specs/adrs/adr-006-open-meteo-mcp.md"
       ],
       "decisions": {
         "agentRuntime": "@github/copilot-sdk (Node/TS)",

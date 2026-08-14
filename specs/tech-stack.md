@@ -74,7 +74,7 @@ flowchart LR
 | Server | Package/endpoint | Purpose | Secret | Increment |
 |--------|------------------|---------|--------|-----------|
 | **RouteStack.ai** | `@routestack/sdk` / MCP (sandbox) | Live flights + hotels; simulated booking | `ROUTESTACK_API_KEY` | INC-5 |
-| **Open-Meteo** | community Open-Meteo MCP (wraps free API) | Geocoding + ERA5 climate + forecast | none (keyless) | INC-4 |
+| **Open-Meteo** | direct REST client (`geocoding-api` + `archive-api`, keyless) | Geocoding + ERA5 1991–2020 climate | none (keyless) | INC-4 |
 | **Microsoft Fabric Data Agent** | Fabric-hosted MCP endpoint | Synthetic loyalty/points, trip history, preferences | `FABRIC_*` | INC-6 |
 | **Currency** | currency-exchange MCP | GBP→EUR conversion + rate/timestamp | `CURRENCY_API_KEY` (if required) | INC-5, INC-7 |
 - **Wiring:** Registered via Copilot SDK MCP configuration with an **allowlist** (only these four). Secrets from Container Apps secrets/env. All calls validated + redacted in the audit trail.
@@ -168,7 +168,7 @@ Goal: keep idle cost near zero and pay only while demoing.
 | INC-1 | Copilot SDK, Express SSE, Next.js, Aspire, azd/Bicep, App Insights, pino, Zod, Vitest/Cucumber/Playwright | All INC-1 resources above | `COPILOT_GITHUB_TOKEN` |
 | INC-2 | — (consumes SDK event stream) | — | — |
 | INC-3 | first custom SDK **skill** | — | — |
-| INC-4 | **Open-Meteo MCP** | — (egress only) | — |
+| INC-4 | **Open-Meteo grounding** (direct REST client; ADR-006 — pivoted from a self-hosted MCP to a REST client because the SDK preview could not surface MCP tools to a Foundry-BYOK session) | — (egress only) | — |
 | INC-5 | **RouteStack MCP**, **Currency MCP**, `booking-simulator` | — | `ROUTESTACK_API_KEY`, `CURRENCY_API_KEY?` |
 | INC-6 | **Fabric Data Agent MCP** + synthetic datasets | Fabric (external) | `FABRIC_*` |
 | INC-7 | `trip-summariser`, `budget-estimator` (Currency reuse) | — | — |
