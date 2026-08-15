@@ -34,6 +34,7 @@ export interface ChatMessage {
 export type AgentEventType =
   | 'decision'      // an observable choice the agent made (e.g. "call weather MCP")
   | 'token'         // a chunk of the assistant's reply text
+  | 'status'        // a transient progress line (e.g. "Searching for flights…"); UI-only, not audited
   | 'tool_call'     // the agent invoked a skill / tool / MCP server
   | 'tool_result'   // the result returned from that invocation
   | 'done'          // the reply finished successfully (always last on success)
@@ -50,6 +51,16 @@ export interface DecisionEvent {
 export interface TokenEvent {
   type: 'token';
   value: string;
+}
+
+/**
+ * A transient progress line shown while the agent works (e.g. "Searching for
+ * flights and hotels to Lisbon…"). UI-only feedback — not part of the audit
+ * trail. An empty `message` clears the current indicator.
+ */
+export interface StatusEvent {
+  type: 'status';
+  message: string;
 }
 
 /** The agent called a skill, tool, or MCP server. */
@@ -88,6 +99,7 @@ export interface ErrorEvent {
 export type AgentEvent =
   | DecisionEvent
   | TokenEvent
+  | StatusEvent
   | ToolCallEvent
   | ToolResultEvent
   | DoneEvent

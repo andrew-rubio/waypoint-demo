@@ -94,8 +94,12 @@ describe('personalisation via Cosmos DB', () => {
     const booking = toolResult(events, 'booking-simulator');
     expect(String(booking.seatAssignment)).toMatch(/^\d{1,2}[A-F]$/);
     expect(String(booking.mealRequested)).toMatch(/vegetarian/i);
-    expect(reply(events)).toMatch(/vegetarian/i);
-    expect(reply(events)).toMatch(/amend/i);
+    // Seat/meal now surface on the summary + confirmation cards (not the prose);
+    // the booking turn auto-emits the trip summary with the applied preferences.
+    const summary = toolResult(events, 'trip-summariser');
+    expect((summary.appliedPreferences as { meal: string }).meal).toMatch(/vegetarian/i);
+    // The prose is now a brief intro only — the detail lives on the cards.
+    expect(reply(events)).toMatch(/book those|go ahead|booking/i);
   });
 
   it('shows simulated reward points earned against the saved membership at booking (AC-006-5/FR-006-6)', async () => {

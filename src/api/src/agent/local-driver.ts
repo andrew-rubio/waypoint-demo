@@ -1,6 +1,6 @@
 import type { AgentEvent } from '../../../shared/types/chat-and-agent-runtime.js';
 import type { WeatherResult } from '../../../shared/types/weather-and-timing.js';
-import type { BookingConfirmation, TravelSearchResult } from '../../../shared/types/flight-hotel-search-booking.js';
+import type { TravelSearchResult } from '../../../shared/types/flight-hotel-search-booking.js';
 import type { AgentDriver, AgentInput } from './driver.js';
 import { adviseDestinations, destinationRequestFromConversation } from '../tools/destination-advisor.js';
 import {
@@ -20,7 +20,7 @@ import {
   supplierCurrencyFor,
   travelRequestFromConversation,
 } from '../tools/routestack.js';
-import { rememberSearchOptions, resolveBookingOptions } from '../tools/booking-context.js';
+import { rememberBookingSelection, recallBookingSelection, rememberSearchOptions, resolveBookingOptions } from '../tools/booking-context.js';
 import {
   bookingPersonalisation,
   detectSeatOverride,
@@ -29,8 +29,20 @@ import {
   personalise,
   profileAuditSummary,
 } from '../tools/cosmos.js';
+import { estimateBudget, isEurRequest, isSummaryQuery, summariseTrip, weatherNoteFor } from '../tools/trip-summary.js';
+import { offlineConvertFromGBP } from '../tools/currency.js';
+import type { TripSummary } from '../../../shared/types/trip-summary-and-budget.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Simulated loading delays for the demo — skipped under test so the suite stays fast.
+const TEST = process.env.NODE_ENV === 'test';
+const SEARCH_LOAD_MS = TEST ? 0 : 1200;
+const BOOK_LOAD_MS = TEST ? 0 : 3000;
+const CARD_GAP_MS = TEST ? 0 : 1000;
+
+/** The city label for the search progress line, e.g. "Lisbon". */
+const cityLabel = (place: string): string => place.split(',')[0].trim();
 
 /**
  * Emit the Cosmos personalisation lifecycle: the `cosmos.getTravellerProfile`
@@ -71,6 +83,10 @@ export class LocalAgentDriver implements AgentDriver {
     }
     if (isWeatherQuery(input.message)) {
       yield* this.runWeather(input);
+      return;
+    }
+    if (isSummaryQuery(input.message, input.history)) {
+      yield* this.runSummary(input);
       return;
     }
     yield* this.runDestinations(input);
@@ -179,6 +195,10 @@ export class LocalAgentDriver implements AgentDriver {
     // Only a valid, in-coverage search actually reaches the RouteStack sandbox;
     // clarifications/validation short-circuit before any MCP call.
     if (result.kind === 'options') {
+      // Progress feedback while the RouteStack search runs.
+      yield { type: 'status', message: `Searching for flights and hotels to ${cityLabel(result.place)}…` };
+      await sleep(SEARCH_LOAD_MS);
+
       const currency = supplierCurrencyFor(request.destination) ?? result.flights[0]?.pricePerTraveller.source.currency ?? 'GBP';
 
       yield {
@@ -212,6 +232,8 @@ export class LocalAgentDriver implements AgentDriver {
       yield { type: 'tool_call', name: 'cosmos.getTravellerProfile', args: { query: 'preferred airlines and travel preferences' } };
       yield { type: 'tool_result', name: 'cosmos.getTravellerProfile', ok: true, result: profileAuditSummary(profile) };
       result.flights = prioritiseByPreferredAirlines(result.flights, profile.preferredAirlines);
+
+      yield { type: 'status', message: '' };
     }
 
     yield { type: 'tool_call', name: 'travel-search', args: { ...request } };
@@ -229,7 +251,7 @@ export class LocalAgentDriver implements AgentDriver {
   }
 
   private async *runBooking(input: AgentInput): AsyncIterable<AgentEvent> {
-    yield { type: 'decision', summary: 'Simulate a booking for the selected flight and hotel, with your saved preferences.' };
+    yield { type: 'decision', summary: 'Book the selected flight and hotel, then summarise the trip.' };
     yield { type: 'tool_call', name: 'copilot.chat', args: { model: 'local', prompt: input.message } };
 
     const options = resolveBookingOptions(input.sessionId, input.history);
@@ -246,11 +268,16 @@ export class LocalAgentDriver implements AgentDriver {
       return;
     }
 
+    // A brief intro precedes the summary + confirmation cards — the detailed
+    // itinerary/total live on the cards, not in the prose.
+    const reply = 'Sure — let me go ahead and book those for you.';
+    for (const word of reply.split(' ')) {
+      await sleep(8);
+      yield { type: 'token', value: word + ' ' };
+    }
+
     // Apply saved preferences + accrue simulated reward points on the membership (FR-006-6).
     const profile = getTravellerProfile();
-    yield { type: 'tool_call', name: 'cosmos.getTravellerProfile', args: { query: 'traveller loyalty, preferences and membership' } };
-    yield { type: 'tool_result', name: 'cosmos.getTravellerProfile', ok: true, result: profileAuditSummary(profile) };
-
     const confirmation = simulateBooking(options, selection, 1);
     const flight = options.flights[Math.min(selection.flightIndex, options.flights.length - 1)];
     Object.assign(
@@ -262,11 +289,89 @@ export class LocalAgentDriver implements AgentDriver {
         seat: detectSeatOverride(input.message),
       }),
     );
+    rememberBookingSelection(input.sessionId, selection);
+    const budget = estimateBudget(options, { flightIndex: selection.flightIndex, hotelIndex: selection.hotelIndex });
+    const summary = summariseTrip(options, {
+      profile,
+      flightIndex: selection.flightIndex,
+      hotelIndex: selection.hotelIndex,
+      weatherNote: weatherNoteFor(options.place, options.checkIn),
+    });
+
+    // Simulated processing, then the summary (blue) — a beat later the confirmation (green).
+    yield { type: 'status', message: 'Booking your flight and hotel…' };
+    await sleep(BOOK_LOAD_MS);
+
+    yield { type: 'tool_call', name: 'cosmos.getTravellerProfile', args: { query: 'traveller loyalty, preferences and membership' } };
+    yield { type: 'tool_result', name: 'cosmos.getTravellerProfile', ok: true, result: profileAuditSummary(profile) };
+    yield { type: 'tool_call', name: 'budget-estimator', args: { party: options.party, nights: options.nights, rooms: 1 } };
+    yield { type: 'tool_result', name: 'budget-estimator', ok: true, result: budget };
+    yield { type: 'tool_call', name: 'trip-summariser', args: { destination: summary.destination } };
+    yield { type: 'tool_result', name: 'trip-summariser', ok: true, result: summary };
+
+    yield { type: 'status', message: '' };
+    await sleep(CARD_GAP_MS);
 
     yield { type: 'tool_call', name: 'booking-simulator', args: { ...selection } };
     yield { type: 'tool_result', name: 'booking-simulator', ok: true, result: confirmation };
 
-    const reply = composeBookingReply(confirmation);
+    yield { type: 'tool_result', name: 'copilot.chat', ok: true, result: reply };
+    yield { type: 'done' };
+  }
+
+  private async *runSummary(input: AgentInput): AsyncIterable<AgentEvent> {
+    yield { type: 'decision', summary: 'Summarise the selected trip and total the budget in GBP.' };
+    yield { type: 'tool_call', name: 'copilot.chat', args: { model: 'local', prompt: input.message } };
+
+    const options = resolveBookingOptions(input.sessionId, input.history);
+    if (!options || options.kind !== 'options') {
+      const reply =
+        "There's nothing to summarise yet — pick a destination, then search for flights and a hotel and I'll total up the trip for you.";
+      for (const word of reply.split(' ')) {
+        await sleep(8);
+        yield { type: 'token', value: word + ' ' };
+      }
+      yield { type: 'tool_result', name: 'copilot.chat', ok: true, result: reply };
+      yield { type: 'done' };
+      return;
+    }
+
+    // Preferences + reward points for the summary come from the Cosmos profile (FR-007-4).
+    const profile = getTravellerProfile();
+    yield { type: 'tool_call', name: 'cosmos.getTravellerProfile', args: { query: 'traveller preferences and reward points' } };
+    yield { type: 'tool_result', name: 'cosmos.getTravellerProfile', ok: true, result: profileAuditSummary(profile) };
+
+    // Reflect the flight + hotel the traveller actually booked, if any (FRD-007 bug-spot).
+    const selection = recallBookingSelection(input.sessionId);
+    const budget = estimateBudget(options, { flightIndex: selection?.flightIndex, hotelIndex: selection?.hotelIndex });
+    yield { type: 'tool_call', name: 'budget-estimator', args: { party: options.party, nights: options.nights, rooms: 1 } };
+    yield { type: 'tool_result', name: 'budget-estimator', ok: true, result: budget };
+
+    // Convert to EUR only on request (AC-007-2); the rate + timestamp are audited.
+    let eur: { totalEUR: number; exchangeRate: { rate: number; timestamp: string } } | undefined;
+    if (isEurRequest(input.message)) {
+      const converted = offlineConvertFromGBP(budget.totalGBP, 'EUR');
+      yield { type: 'tool_call', name: 'currency.convert', args: { from: 'GBP', to: 'EUR', amount: budget.totalGBP } };
+      yield {
+        type: 'tool_result',
+        name: 'currency.convert',
+        ok: true,
+        result: { amountEUR: converted.amount, rate: converted.rate, rateTimestamp: converted.rateTimestamp },
+      };
+      eur = { totalEUR: converted.amount, exchangeRate: { rate: converted.rate, timestamp: converted.rateTimestamp } };
+    }
+
+    const summary = summariseTrip(options, {
+      profile,
+      flightIndex: selection?.flightIndex,
+      hotelIndex: selection?.hotelIndex,
+      weatherNote: weatherNoteFor(options.place, options.checkIn),
+      eur,
+    });
+    yield { type: 'tool_call', name: 'trip-summariser', args: { destination: summary.destination } };
+    yield { type: 'tool_result', name: 'trip-summariser', ok: true, result: summary };
+
+    const reply = composeSummaryReply(summary);
     for (const word of reply.split(' ')) {
       await sleep(8);
       yield { type: 'token', value: word + ' ' };
@@ -326,19 +431,24 @@ function composeTravelReply(result: TravelSearchResult): string {
   }
 }
 
-/** A concise conversational wrapper around a simulated booking confirmation. */
-function composeBookingReply(confirmation: BookingConfirmation): string {
-  const base =
-    'Done — this is a demo simulation, so no payment was taken and no real reservation was made. ' +
-    `Your reference is ${confirmation.ref}. Itinerary: ${confirmation.itinerary}. ` +
-    `Estimated total £${confirmation.estimatedTotalGBP}.`;
-  if (!confirmation.seatAssignment) return base;
-  return (
-    base +
-    ` You've been booked for seat ${confirmation.seatAssignment} (${confirmation.seatClass}) with a ${confirmation.mealRequested?.toLowerCase()} in-flight meal from your saved preferences — ` +
-    `you can amend these any time up to 30 days before departure. ` +
-    `You earned ${formatPoints(confirmation.pointsEarned ?? 0)} reward points on membership ${confirmation.membershipNumber} (new balance ${formatPoints(confirmation.newBalance ?? 0)}).`
-  );
+/** A concise conversational wrapper around the structured trip summary. */
+function composeSummaryReply(summary: TripSummary): string {
+  const hotelPart = summary.hotelMissing ? 'no hotel selected yet' : summary.hotel?.name ?? 'your hotel';
+  const taxNote = summary.taxesAndFeesIncluded ? 'including taxes and fees' : 'excluding unspecified taxes and fees';
+  let reply =
+    `Here's your trip to ${summary.destination} for ${summary.partySize} traveller${summary.partySize === 1 ? '' : 's'}, ` +
+    `${summary.nights} night${summary.nights === 1 ? '' : 's'} in ${summary.roomCount} room${summary.roomCount === 1 ? '' : 's'} — ` +
+    `${summary.flight?.airline ?? 'your flight'} and ${hotelPart}. ` +
+    `The estimated total is £${summary.totalGBP} (${taxNote}).`;
+  if (summary.totalEUR && summary.exchangeRate) {
+    reply += ` That's about €${summary.totalEUR} at 1 GBP = ${summary.exchangeRate.rate} EUR (as of ${summary.exchangeRate.timestamp.slice(0, 10)}).`;
+  }
+  if (summary.appliedPreferences) {
+    reply += ` Your ${summary.appliedPreferences.seat.toLowerCase()} seat and ${summary.appliedPreferences.meal.toLowerCase()} meal are pre-selected, and your balance is ${formatPoints(summary.pointsBalance ?? 0)} reward points.`;
+  } else if (summary.personalisationUnavailable) {
+    reply += ' Personalisation is unavailable right now, so preferences and points are not shown.';
+  }
+  return reply;
 }
 
 function preview(text: string): string {

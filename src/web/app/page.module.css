@@ -749,3 +749,222 @@
     text-align: left;
   }
 }
+
+/* ── Trip summary card (FRD-007) ─────────────────────────────────── */
+.summaryBubble {
+  align-self: flex-start;
+  width: min(100%, 680px);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .summaryBubble {
+    animation: enter var(--dur-card) var(--ease-out);
+  }
+}
+
+.summaryCard {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  border-bottom-left-radius: var(--radius-sm);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+
+.summaryHero {
+  padding: var(--space-3) var(--space-4);
+  background: color-mix(in srgb, var(--color-secondary) 12%, var(--color-surface));
+  border-bottom: 1px solid var(--color-border);
+}
+
+.summaryHero h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: var(--text-lg);
+  color: var(--color-text);
+}
+
+.summaryHero h2 svg {
+  color: var(--color-primary);
+}
+
+.summarySub {
+  margin: var(--space-1) 0 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+.summaryBody {
+  padding: var(--space-3) var(--space-4);
+}
+
+.itinRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.itinRow h4 {
+  margin: 0;
+  font-family: var(--font-heading);
+  font-size: var(--text-sm);
+  color: var(--color-text);
+}
+
+.itinRow p {
+  margin: 2px 0 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.itinAmt {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  color: var(--color-text);
+  white-space: nowrap;
+}
+
+.budget {
+  margin-top: var(--space-3);
+  padding: var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+}
+
+.budget h3 {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0 0 var(--space-2);
+  font-family: var(--font-heading);
+  font-size: var(--text-sm);
+  color: var(--color-text);
+}
+
+.budget h3 svg {
+  color: var(--color-primary);
+}
+
+.bLine {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: 3px 0;
+  font-size: var(--text-sm);
+  color: var(--color-text);
+}
+
+.calc {
+  color: var(--color-text-muted);
+  font-size: var(--text-xs);
+}
+
+.bTotal {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-top: var(--space-2);
+  padding-top: var(--space-2);
+  border-top: 1px solid var(--color-border);
+}
+
+.bTotalLbl {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.bTotalVal {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: var(--text-lg);
+  color: var(--color-text);
+}
+
+.bTotalEur {
+  margin-left: var(--space-2);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.taxes {
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.rate {
+  margin-top: var(--space-1);
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.policyNote {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid color-mix(in srgb, var(--color-secondary) 40%, var(--color-border));
+  background: color-mix(in srgb, var(--color-secondary) 10%, var(--color-surface));
+  font-size: var(--text-sm);
+  color: var(--color-text);
+}
+
+.policyNote svg {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--color-primary);
+}
+
+.summaryMissing {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+}
+
+/* ── Loading / progress indicator ────────────────────────────────── */
+.loadingStatus {
+  align-self: flex-start;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  box-shadow: var(--shadow-sm);
+}
+
+.loadingStatus .spinner {
+  color: var(--color-primary);
+  flex-shrink: 0;
+}
+
+.spinner {
+  animation: spin 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner {
+    animation-duration: 2s;
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

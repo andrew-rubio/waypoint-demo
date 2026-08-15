@@ -180,7 +180,9 @@ describe('booking-simulator skill', () => {
     expect(String(result.itinerary)).toMatch(/Lisbon/);
     expect(typeof result.estimatedTotalGBP).toBe('number');
 
-    expect(reply(events)).toMatch(/simulation|demo/i);
+    // The booking turn now also auto-emits the trip summary (FRD-007); the
+    // "simulation" framing lives on the confirmation card, not the prose.
+    expect(toolCallNames(events)).toContain('trip-summariser');
   });
 
   it('takes no payment — the confirmation is a mock only (FR-005-5/6)', async () => {

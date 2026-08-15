@@ -17,6 +17,7 @@ import { climateNormals, geocode } from '../tools/open-meteo.js';
 import {
   bookingSelectionFromMessage,
   bookingSimulatorParameters,
+  isBookingQuery,
   mergeTravelResult,
   prioritiseByPreferredAirlines,
   searchTravel,
@@ -25,8 +26,22 @@ import {
   travelSearchParameters,
   type LiveTravelResult,
 } from '../tools/routestack.js';
-import { rememberSearchOptions, resolveBookingOptions } from '../tools/booking-context.js';
+import {
+  recallBookingSelection,
+  rememberBookingSelection,
+  rememberSearchOptions,
+  resolveBookingOptions,
+} from '../tools/booking-context.js';
 import { hasRouteStackCredentials, searchLiveTravel } from '../tools/routestack-client.js';
+import {
+  estimateBudget,
+  isEurRequest,
+  isSummaryQuery,
+  summariseTrip,
+  weatherNoteFor,
+} from '../tools/trip-summary.js';
+import { convertFromGBP, offlineConvertFromGBP } from '../tools/currency.js';
+import type { TripSummary } from '../../../shared/types/trip-summary-and-budget.js';
 import {
   bookingPersonalisation,
   detectSeatOverride,
@@ -57,6 +72,15 @@ import type { PersonalisationProfile } from '../../../shared/types/personalisati
 
 /** The only MCP servers this agent is ever allowed to call. */
 const MCP_ALLOWLIST = ['routestack', 'open-meteo', 'currency', 'cosmos', 'travel-guide'];
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+// Simulated loading beats for the demo (production only; never under test).
+const BOOK_LOAD_MS = 3000;
+const CARD_GAP_MS = 1000;
+
+/** The city label for a progress line, e.g. "Lisbon". */
+const cityLabel = (place: string): string => place.split(',')[0].trim();
 
 /**
  * Choose a model the current token can actually use. Prefer COPILOT_MODEL, then
@@ -124,6 +148,15 @@ export class CopilotAgentDriver implements AgentDriver {
   // constructor(private readonly gitHubToken: string) {}
 
   async *run(input: AgentInput): AsyncIterable<AgentEvent> {
+    // A booking turn is fully deterministic (no model narration): book the
+    // chosen options, then auto-show the trip summary + confirmation cards
+    // (FRD-007). Direct-grounded so it never depends on the model choosing to
+    // call a tool.
+    if (isBookingQuery(input.message, input.history)) {
+      yield* this.groundBookingTurn(input);
+      return;
+    }
+
     // Lazy import so the SDK (and its bundled runtime) is only loaded when a
     // real credential is present — tests and offline demos never touch it.
     const { CopilotClient, defineTool } = await import('@github/copilot-sdk');
@@ -262,7 +295,7 @@ export class CopilotAgentDriver implements AgentDriver {
       systemMessage: {
         mode: 'append',
         content:
-          'You are Waypoint, a concise holiday-planning assistant. For destination recommendations, refinements or travel-fit questions, call destination-advisor and propose three to five candidate destinations (each a canonical "City, Country" name with a one-line rationale and matchedPreferences) drawn from the traveller\'s stated preferences. For any weather or best-time-to-travel question, call weather-window with the place (and the month if the traveller named one); it geocodes the place and reads Open-Meteo ERA5 1991–2020 climate normals for you. To search flights and hotels, call travel-search with the destination, departure city, outbound and return dates (ISO yyyy-mm-dd) and party size; it searches the RouteStack sandbox and normalises prices to GBP — if the traveller has not given a departure city, ask for it. When you present options and offer to book, say you can "book one of the flights and hotels from these options" — do NOT use the words "simulate" or "simulation" at the search stage. When the traveller chooses options to book, call booking-simulator; only in the resulting booking confirmation do you make clear it is a demo simulation with no payment. The traveller\'s Cosmos profile (Gold Tier, reward points, past destinations and seat/meal preferences) is applied automatically to suggestions, flights and the booking — briefly reference it and explain why you personalised, and if it is unavailable say so and continue. Ground every reply only in the tools\' validated results, preserve canonical place names exactly, always attribute weather figures to Open-Meteo, and never invent prices, weather, availability or travel times.',
+          'You are Waypoint, a concise holiday-planning assistant. For destination recommendations, refinements or travel-fit questions, call destination-advisor and propose three to five candidate destinations (each a canonical "City, Country" name with a one-line rationale and matchedPreferences) drawn from the traveller\'s stated preferences. For any weather or best-time-to-travel question, call weather-window with the place (and the month if the traveller named one); it geocodes the place and reads Open-Meteo ERA5 1991–2020 climate normals for you. To search flights and hotels, call travel-search with the destination, departure city, outbound and return dates (ISO yyyy-mm-dd) and party size; it searches the RouteStack sandbox and normalises prices to GBP — if the traveller has not given a departure city, ask for it. When you present options and offer to book, say you can "book one of the flights and hotels from these options" — do NOT use the words "simulate" or "simulation" at the search stage. When the traveller chooses options to book, call booking-simulator; only in the resulting booking confirmation do you make clear it is a demo simulation with no payment. When the traveller asks for a summary, the total cost, or to see the price in euros, a trip summary card with the itinerary, budget total (in GBP, and EUR when they ask) and their preferences is generated for you automatically — keep your own reply brief, refer them to the card, and never recompute or restate the totals yourself. The traveller\'s Cosmos profile (Gold Tier, reward points, past destinations and seat/meal preferences) is applied automatically to suggestions, flights, the booking and the summary — briefly reference it and explain why you personalised, and if it is unavailable say so and continue. Ground every reply only in the tools\' validated results, preserve canonical place names exactly, always attribute weather figures to Open-Meteo, and never invent prices, weather, availability or travel times.',
       },
 
       // Called before every tool call. This is where the audit trail is born: we
@@ -290,7 +323,7 @@ export class CopilotAgentDriver implements AgentDriver {
         },
         onPostToolUse: async (i: any) => {
           resumedAfterTool = true;
-          if (!['destination-advisor', 'weather-window', 'travel-search', 'booking-simulator'].includes(i.toolName)) {
+          if (!['destination-advisor', 'weather-window', 'travel-search', 'booking-simulator', 'trip-summariser'].includes(i.toolName)) {
             queue.push({ type: 'tool_result', name: i.toolName, ok: true, result: i.result });
           }
           return {};
@@ -330,6 +363,21 @@ export class CopilotAgentDriver implements AgentDriver {
       // no external tool is called (a plain conversational reply).
       queue.push({ type: 'decision', summary: 'Plan a reply for the traveller.' });
       queue.push({ type: 'tool_call', name: 'copilot.chat', args: { model: model ?? 'copilot', prompt: input.message } });
+
+      // Direct-ground a summary turn (FRD-007): the summary card must be built
+      // from the remembered options + tools, not left to the model to compute or
+      // to decide to call. When the traveller asks for a summary/total/euros and
+      // options exist, emit the trip-summariser lifecycle deterministically.
+      if (isSummaryQuery(input.message, input.history)) {
+        const options = resolveBookingOptions(input.sessionId, input.history);
+        if (options && options.kind === 'options') {
+          const selection = recallBookingSelection(input.sessionId);
+          const summary = await groundSummary(options, input.message, (event) => queue.push(event), selection);
+          queue.push({ type: 'tool_call', name: 'trip-summariser', args: { destination: summary.destination } });
+          queue.push({ type: 'tool_result', name: 'trip-summariser', ok: true, result: summary });
+        }
+      }
+
       await session.send({ prompt: buildContextualPrompt(input.message, input.history) });
       // Drain events until the session goes idle.
       for await (const event of queue) {
@@ -347,6 +395,74 @@ export class CopilotAgentDriver implements AgentDriver {
       await session.disconnect();
       await client.stop();
     }
+  }
+
+  /**
+   * A fully deterministic booking turn (no model): a brief intro, then the
+   * booked confirmation and the auto trip summary for the exact chosen flight +
+   * hotel (FRD-007). The traveller profile is read via the waypoint-data MCP
+   * (offline fallback). No prose beyond the short intro — the detail lives on
+   * the summary + confirmation cards.
+   */
+  private async *groundBookingTurn(input: AgentInput): AsyncIterable<AgentEvent> {
+    yield { type: 'decision', summary: 'Book the selected flight and hotel, then summarise the trip.' };
+    yield { type: 'tool_call', name: 'copilot.chat', args: { model: this.foundry.model, prompt: input.message } };
+
+    const options = resolveBookingOptions(input.sessionId, input.history);
+    const selection = bookingSelectionFromMessage(input.message);
+
+    if (!options || options.kind !== 'options') {
+      const msg = "I don't have any options to book yet — search for flights and hotels first.";
+      for (const word of msg.split(' ')) yield { type: 'token', value: word + ' ' };
+      yield { type: 'tool_result', name: 'copilot.chat', ok: true, result: msg };
+      yield { type: 'done' };
+      return;
+    }
+
+    const intro = 'Sure — let me go ahead and book those for you.';
+    for (const word of intro.split(' ')) yield { type: 'token', value: word + ' ' };
+
+    yield { type: 'tool_call', name: 'cosmos.getTravellerProfile', args: { query: 'traveller loyalty, preferences and membership' } };
+    const { profile } = await fetchTravellerProfile();
+    yield { type: 'tool_result', name: 'cosmos.getTravellerProfile', ok: true, result: profileAuditSummary(profile) };
+
+    const confirmation = simulateBooking(options, selection, 1);
+    const flight = options.flights[Math.min(selection.flightIndex, options.flights.length - 1)];
+    Object.assign(
+      confirmation,
+      bookingPersonalisation(profile, {
+        ref: confirmation.ref,
+        flightGBP: flight.pricePerTraveller.amountGBP,
+        party: options.party,
+        seat: detectSeatOverride(input.message),
+      }),
+    );
+    rememberBookingSelection(input.sessionId, selection);
+    const budget = estimateBudget(options, { flightIndex: selection.flightIndex, hotelIndex: selection.hotelIndex });
+    const summary = summariseTrip(options, {
+      profile,
+      flightIndex: selection.flightIndex,
+      hotelIndex: selection.hotelIndex,
+      weatherNote: weatherNoteFor(options.place, options.checkIn),
+    });
+
+    // Simulated processing, then the summary (blue) — a beat later the confirmation (green).
+    yield { type: 'status', message: 'Booking your flight and hotel…' };
+    await sleep(BOOK_LOAD_MS);
+
+    yield { type: 'tool_call', name: 'budget-estimator', args: { party: options.party, nights: options.nights, rooms: 1 } };
+    yield { type: 'tool_result', name: 'budget-estimator', ok: true, result: budget };
+    yield { type: 'tool_call', name: 'trip-summariser', args: { destination: summary.destination } };
+    yield { type: 'tool_result', name: 'trip-summariser', ok: true, result: summary };
+
+    yield { type: 'status', message: '' };
+    await sleep(CARD_GAP_MS);
+
+    yield { type: 'tool_call', name: 'booking-simulator', args: { ...selection } };
+    yield { type: 'tool_result', name: 'booking-simulator', ok: true, result: confirmation };
+
+    yield { type: 'tool_result', name: 'copilot.chat', ok: true, result: intro };
+    yield { type: 'done' };
   }
 }
 
@@ -400,6 +516,52 @@ async function emitPersonalisation(message: string, push: (event: AgentEvent) =>
   const note = personalise(profile, message);
   push({ type: 'tool_call', name: 'personalise', args: { seat: note.appliedSeat, meal: note.appliedMeal } });
   push({ type: 'tool_result', name: 'personalise', ok: true, result: note });
+}
+
+/**
+ * Ground a summary turn (FRD-007): total the budget from the remembered options,
+ * fold in the Cosmos preferences + reward points, and convert the total to EUR
+ * (live Frankfurter, offline fallback) only when the traveller asks. Emits the
+ * observable budget-estimator and currency.convert audit calls.
+ */
+async function groundSummary(
+  options: Extract<TravelSearchResult, { kind: 'options' }>,
+  message: string,
+  push: (event: AgentEvent) => void,
+  selection?: { flightIndex: number; hotelIndex: number },
+): Promise<TripSummary> {
+  const profile = await resolveProfileWithAudit('traveller preferences and reward points', push);
+
+  const budget = estimateBudget(options, { flightIndex: selection?.flightIndex, hotelIndex: selection?.hotelIndex });
+  push({ type: 'tool_call', name: 'budget-estimator', args: { party: options.party, nights: options.nights, rooms: 1 } });
+  push({ type: 'tool_result', name: 'budget-estimator', ok: true, result: budget });
+
+  let eur: { totalEUR: number; exchangeRate: { rate: number; timestamp: string } } | undefined;
+  if (isEurRequest(message)) {
+    push({ type: 'tool_call', name: 'currency.convert', args: { from: 'GBP', to: 'EUR', amount: budget.totalGBP } });
+    let converted;
+    try {
+      converted = await convertFromGBP(budget.totalGBP, 'EUR');
+    } catch (err) {
+      logger.warn({ err: String(err) }, 'Live GBP→EUR conversion failed; using offline rate');
+      converted = offlineConvertFromGBP(budget.totalGBP, 'EUR');
+    }
+    push({
+      type: 'tool_result',
+      name: 'currency.convert',
+      ok: true,
+      result: { amountEUR: converted.amount, rate: converted.rate, rateTimestamp: converted.rateTimestamp },
+    });
+    eur = { totalEUR: converted.amount, exchangeRate: { rate: converted.rate, timestamp: converted.rateTimestamp } };
+  }
+
+  return summariseTrip(options, {
+    profile,
+    flightIndex: selection?.flightIndex,
+    hotelIndex: selection?.hotelIndex,
+    weatherNote: weatherNoteFor(options.place, options.checkIn),
+    eur,
+  });
 }
 
 /**
@@ -473,6 +635,9 @@ async function groundTravel(
     return base;
   }
 
+  // Progress feedback while the (real) RouteStack search runs.
+  push({ type: 'status', message: `Searching for flights and hotels to ${cityLabel(request.destination)}…` });
+
   // Always attempt live RouteStack for a valid request — not gated on whether the
   // offline catalogue covers the city (BUG-004). Offline is the fallback.
   let live: LiveTravelResult | undefined;
@@ -485,7 +650,10 @@ async function groundTravel(
   }
 
   const result = mergeTravelResult(request, base, live);
-  if (result.kind !== 'options') return result;
+  if (result.kind !== 'options') {
+    push({ type: 'status', message: '' });
+    return result;
+  }
 
   const flightSource = live?.flights.length ? 'routestack-sandbox' : 'offline-catalogue';
   const hotelSource = live?.hotels.length ? 'routestack-sandbox' : 'offline-catalogue';
@@ -520,6 +688,7 @@ async function groundTravel(
   });
   push({ type: 'tool_result', name: 'routestack.hotels', ok: true, result: { count: result.hotels.length, currency: hotelCurrency, source: hotelSource } });
 
+  push({ type: 'status', message: '' });
   return result;
 }
 

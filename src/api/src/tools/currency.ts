@@ -22,12 +22,50 @@ const OFFLINE_RATES_TO_GBP: Record<string, number> = {
 const OFFLINE_RATE_TIMESTAMP = '2026-08-14T00:00:00Z';
 
 const round2 = (value: number): number => Math.round(value * 100) / 100;
+const round4 = (value: number): number => Math.round(value * 10000) / 10000;
 
 /** Deterministic GBP conversion for tests/offline. */
 export function offlineConvertToGBP(money: Money): ConvertedMoney {
   const rate = OFFLINE_RATES_TO_GBP[money.currency.toUpperCase()] ?? 1;
   return { source: money, amountGBP: round2(money.amount * rate), rate, rateTimestamp: OFFLINE_RATE_TIMESTAMP };
 }
+
+/** A GBP→target conversion result: the converted amount, the rate (target per GBP) and its timestamp. */
+export interface FromGbpConversion {
+  amount: number;
+  /** Units of the target currency per one GBP. */
+  rate: number;
+  rateTimestamp: string;
+}
+
+/** Deterministic GBP→EUR conversion for tests/offline (FR-007-3). */
+export function offlineConvertFromGBP(amountGBP: number, target = 'EUR'): FromGbpConversion {
+  const gbpPerUnit = OFFLINE_RATES_TO_GBP[target.toUpperCase()] ?? 1;
+  const rate = round4(1 / gbpPerUnit);
+  return { amount: round2(amountGBP * rate), rate, rateTimestamp: OFFLINE_RATE_TIMESTAMP };
+}
+
+/**
+ * Live GBP→EUR conversion via Frankfurter (api.frankfurter.dev). Throws on
+ * transport/parse failure so the caller can emit an error audit entry and keep
+ * the total in GBP (FRD-007 error handling).
+ */
+export async function convertFromGBP(amountGBP: number, target = 'EUR'): Promise<FromGbpConversion> {
+  const currency = target.toUpperCase();
+  if (currency === 'GBP') return { amount: round2(amountGBP), rate: 1, rateTimestamp: new Date().toISOString() };
+  const url = `https://api.frankfurter.dev/v1/latest?base=GBP&symbols=${encodeURIComponent(currency)}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`currency ${res.status}`);
+  const data = (await res.json()) as { rates?: Record<string, number>; date?: string };
+  const rate = data.rates?.[currency];
+  if (typeof rate !== 'number') throw new Error(`currency: no ${currency} rate returned`);
+  return {
+    amount: round2(amountGBP * rate),
+    rate: round4(rate),
+    rateTimestamp: data.date ? `${data.date}T00:00:00Z` : new Date().toISOString(),
+  };
+}
+
 
 /**
  * Live GBP conversion via Frankfurter (api.frankfurter.dev). GBP is a no-op.

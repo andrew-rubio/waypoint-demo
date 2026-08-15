@@ -1,0 +1,134 @@
+# API contract — Trip summary, budget & currency (FRD-007, INC-7)
+# This feature extends the existing POST /api/chat SSE stream. It adds no public
+# endpoint: `trip-summariser` and `budget-estimator` are internal Copilot SDK
+# skills, and the GBP→EUR conversion reuses the FRD-005 Currency service
+# (Frankfurter/ECB, keyless), observable through the FRD-001
+# tool_call/tool_result event contract (`currency.convert`, type mcp).
+feature: trip-summary-and-budget
+version: "1.0"
+extends: chat-and-agent-runtime
+basePath: /api
+
+endpoints:
+  - path: /chat
+    method: POST
+    inheritedFrom: chat-and-agent-runtime
+    description: >-
+      A summary turn assembles the itinerary from the remembered flight/hotel
+      options, totals the budget as (flight × party) + (nightly × nights ×
+      rooms), labels taxes/fees, and reflects the traveller's applied
+      preferences + reward points from the Cosmos profile (FRD-006). On request
+      ("show that in euros") the total is converted GBP→EUR through the Currency
+      service, with the rate + timestamp shown in the audit trail. The response
+      remains text/event-stream and adds the events below.
+    auth: none
+    request:
+      body:
+        type: ChatRequest
+    responses:
+      200:
+        contentType: text/event-stream
+        addedEventContract:
+          summariserCall:
+            type: tool_call
+            name: trip-summariser
+            args: { destination: string }
+          summariserResult:
+            type: tool_result
+            name: trip-summariser
+            ok: boolean
+            result: TripSummary
+          budgetCall:
+            type: tool_call
+            name: budget-estimator
+            args: { party: number, nights: number, rooms: number }
+          budgetResult:
+            type: tool_result
+            name: budget-estimator
+            ok: boolean
+            result: BudgetEstimate
+          currencyCall:
+            type: tool_call
+            name: currency.convert
+            args: { from: string, to: string, amount: number }
+            note: Emitted only on an EUR request; base GBP, target EUR (Frankfurter/ECB)
+          currencyResult:
+            type: tool_result
+            name: currency.convert
+            ok: boolean
+            result: ExchangeRate
+            note: Records the GBP→EUR rate and its timestamp for the audit trail (FR-007-3/6)
+      error:
+        description: >-
+          A currency-service failure emits an error-status mcp audit entry and a
+          traveller-facing notice, and the summary stays in GBP (one retry). A
+          Cosmos profile failure omits preferences/points but still shows the
+          itinerary and total.
+        message: "Couldn't convert to EUR right now — showing GBP."
+
+  # Test/demo-only fault hooks (test/demo builds only, never production).
+  faults:
+    - name: currency-error
+      effect: currency.convert fails on an EUR request; summary stays GBP; error notice + currency mcp entry status=error
+    - name: summary-flight-only
+      effect: summary shows the flight and total-so-far and notes no hotel is selected (partial selection)
+    - name: summary-no-personalisation
+      effect: full summary + total but preferences/points omitted; notes personalisation unavailable; non-summary turns delegate to the normal driver
+
+schemas:
+  BudgetEstimate:
+    type: object
+    required: [totalGBP, taxesAndFeesIncluded]
+    properties:
+      flight:
+        type: object
+        properties:
+          unitGBP: { type: number, example: 128 }
+          party: { type: integer, example: 2 }
+          subtotalGBP: { type: number, example: 256 }
+      hotel:
+        type: object
+        properties:
+          nightlyGBP: { type: number, example: 175 }
+          nights: { type: integer, example: 7 }
+          rooms: { type: integer, example: 1 }
+          subtotalGBP: { type: number, example: 1225 }
+      totalGBP: { type: number, example: 1481 }
+      taxesAndFeesIncluded: { type: boolean, example: false }
+
+  ExchangeRate:
+    type: object
+    required: [rate, timestamp]
+    properties:
+      rate: { type: number, description: EUR per one GBP, example: 1.176 }
+      timestamp: { type: string, format: date-time, example: "2026-08-14T00:00:00Z" }
+
+  TripSummary:
+    type: object
+    required: [destination, dates, weatherNote, partySize, nights, roomCount, totalGBP, taxesAndFeesIncluded]
+    properties:
+      destination: { type: string, example: "Lisbon, Portugal" }
+      dates:
+        type: object
+        properties:
+          outbound: { type: string, format: date, example: "2026-10-14" }
+          return: { type: string, format: date, example: "2026-10-21" }
+      weatherNote: { type: string, example: "Warm & dry (~22°C)" }
+      flight: { $ref: "flight-hotel-search-booking.yaml#/schemas/FlightOption" }
+      hotel: { $ref: "flight-hotel-search-booking.yaml#/schemas/HotelOption" }
+      partySize: { type: integer, example: 2 }
+      nights: { type: integer, example: 7 }
+      roomCount: { type: integer, example: 1 }
+      totalGBP: { type: number, example: 1481 }
+      totalEUR: { type: number, example: 1741, description: Present only after conversion }
+      exchangeRate: { $ref: "#/schemas/ExchangeRate" }
+      taxesAndFeesIncluded: { type: boolean, example: false }
+      appliedPreferences:
+        type: object
+        description: Present only when personalisation is available
+        properties:
+          seat: { type: string, example: Aisle }
+          meal: { type: string, example: Vegetarian }
+      pointsBalance: { type: integer, example: 7463 }
+      hotelMissing: { type: boolean, example: false }
+      personalisationUnavailable: { type: boolean, example: false }

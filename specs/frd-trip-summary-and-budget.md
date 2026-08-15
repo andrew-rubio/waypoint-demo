@@ -24,7 +24,7 @@ demo audience is based in Spain.
 
 ## Functional Requirements
 
-- **FR-007-1** `trip-summariser` produces one summary containing: destination, dates, a one-line weather note (from FRD-004), the selected flight, and the selected hotel.
+- **FR-007-1** `trip-summariser` produces one summary containing: destination, dates, a one-line weather note (from FRD-004), the selected flight, and the selected hotel. **[UI-REVISED 2026-08-15]** The summary is shown **automatically when a booking completes** — the summary card (blue) appears **above** the booking confirmation (green), preceded only by a brief agent intro (e.g. "Sure — let me go ahead and book those for you."), with no verbose itinerary/total repeated in the chat prose. It can also be requested explicitly at any time ("summarise the trip").
 - **FR-007-2** `budget-estimator` calculates the estimated total in GBP as `(flight price per traveller × party size) + (nightly hotel rate × number of nights × room count)`. `number of nights` is the return date minus the outbound/check-in date. Taxes and fees are included only when the selected option explicitly marks them included; otherwise the summary labels the total as excluding unspecified taxes/fees.
 - **FR-007-3** On request ("show in euros"), the agent reuses the Currency MCP conversion path introduced in FRD-005 to convert the total and each line item GBP→EUR. It displays GBP and EUR together and records the exchange rate and rate timestamp.
 - **FR-007-4** The summary shows the traveller's applied preferences (aisle seat, meal) and their reward points balance, sourced from the **Cosmos profile** (FRD-006). If personalisation is unavailable, these are omitted rather than guessed.
@@ -35,9 +35,10 @@ demo audience is based in Spain.
 
 **AC-007-1 — Trip summary (happy path)**
 - **Given** a destination, dates, a selected flight, and a selected hotel exist
-- **When** the Traveller asks for a summary
+- **When** the Traveller asks for a summary **or completes a booking**
 - **Then** the agent shows one card with destination, dates, weather note, flight, hotel, party size, nights, room count, line-item calculations, and estimated total in GBP
-- **And** it states whether taxes and fees are included.
+- **And** it states whether taxes and fees are included
+- **And** when triggered by a booking, the summary card appears **above** the booking confirmation, reflecting the **exact flight and hotel that were booked** (not the first option). **[UI-REVISED 2026-08-15]**
 
 **AC-007-2 — Convert to EUR**
 - **Given** a GBP total is shown

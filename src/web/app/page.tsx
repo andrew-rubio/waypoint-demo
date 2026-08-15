@@ -5,6 +5,7 @@ import type { DestinationSuggestion } from '../../shared/types/destination-advic
 import type { WeatherCardResult } from '../../shared/types/weather-and-timing';
 import type { FlightOption, HotelOption } from '../../shared/types/flight-hotel-search-booking';
 import type { PersonalisationResult } from '../../shared/types/personalisation';
+import type { TripSummary } from '../../shared/types/trip-summary-and-budget';
 import { useChat, type UiMessage } from '../lib/useChat';
 import { AuditPanel } from './AuditPanel';
 import { Markdown } from './Markdown';
@@ -16,7 +17,7 @@ import styles from './page.module.css';
  * lives in useChat — this file is just the view.
  */
 export default function ChatPage() {
-  const { messages, streaming, error, truncated, started, send, reset, auditOpen, auditGroups, toggleAudit, clearAudit } =
+  const { messages, streaming, error, truncated, loadingStatus, started, send, reset, auditOpen, auditGroups, toggleAudit, clearAudit } =
     useChat();
   const [draft, setDraft] = useState('');
 
@@ -86,8 +87,10 @@ export default function ChatPage() {
               const isStreamingBubble = streaming && i === messages.length - 1 && m.role === 'assistant';
               const showDestinations = m.role === 'assistant' && i === activeDestinationMessage && !isStreamingBubble;
               const showWeather = m.role === 'assistant' && i === activeWeatherMessage && !isStreamingBubble;
-              const showTravel = m.role === 'assistant' && i === activeTravelMessage && !isStreamingBubble;
-              const showBooking = m.role === 'assistant' && i === activeBookingMessage && !isStreamingBubble;
+              // Travel/summary/booking cards may appear mid-stream (as their tool
+              // results arrive) so the loading beats show them sequentially.
+              const showTravel = m.role === 'assistant' && i === activeTravelMessage;
+              const showBooking = m.role === 'assistant' && i === activeBookingMessage;
               return (
                 <Fragment key={i}>
                   <div
@@ -107,10 +110,17 @@ export default function ChatPage() {
                   {showTravel && (
                     <TravelOptions message={m} onSelect={(phrase) => setDraft(phrase)} />
                   )}
+                  {m.role === 'assistant' && m.tripSummary && <TripSummaryCard summary={m.tripSummary} />}
                   {showBooking && <BookingConfirmationCard message={m} />}
                 </Fragment>
               );
             })}
+            {loadingStatus && (
+              <div className={styles.loadingStatus} data-testid="loading-status" role="status" aria-live="polite">
+                <Spinner />
+                <span>{loadingStatus}</span>
+              </div>
+            )}
           </div>
         )}
       </main>
@@ -304,6 +314,7 @@ function DestinationItem({
 
 const ORDINALS = ['first', 'second', 'third'];
 const gbp = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' });
+const eur = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'EUR' });
 const pointsFmt = new Intl.NumberFormat('en-GB');
 
 function formatDuration(min: number): string {
@@ -517,7 +528,7 @@ function BookingConfirmationCard({ message }: { message: UiMessage }) {
           Estimated total <strong>{gbp.format(booking.estimatedTotalGBP)}</strong>
         </p>
         {booking.seatAssignment && (
-          <div className={styles.bookingPersonalisation} data-testid="preference-note">
+          <div className={styles.bookingPersonalisation} data-testid="booking-preference-note">
             <p>
               Seat <strong>{booking.seatAssignment}</strong> ({booking.seatClass}) · {booking.mealRequested} in-flight meal, from your saved
               preferences — amendable any time up to 30 days before departure.
@@ -542,6 +553,126 @@ function PersonalisationNote({ note }: { note: PersonalisationResult }) {
       </div>
     </section>
   );
+}
+
+function TripSummaryCard({ summary }: { summary: TripSummary }) {
+  const flightSub = summary.flight ? summary.flight.pricePerTraveller.amountGBP * summary.partySize : 0;
+  const hotelSub = summary.hotel ? summary.hotel.nightlyRate.amountGBP * summary.nights * summary.roomCount : 0;
+  return (
+    <section className={styles.summaryBubble} aria-label="Trip summary">
+      <div className={styles.summaryCard} data-testid="trip-summary-card">
+        <div className={styles.summaryHero}>
+          <h2>
+            <MapPinIcon />
+            {summary.destination}
+          </h2>
+          <p className={styles.summarySub}>
+            {formatDateRange(summary.dates.outbound, summary.dates.return)} · {summary.partySize} traveller
+            {summary.partySize === 1 ? '' : 's'} · {summary.nights} night{summary.nights === 1 ? '' : 's'} · {summary.roomCount} room
+            {summary.roomCount === 1 ? '' : 's'}
+            {summary.weatherNote ? ` · ${summary.weatherNote}` : ''}
+          </p>
+        </div>
+        <div className={styles.summaryBody}>
+          {summary.flight && (
+            <div className={styles.itinRow}>
+              <div>
+                <h4>
+                  {summary.flight.airline} · {summary.flight.from}→{summary.flight.to}
+                </h4>
+                <p>per traveller</p>
+              </div>
+              <div className={styles.itinAmt}>{gbp.format(summary.flight.pricePerTraveller.amountGBP)}</div>
+            </div>
+          )}
+          {summary.hotel ? (
+            <div className={styles.itinRow}>
+              <div>
+                <h4>
+                  {summary.hotel.name} · {'★'.repeat(summary.hotel.rating)}
+                </h4>
+                <p>per night</p>
+              </div>
+              <div className={styles.itinAmt}>{gbp.format(summary.hotel.nightlyRate.amountGBP)}</div>
+            </div>
+          ) : (
+            <p className={styles.summaryMissing}>No hotel selected yet.</p>
+          )}
+
+          <div className={styles.budget} data-testid="budget-breakdown">
+            <h3>
+              <WalletIcon />
+              Estimated cost
+            </h3>
+            {summary.flight && (
+              <div className={styles.bLine}>
+                <span>
+                  Flights{' '}
+                  <span className={styles.calc}>
+                    {gbp.format(summary.flight.pricePerTraveller.amountGBP)} × {summary.partySize} travellers
+                  </span>
+                </span>
+                <span data-testid="budget-line-flight">{gbp.format(flightSub)}</span>
+              </div>
+            )}
+            {summary.hotel && (
+              <div className={styles.bLine}>
+                <span>
+                  Hotel{' '}
+                  <span className={styles.calc}>
+                    {gbp.format(summary.hotel.nightlyRate.amountGBP)} × {summary.nights} nights × {summary.roomCount} room
+                    {summary.roomCount === 1 ? '' : 's'}
+                  </span>
+                </span>
+                <span data-testid="budget-line-hotel">{gbp.format(hotelSub)}</span>
+              </div>
+            )}
+            <div className={styles.bTotal}>
+              <span className={styles.bTotalLbl}>Estimated total</span>
+              <span>
+                <span className={styles.bTotalVal} data-testid="total-amount">
+                  {gbp.format(summary.totalGBP)}
+                </span>
+                {summary.totalEUR != null && <span className={styles.bTotalEur}>≈ {eur.format(summary.totalEUR)}</span>}
+              </span>
+            </div>
+            <div className={styles.taxes}>
+              {summary.taxesAndFeesIncluded
+                ? 'Includes taxes & fees.'
+                : 'Excludes taxes & fees (not specified by supplier).'}
+            </div>
+            {summary.exchangeRate && (
+              <div className={styles.rate}>
+                Rate: 1 GBP = {summary.exchangeRate.rate} EUR · as of {summary.exchangeRate.timestamp.slice(0, 10)}
+              </div>
+            )}
+          </div>
+
+          {summary.appliedPreferences ? (
+            <div className={styles.policyNote} data-testid="preference-note">
+              <CheckIcon />
+              <span>
+                {summary.appliedPreferences.seat} seat and {summary.appliedPreferences.meal.toLowerCase()} meal pre-selected from
+                your travel preferences · Gold Tier balance {pointsFmt.format(summary.pointsBalance ?? 0)} reward points.
+              </span>
+            </div>
+          ) : summary.personalisationUnavailable ? (
+            <p className={styles.summaryMissing}>
+              Personalisation is unavailable right now, so preferences and points aren’t shown.
+            </p>
+          ) : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function formatDateRange(outbound: string, ret: string): string {
+  const start = new Date(`${outbound}T00:00:00Z`);
+  const end = new Date(`${ret}T00:00:00Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return `${outbound} – ${ret}`;
+  const month = end.toLocaleString('en-GB', { month: 'short', timeZone: 'UTC' });
+  return `${start.getUTCDate()}–${end.getUTCDate()} ${month} ${end.getUTCFullYear()}`;
 }
 
 /* Inline Lucide-style SVG icons (never emoji, per the design system). */
@@ -618,6 +749,22 @@ function CheckIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
       <path d="M20 6 9 17l-5-5" />
+    </svg>
+  );
+}
+
+function WalletIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+    </svg>
+  );
+}
+
+function Spinner() {
+  return (
+    <svg className={styles.spinner} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" aria-hidden>
+      <path d="M21 12a9 9 0 1 1-6.219-8.56" />
     </svg>
   );
 }

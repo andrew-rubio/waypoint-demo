@@ -1,6 +1,6 @@
 import type { ChatMessage } from '../../../shared/types/chat-and-agent-runtime.js';
 import type { TravelOptionsResult } from '../../../shared/types/flight-hotel-search-booking.js';
-import { lastSearchRequest, searchTravel } from './routestack.js';
+import { lastSearchRequest, searchTravel, type BookingSelection } from './routestack.js';
 
 /**
  * Per-session memory of the flight/hotel options actually shown to the
@@ -14,12 +14,23 @@ import { lastSearchRequest, searchTravel } from './routestack.js';
  */
 const lastOptions = new Map<string, TravelOptionsResult>();
 
+/** Per-session memory of the flight/hotel indices the traveller actually booked, so a later summary reflects the booked selection (FRD-007). */
+const lastSelection = new Map<string, BookingSelection>();
+
 export function rememberSearchOptions(sessionId: string, options: TravelOptionsResult): void {
   lastOptions.set(sessionId, options);
 }
 
 export function recallSearchOptions(sessionId: string): TravelOptionsResult | undefined {
   return lastOptions.get(sessionId);
+}
+
+export function rememberBookingSelection(sessionId: string, selection: BookingSelection): void {
+  lastSelection.set(sessionId, selection);
+}
+
+export function recallBookingSelection(sessionId: string): BookingSelection | undefined {
+  return lastSelection.get(sessionId);
 }
 
 /**

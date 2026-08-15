@@ -6,6 +6,7 @@ import type { DestinationAdviceResult } from '../../shared/types/destination-adv
 import type { WeatherCardResult } from '../../shared/types/weather-and-timing';
 import type { BookingConfirmation, TravelCardResult } from '../../shared/types/flight-hotel-search-booking';
 import type { PersonalisationResult } from '../../shared/types/personalisation';
+import type { TripSummary } from '../../shared/types/trip-summary-and-budget';
 import { applyAuditEvent, auditTurns, emptyAuditState, type AuditState } from '../../shared/audit';
 
 /** A message as shown in the UI (flat list; index drives the data-testid). */
@@ -17,6 +18,7 @@ export interface UiMessage {
   travelOptions?: TravelCardResult;
   booking?: BookingConfirmation;
   personalisation?: PersonalisationResult;
+  tripSummary?: TripSummary;
 }
 
 /** Anything longer than this is shortened for the agent (edge case). */
@@ -42,6 +44,7 @@ export function useChat() {
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [truncated, setTruncated] = useState(false);
+  const [loadingStatus, setLoadingStatus] = useState<string | null>(null);
   const [audit, setAudit] = useState<AuditState>(emptyAuditState);
   const [auditOpen, setAuditOpen] = useState(false);
   const sessionId = useRef<string>(newSessionId());
@@ -88,6 +91,8 @@ export function useChat() {
 
         await readSse(res.body, (event) => {
           if (event.type === 'error') failed = true;
+          if (event.type === 'status') setLoadingStatus(event.message || null);
+          if (event.type === 'done' || event.type === 'error') setLoadingStatus(null);
           applyEvent(event, setMessages, setError);
           setAudit((prev) => applyAuditEvent(prev, turnId, event, Date.now()));
         });
@@ -102,6 +107,7 @@ export function useChat() {
       } finally {
         if (typeof window !== 'undefined') window.removeEventListener('offline', onOffline);
         setStreaming(false);
+        setLoadingStatus(null);
         abortRef.current = null;
       }
 
@@ -119,6 +125,7 @@ export function useChat() {
     setError(null);
     setTruncated(false);
     setStreaming(false);
+    setLoadingStatus(null);
     setAudit(emptyAuditState());
   }, []);
 
@@ -133,6 +140,7 @@ export function useChat() {
     streaming,
     error,
     truncated,
+    loadingStatus,
     started,
     send,
     reset,
@@ -197,6 +205,14 @@ function applyEvent(
       if (last?.role === 'assistant') next[next.length - 1] = { ...last, personalisation };
       return next;
     });
+  } else if (event.type === 'tool_result' && event.name === 'trip-summariser' && event.ok && isTripSummary(event.result)) {
+    const tripSummary = event.result;
+    setMessages((prev) => {
+      const next = [...prev];
+      const last = next[next.length - 1];
+      if (last?.role === 'assistant') next[next.length - 1] = { ...last, tripSummary };
+      return next;
+    });
   } else if (event.type === 'error') {
     setError(event.message);
   }
@@ -243,6 +259,16 @@ function isPersonalisation(value: unknown): value is PersonalisationResult {
     typeof value === 'object' &&
     (value as { available?: unknown }).available === true &&
     typeof (value as { rationale?: unknown }).rationale === 'string'
+  );
+}
+
+function isTripSummary(value: unknown): value is TripSummary {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    typeof (value as { destination?: unknown }).destination === 'string' &&
+    typeof (value as { totalGBP?: unknown }).totalGBP === 'number' &&
+    typeof (value as { taxesAndFeesIncluded?: unknown }).taxesAndFeesIncluded === 'boolean'
   );
 }
 

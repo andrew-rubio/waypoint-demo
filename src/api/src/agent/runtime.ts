@@ -4,6 +4,9 @@ import { LocalAgentDriver } from './local-driver.js';
 import { CopilotAgentDriver, type FoundryProviderConfig } from './copilot-driver.js';
 import { adviseDestinations } from '../tools/destination-advisor.js';
 import { getTravellerProfile, personalise, profileAuditSummary } from '../tools/cosmos.js';
+import { searchTravel } from '../tools/routestack.js';
+import { estimateBudget, isSummaryQuery, summariseTrip, weatherNoteFor } from '../tools/trip-summary.js';
+import type { TravelOptionsResult } from '../../../shared/types/flight-hotel-search-booking.js';
 import { logger } from '../logger.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -52,7 +55,7 @@ export interface RunAgentInput extends AgentInput {
 export async function* runAgent(input: RunAgentInput): AsyncIterable<AgentEvent> {
   // Test/demo fault hook — never enabled in production (enforced by the route).
   if (input.fault) {
-    yield* runFault(input.fault);
+    yield* runFault(input.fault, input);
     return;
   }
   yield* selectDriver().run(input);
@@ -62,7 +65,7 @@ export async function* runAgent(input: RunAgentInput): AsyncIterable<AgentEvent>
  * Deterministic failure paths so the error-handling Gherkin scenarios
  * (AC-001-5 and edge cases) are exercisable end-to-end.
  */
-async function* runFault(kind: string): AsyncIterable<AgentEvent> {
+async function* runFault(kind: string, input: RunAgentInput): AsyncIterable<AgentEvent> {
   switch (kind) {
     case 'agent-unavailable':
     case 'model-unavailable':
@@ -239,7 +242,96 @@ async function* runFault(kind: string): AsyncIterable<AgentEvent> {
       return;
     }
 
+    // A summary turn where the EUR conversion fails — the FRD-007 error path.
+    // The prior GBP summary stays; the currency MCP entry is error-status and a
+    // notice explains it, one retry then give up.
+    case 'currency-error': {
+      yield { type: 'decision', summary: 'Convert the trip total to EUR via the Currency service.' };
+      yield { type: 'tool_call', name: 'copilot.chat', args: { model: 'local', prompt: input.message } };
+      yield { type: 'tool_call', name: 'currency.convert', args: { from: 'GBP', to: 'EUR' } };
+      await sleep(60);
+      yield { type: 'tool_result', name: 'currency.convert', ok: false, result: 'Currency request timed out' };
+      yield { type: 'error', code: 'currency_unavailable', message: "Couldn't convert to EUR right now — showing GBP." };
+      return;
+    }
+
+    // A partial selection: a flight chosen but no hotel — the AC-007-4 path.
+    case 'summary-flight-only': {
+      yield* runSummaryFault(input, { includeHotel: false });
+      return;
+    }
+
+    // A summary turn where the Cosmos profile is unavailable — preferences and
+    // points are omitted but the itinerary and total still show. Non-summary
+    // turns (e.g. the preceding search) fall through to the normal driver.
+    case 'summary-no-personalisation': {
+      if (!isSummaryQuery(input.message, input.history)) {
+        yield* selectDriver().run(input);
+        return;
+      }
+      yield* runSummaryFault(input, { personalisationUnavailable: true });
+      return;
+    }
+
     default:
       yield { type: 'error', code: 'agent_unavailable', message: 'The assistant is unavailable right now.' };
   }
+}
+
+/** The canonical demo trip (Lisbon) used by the summary fault paths. */
+function faultOptions(): TravelOptionsResult | undefined {
+  const result = searchTravel({
+    destination: 'Lisbon',
+    origin: 'London',
+    checkIn: '2026-10-14',
+    checkOut: '2026-10-21',
+    party: 2,
+    rooms: 1,
+  });
+  return result.kind === 'options' ? result : undefined;
+}
+
+/** Emit a summary turn for the degraded FRD-007 paths (no hotel / no personalisation). */
+async function* runSummaryFault(
+  input: RunAgentInput,
+  opts: { includeHotel?: boolean; personalisationUnavailable?: boolean },
+): AsyncIterable<AgentEvent> {
+  yield { type: 'decision', summary: 'Summarise the selected trip and total the budget in GBP.' };
+  yield { type: 'tool_call', name: 'copilot.chat', args: { model: 'local', prompt: input.message } };
+
+  const options = faultOptions();
+  if (!options) {
+    yield { type: 'error', code: 'agent_unavailable', message: 'The assistant is unavailable right now.' };
+    return;
+  }
+
+  const applyProfile = !opts.personalisationUnavailable;
+  const profile = applyProfile ? getTravellerProfile() : undefined;
+  if (profile) {
+    yield { type: 'tool_call', name: 'cosmos.getTravellerProfile', args: { query: 'traveller preferences and reward points' } };
+    yield { type: 'tool_result', name: 'cosmos.getTravellerProfile', ok: true, result: profileAuditSummary(profile) };
+  }
+
+  const budget = estimateBudget(options, { includeHotel: opts.includeHotel ?? true });
+  yield { type: 'tool_call', name: 'budget-estimator', args: { party: options.party, nights: options.nights, rooms: 1 } };
+  yield { type: 'tool_result', name: 'budget-estimator', ok: true, result: budget };
+
+  const summary = summariseTrip(options, {
+    profile,
+    includeHotel: opts.includeHotel ?? true,
+    personalisationUnavailable: opts.personalisationUnavailable,
+    weatherNote: weatherNoteFor(options.place, options.checkIn),
+  });
+  yield { type: 'tool_call', name: 'trip-summariser', args: { destination: summary.destination } };
+  yield { type: 'tool_result', name: 'trip-summariser', ok: true, result: summary };
+
+  const reply = opts.includeHotel === false
+    ? `Here's your trip to ${summary.destination} so far — flight only, no hotel selected yet. Total so far £${summary.totalGBP}.`
+    : `Here's your trip to ${summary.destination}. Estimated total £${summary.totalGBP}. Personalisation is unavailable right now, so preferences and points aren't shown.`;
+  for (const word of reply.split(' ')) {
+    await sleep(8);
+    yield { type: 'token', value: word + ' ' };
+  }
+  yield { type: 'tool_result', name: 'copilot.chat', ok: true, result: reply };
+  yield { type: 'done' };
 }

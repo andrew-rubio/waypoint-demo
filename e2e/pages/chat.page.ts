@@ -27,6 +27,11 @@ export class ChatPage {
   readonly hotelOptions: Locator;
   readonly bookingConfirmation: Locator;
   readonly personalisationNote: Locator;
+  readonly tripSummaryCard: Locator;
+  readonly budgetBreakdown: Locator;
+  readonly totalAmount: Locator;
+  readonly currencyToggle: Locator;
+  readonly preferenceNote: Locator;
 
   constructor(page: Page) {
     this.page = page;
@@ -49,6 +54,11 @@ export class ChatPage {
     this.hotelOptions = page.getByTestId('hotel-options');
     this.bookingConfirmation = page.getByTestId('booking-confirmation');
     this.personalisationNote = page.getByTestId('personalisation-note');
+    this.tripSummaryCard = page.getByTestId('trip-summary-card');
+    this.budgetBreakdown = page.getByTestId('budget-breakdown');
+    this.totalAmount = page.getByTestId('total-amount');
+    this.currencyToggle = page.getByTestId('currency-toggle');
+    this.preferenceNote = page.getByTestId('preference-note');
   }
 
   async goto(): Promise<void> {

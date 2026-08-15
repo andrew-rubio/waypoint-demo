@@ -3,9 +3,109 @@
   "phase": "increment-delivery",
   "step": "tests",
   "status": "in-progress",
-  "currentIncrement": "INC-6",
+  "currentIncrement": "INC-7",
   "lastUpdated": "2026-08-15T00:00:00Z",
   "increments_progress": {
+    "INC-7": {
+      "frd": "FRD-007",
+      "name": "trip-summary-and-budget",
+      "depends_on": ["INC-4", "INC-5", "INC-6"],
+      "status": "in-progress",
+      "started_at": "2026-08-15T00:00:00Z",
+      "humanGates": { "gherkin": true, "testCode": true, "implementation": true, "deployment": false },
+      "scope": "trip-summariser + budget-estimator skills; itinerary + budget card; budget maths (flight x party) + (nightly x nights x rooms); taxes/fees labelling; GBP default + EUR on request via currency.convert (rate + timestamp in audit); applied preferences + reward points from Cosmos; partial-selection + currency-fallback + personalisation-degraded paths.",
+      "tests": {
+        "status": "approved",
+        "gherkin": {
+          "path": "specs/features/trip-summary-and-budget.feature",
+          "status": "approved",
+          "scenarios": 10,
+          "coverage": "AC-007-1 summary card (dest/dates/flight/hotel/party/nights/rooms/line-items/total GBP), taxes-excluded labelling, AC-007-3 preferences+7463 points, FR-007-6 trip-summariser+budget-estimator skill audit entries, AC-007-2 EUR on request, EUR rate+timestamp in audit (mcp), AC-007-4 partial selection (flight no hotel), edge nothing-to-summarise, degraded currency-fails->GBP+error entry, degraded personalisation-unavailable->omit prefs/points"
+        },
+        "e2e": { "path": "e2e/trip-summary-and-budget.spec.ts", "pom": "e2e/pages/chat.page.ts (+tripSummaryCard/budgetBreakdown/totalAmount/currencyToggle/preferenceNote)", "tests": 6, "status": "pending-approval" },
+        "bdd": { "path": "tests/features/step-definitions/trip-summary-and-budget.steps.ts", "status": "pending-approval", "note": "reuses shared welcome/asks/says/opens-audit/flights-shown/skill-entry-named/currency-conversion steps; adds summary/budget/EUR steps only" },
+        "unit": { "path": "src/api/tests/unit/trip-summary.test.ts", "tests": 11, "status": "pending-approval" },
+        "redBaseline": "Unit: trip-summary.test.ts fails to load (src/api/src/tools/trip-summary.js absent) -> 11 new red; 67 existing pass. Skip scan clean. Cucumber 81 scenarios/430 steps all mapped (0 undefined/ambiguous). Playwright 44 tests/7 files discovered (new spec compiles).",
+        "targetContract": "New summary turn in LocalAgentDriver (isSummaryQuery incl. EUR phrasing, checked before destinations): decision + copilot.chat + cosmos.getTravellerProfile + trip-summariser (skill: TripSummary {destination,dates,weatherNote,flight,hotel,partySize,nights,roomCount,totalGBP,totalEUR?,exchangeRate?,taxesAndFeesIncluded,appliedPreferences?,pointsBalance?}) + budget-estimator (skill: BudgetEstimate {flight?{unitGBP,party,subtotalGBP},hotel?{nightlyGBP,nights,rooms,subtotalGBP},totalGBP,taxesAndFeesIncluded}) + currency.convert (mcp, on EUR request). New tool src/api/src/tools/trip-summary.ts (estimateBudget/summariseTrip/isSummaryQuery/isEurRequest). Faults: currency-error (GBP-only + error mcp entry + notice), summary-flight-only (flight-only summary, notes no hotel), summary-no-personalisation (full summary minus prefs/points; delegates non-summary turns to real driver). Web: trip-summary-card/budget-breakdown/budget-line-flight/budget-line-hotel/total-amount/currency-toggle/preference-note testids."
+      },
+      "contracts": {
+        "status": "done",
+        "sharedTypes": ["src/shared/types/trip-summary-and-budget.ts"],
+        "api": ["specs/contracts/api/trip-summary-and-budget.yaml"],
+        "reuse": "Currency service (Frankfurter/ECB, INC-5) reused for GBP->EUR; Cosmos profile (INC-6) reused for prefs+points; no new Azure resource."
+      },
+      "implementation": {
+        "status": "review-pending",
+        "slices": {
+          "api": {
+            "status": "green",
+            "files": [
+              "src/api/src/tools/trip-summary.ts (new: estimateBudget/summariseTrip/weatherNoteFor/isSummaryQuery/isEurRequest/tripSummaryParameters)",
+              "src/api/src/tools/currency.ts (offlineConvertFromGBP/convertFromGBP GBP->EUR)",
+              "src/api/src/agent/local-driver.ts (runSummary turn + composeSummaryReply)",
+              "src/api/src/agent/runtime.ts (faults currency-error/summary-flight-only/summary-no-personalisation; runFault now receives input)",
+              "src/api/src/agent/copilot-driver.ts (trip-summariser SDK tool + groundSummary + systemMessage)"
+            ],
+            "validation": "77/77 unit (10 trip-summary + 67 prior); API tsc --noEmit clean"
+          },
+          "web": {
+            "status": "green",
+            "files": ["src/web/lib/useChat.ts (tripSummary field + trip-summariser handler + isTripSummary)", "src/web/app/page.tsx (TripSummaryCard + WalletIcon + EUR formatter + formatDateRange)", "src/web/app/page.module.css (summary/budget styles)"],
+            "validation": "next build clean (type-check)"
+          },
+          "integration": {
+            "status": "verified-via-unit-and-build",
+            "note": "Full co-hosted Playwright+Cucumber blocked in this sandbox (spawned API+Web reaped ~1-2s, as in INC-3/4/6). Validated via unit + tsc + web build + skip scan + Cucumber 430-step mapping + Playwright 44-test discovery here; full e2e/BDD validated by deploy smoke at Step 4."
+          }
+        }
+      },
+      "deployment": {
+        "status": "smoke-verified",
+        "date": "2026-08-15",
+        "env": "waypoint (sub c7233dbc..., swedencentral, rg-waypoint)",
+        "tool": "azd deploy api + azd deploy web (no infra change; reuses Currency + Cosmos)",
+        "activeApiRevision": "ca-api-dnszpz4hqfi7g (redeployed twice — 2nd adds direct-grounded summary)",
+        "endpoints": {
+          "web": "https://ca-web-dnszpz4hqfi7g.salmonflower-718a2dad.swedencentral.azurecontainerapps.io",
+          "api": "https://ca-api-dnszpz4hqfi7g.salmonflower-718a2dad.swedencentral.azurecontainerapps.io"
+        },
+        "health": "API /health 200; Web / 200",
+        "productionFix": "The live Foundry model did NOT reliably call the trip-summariser tool on a summary turn (1st smoke: only cosmos fired). Switched the copilot-driver to DIRECT GROUNDING: when isSummaryQuery(message) and remembered options exist, the driver deterministically runs groundSummary (cosmos + budget-estimator + currency.convert on EUR) and emits trip-summariser, instead of relying on the model to call a tool. Removed the optional trip-summariser SDK tool to avoid double-render; systemMessage updated (card generated automatically, don't recompute totals). Mirrors the weather/personalisation grounding pattern.",
+        "smoke": "Live 3-turn same-session flow: T1 search Lisbon -> travel-search options. T2 'summarise the trip and total cost' -> trip-summariser + budget-estimator + Cosmos appliedPreferences + pointsBalance 7463 + totalGBP. T3 'show that in euros' -> LIVE currency.convert (Frankfurter GBP->EUR rate 1.1703) + totalEUR 2683.58 + exchangeRate. All grounded, all in the audit stream."
+      },
+      "bugSpot_autoSummaryOnBooking": {
+        "date": "2026-08-15",
+        "request": "User (deployment verification): (1) auto-show the trip summary when a booking completes, with the summary card (blue) ABOVE the booking confirmation (green); (2) replace the verbose booking prose with a brief intro only ('Sure — let me go ahead and book those for you.'); (3) BUG: the summary showed the first recommended hotel, not the booked one — must reflect the chosen flight+hotel.",
+        "change": [
+          "booking-context.ts: rememberBookingSelection/recallBookingSelection (per-session booked indices)",
+          "local-driver.ts runBooking: brief intro prose + auto budget-estimator + trip-summariser using the booked flightIndex/hotelIndex; removed composeBookingReply. runSummary now reflects the recalled booking selection.",
+          "copilot-driver.ts: booking turn is fully DIRECT-GROUNDED (new groundBookingTurn — no model narration; brief intro + booking-simulator + trip-summariser for booked selection); groundSummary accepts the recalled selection; removed the optional trip-summariser SDK tool earlier.",
+          "web page.tsx: render TripSummaryCard BEFORE BookingConfirmationCard; booking card inner note testid renamed preference-note -> booking-preference-note (avoid collision with summary's preference-note).",
+          "specs propagated: FRD-007 FR-007-1 + AC-007-1 [UI-REVISED 2026-08-15] (auto at booking, above confirmation, booked selection)."
+        ],
+        "tests": "Updated 2 INC-6/5 booking prose assertions (seat/meal/simulation now on cards) + added 2 bug-spot unit tests (booking auto-summarises the exact booked flight+hotel; brief intro, no verbose echo) + e2e (summary above confirmation, bounding-box order) + Gherkin scenario 'summary appears automatically when a booking completes' + step. Human-approved test changes.",
+        "validation": "79/79 unit; API tsc clean; web build clean; skip scan clean; Cucumber 82 scenarios/435 steps mapped; Playwright 45 tests/7 files.",
+        "deployment": {
+          "status": "smoke-verified",
+          "smoke": "Live: search Lisbon -> book 'first flight and the SECOND hotel' -> booking-simulator + trip-summariser both emitted; summary hotel 'Hotel Real Palacio' matches the booked itinerary (not the first option); summary totalGBP == booking total 1411.98; prose = brief intro 'Sure — let me go ahead and book those for you.' with NO verbose Ref/Itinerary/Estimated-total echo."
+        }
+      },
+      "enhancement_loadingFeedback": {
+        "date": "2026-08-15",
+        "request": "User: simulate loading feedback. (1) Booking: after the intro, show a loading indicator ~3s, then the summary (blue), then a 1s gap, then the confirmation (green). (2) Search: show 'Searching for flights and hotels to [location]' while the RouteStack search runs.",
+        "change": [
+          "shared type: new StatusEvent { type:'status', message } on the AgentEvent union (UI-only progress; empty message clears; ignored by the audit reducer).",
+          "local-driver.ts + copilot-driver.ts: runTravelSearch/groundTravel emit 'Searching for flights and hotels to <city>…' then clear; runBooking/groundBookingTurn emit 'Booking your flight and hotel…', sleep 3s, emit budget+trip-summariser (summary card), clear status, sleep 1s, emit booking-simulator (confirmation). Delays are constants gated on NODE_ENV==='test' (0 in tests) so the suite stays fast; production/demo uses 1200/3000/1000 ms.",
+          "web useChat.ts: loadingStatus state set from status events, cleared on done/error/finally + reset; exposed from the hook.",
+          "web page.tsx: render a Spinner + loading-status line (data-testid loading-status) while loadingStatus set; un-gate travel/summary/booking cards from !isStreamingBubble so they appear sequentially as their tool_results stream in; page.module.css spinner + loadingStatus styles."
+        ],
+        "tests": "2 new unit tests (search shows 'Searching…to Lisbon' + clear; booking shows 'Booking…' + clear). 81/81 unit; tsc clean; web build clean; skip clean; Cucumber 82/435; Playwright 45.",
+        "deployment": {
+          "status": "smoke-verified",
+          "smoke": "Live: SEARCH emits 'Searching for flights and hotels to Lisbon…' (+clear) during the real ~16s RouteStack search. BOOK emits 'Booking your flight and hotel…' (+clear), elapsed 4.2s (3s+1s), result order trip-summariser -> booking-simulator (summary above confirmation)."
+        }
+      }
+    },
     "INC-6": {
       "frd": "FRD-006",
       "name": "personalisation",
