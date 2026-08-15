@@ -71,8 +71,9 @@ resources:
     capacityMode: Serverless
     database: waypoint
     container: { name: profiles, partitionKey: /traveller }
-    seed: One document (John Doe) provisioned at deploy
-    auth: managedIdentity                         # Cosmos DB Built-in Data Reader -> userAssignedManagedIdentity
+    seed: One document (John Doe) upserted by the MCP server on first read
+    auth: managedIdentity                         # Cosmos DB Built-in Data Contributor -> userAssignedManagedIdentity (read + one-time seed; keyless)
+    network: publicNetworkAccess Enabled + scoped IP firewall (Azure datacenters + portal); org modify-policy exempted for rg (ADR-007)
     increment: INC-6
 
   - name: waypointDataMcp

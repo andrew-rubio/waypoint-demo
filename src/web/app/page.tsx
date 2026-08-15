@@ -414,6 +414,11 @@ function FlightOptionCard({
               Best
             </span>
           )}
+          {flight.preferred && (
+            <span className={styles.preferredBadge} data-testid="preferred-badge">
+              Your Preferred
+            </span>
+          )}
         </div>
         <p className={styles.optionMeta}>
           {flight.from} → {flight.to} · {formatDuration(flight.durationMin)} · {stopsLabel(flight.stops)}
@@ -514,7 +519,8 @@ function BookingConfirmationCard({ message }: { message: UiMessage }) {
         {booking.seatAssignment && (
           <div className={styles.bookingPersonalisation} data-testid="preference-note">
             <p>
-              Seat <strong>{booking.seatAssignment}</strong> · {booking.mealRequested} in-flight meal, applied from your saved preferences.
+              Seat <strong>{booking.seatAssignment}</strong> ({booking.seatClass}) · {booking.mealRequested} in-flight meal, from your saved
+              preferences — amendable any time up to 30 days before departure.
             </p>
             <p>
               You earned <strong>{pointsFmt.format(booking.pointsEarned ?? 0)}</strong> reward points on membership{' '}

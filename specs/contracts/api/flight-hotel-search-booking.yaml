@@ -132,6 +132,7 @@ schemas:
       departTime: { type: string, optional: true, description: Outbound departure clock time, e.g. 08:15. }
       arriveTime: { type: string, optional: true, description: Outbound arrival clock time, e.g. 10:40. }
       best: { type: boolean, optional: true }
+      preferred: { type: boolean, optional: true, description: True when the airline is one of the traveller's saved preferred airlines (FRD-006). }
 
   HotelOption:
     type: object

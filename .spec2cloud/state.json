@@ -10,8 +10,8 @@
       "frd": "FRD-006",
       "name": "personalisation",
       "depends_on": ["INC-1", "INC-3", "INC-5"],
-      "status": "replanned-cosmos-mcp",
-      "humanGates": { "gherkin": true, "testCode": true, "implementation": false, "deployment": false },
+      "status": "deployed-verified",
+      "humanGates": { "gherkin": true, "testCode": true, "implementation": true, "deployment": true },
       "replan": {
         "date": "2026-08-15",
         "decision": "User rejected in-process synthetic Fabric. INC-6 re-scoped: real Azure Cosmos DB (serverless) traveller profile (loyalty + preferences + pastDestinations city/country) retrieved via a real MCP call to a self-hosted waypoint-data MCP (tool cosmos.getTravellerProfile). Rename Fabric->Cosmos everywhere. ADR-007 (Cosmos), ADR-009 (waypoint-data MCP + direct-grounding Shape A). AI Search travel-guide RAG split to NEW INC-8 (ADR-008).",
@@ -71,6 +71,21 @@
           "skipScan": "clean",
           "cohostedE2E": "blocked in this sandbox (spawned API+Web reaped ~1-2s, as in INC-3/INC-4) — full Playwright+Cucumber validated by deploy smoke at Step 4"
         }
+      },
+      "mcpServer": {
+        "name": "waypoint-data",
+        "workspace": "src/mcp (@waypoint/mcp)",
+        "tool": "getTravellerProfile (audit name cosmos.getTravellerProfile)",
+        "transport": "Streamable HTTP (NodeStreamableHTTPServerTransport, stateless), Express /mcp + /health, port 8081",
+        "apiClient": "src/api/src/tools/waypoint-data-client.ts (fetchTravellerProfile -> {profile, source:'cosmos'|'offline'}); wired into copilot-driver.ts resolveProfileWithAudit; local-driver + tests stay on sync offline path"
+      },
+      "deployment": {
+        "status": "verified",
+        "date": "2026-08-15",
+        "env": "waypoint (sub c7233dbc..., swedencentral, rg-waypoint)",
+        "resources": "Cosmos DB cosmos-dnszpz4hqfi7g (serverless, disableLocalAuth, db 'waypoint'/container 'profiles' pk /traveller, Data Contributor role to shared UAMI); Container App ca-mcp-dnszpz4hqfi7g (waypoint-data, internal ingress 8081, MI); WAYPOINT_DATA_MCP_URL wired to ca-api. azd up all 3 services.",
+        "infra": "infra/modules/cosmos.bicep + main.bicep (cosmos + waypointData modules) + azure.yaml waypoint-data service. az bicep build clean.",
+        "smoke": "Live POST /api/chat streamed cosmos.getTravellerProfile tool_call + tool_result {tier Gold, rewardPoints 7463, membershipNumber 39302492, seat Aisle, dietary Vegetarian, pastDestinations Lisbon/Barcelona/Chania}. MCP container booted cosmos=true, no errors. End-to-end API->MCP->Cosmos (keyless MI) proven."
       }
     },
     "INC-8": {

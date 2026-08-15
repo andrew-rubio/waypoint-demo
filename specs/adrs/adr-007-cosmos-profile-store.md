@@ -25,7 +25,8 @@ document, and retrieve it through a real MCP call (see ADR-009).
   option: 1000 RU/s + 25 GB). One database (`waypoint`), one container (`profiles`),
   one document (`traveller: "John Doe"`).
 - **Auth:** the Container App's **user-assigned managed identity** with the Cosmos DB
-  built-in **Data Reader** data-plane role — no keys.
+  built-in **Data Contributor** data-plane role — no keys. (Contributor rather than Reader
+  because the MCP server seeds the document on first run — a one-time keyless upsert.)
 - **Offline/test fallback:** the existing deterministic profile stays as the test/offline
   path (renamed from `fabric` to `cosmos`), mirroring the RouteStack offline-catalogue
   pattern (INC-5). The live Cosmos path activates when the store is configured.
@@ -44,3 +45,27 @@ document, and retrieve it through a real MCP call (see ADR-009).
   documented here.
 - **Superseded:** the FRD-006 "Microsoft Fabric Data Agent MCP" requirement and the
   `FABRIC_*` secrets are removed from the tech stack and infra contract.
+
+## Deployment note — governance & network posture (2026-08-15)
+
+The target subscription applies two management-group `modify` Azure Policies
+(`mcapsgovdeploypolicies`) that force **`publicNetworkAccess = Disabled`** and
+**`disableLocalAuth = true`** on every Cosmos account. With public access off and no
+private endpoint, *nothing* — not the Container App, not the portal — could reach the
+data plane, so the app silently ran on its offline fallback.
+
+Resolution (keeps keyless intact):
+
+- A **resource-group-scoped Waiver policy exemption** (`exempt-cosmos-publicnetwork-waypoint`)
+  targets only the `cosmosdbpublicnetworkmodify` reference, so public access is no longer
+  force-disabled for `rg-waypoint`. The keyless (`disableLocalAuth`) policy is left in force.
+- `cosmos.bicep` now sets `publicNetworkAccess: 'Enabled'` with a **scoped IP firewall**:
+  `0.0.0.0` (Azure datacenters only — lets Container Apps egress connect) plus the Azure
+  portal Data Explorer ranges. A personal IP for portal browsing is added out-of-band via
+  `az cosmosdb update` (dynamic, so not baked into Bicep).
+- Portal Data Explorer additionally requires the browsing user to hold the Cosmos
+  **Data Contributor** data-plane role (keyless).
+
+A fully private alternative (VNet + private endpoint + VNet-integrated Container Apps
+environment) was rejected for the demo: it requires recreating the Container Apps
+environment and still leaves portal browsing blocked without a jumpbox.

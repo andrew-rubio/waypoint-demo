@@ -40,15 +40,25 @@ test.describe('Personalisation via Cosmos DB (FRD-006) @flow:personalisation @fr
     await expect(chat.personalisationNote).toContainText(/reward points/i);
   });
 
-  test('saved preferences are applied when flights are presented (AC-006-2)', async ({ page }) => {
+  test('saved preferences are not announced at the flight-search stage (AC-006-2)', async ({ page }) => {
     const chat = new ChatPage(page);
     await chat.goto();
 
     await chat.send(SEARCH_LISBON);
     await expect(chat.flightOptions).toBeVisible();
 
-    await expect(chat.personalisationNote).toContainText(/aisle/i);
-    await expect(chat.personalisationNote).toContainText(/vegetarian/i);
+    await expect(chat.personalisationNote).not.toBeVisible();
+  });
+
+  test('preferred airlines are ranked first and labelled at flight search (FR-006-2)', async ({ page }) => {
+    const chat = new ChatPage(page);
+    await chat.goto();
+
+    await chat.send(SEARCH_LISBON);
+    await expect(chat.flightOptions).toBeVisible();
+
+    await expect(page.getByTestId('preferred-badge').first()).toBeVisible();
+    await expect(page.getByTestId('flight-option-0')).toContainText(/British Airways|Vueling/i);
   });
 
   test('the booking confirmation echoes seat, meal and reward points earned (AC-006-5) @smoke', async ({ page }) => {
@@ -62,6 +72,7 @@ test.describe('Personalisation via Cosmos DB (FRD-006) @flow:personalisation @fr
     await expect(chat.bookingConfirmation).toBeVisible();
     await expect(chat.bookingConfirmation).toContainText(/aisle|seat \d{1,2}[A-F]/i);
     await expect(chat.bookingConfirmation).toContainText(/vegetarian/i);
+    await expect(chat.bookingConfirmation).toContainText(/amend/i);
     await expect(chat.bookingConfirmation).toContainText('39302492');
     await expect(chat.bookingConfirmation).toContainText(/reward points/i);
     await expect(chat.bookingConfirmation).toContainText(/simulation|demo/i);

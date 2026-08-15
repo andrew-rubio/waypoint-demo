@@ -118,7 +118,9 @@ async function searchLiveFlights(request: TravelSearchRequest, token: string): P
   });
   // The sandbox returns { success:false, code:'1051' } when no flights match; keep offline flights in that case.
   if (raw?.success === false || !raw?.result) return [];
-  const items = firstArray(raw.result).slice(0, 3);
+  // Fetch a wider set so the airline-preference ranking has candidates to promote;
+  // the caller re-ranks and caps to three.
+  const items = firstArray(raw.result).slice(0, 8);
   return Promise.all(items.map((item, index) => normaliseFlight(item, request, index === 0)));
 }
 

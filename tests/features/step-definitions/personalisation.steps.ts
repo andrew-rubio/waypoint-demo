@@ -85,12 +85,17 @@ Then('the reward points balance shown should come from the Cosmos profile, not i
   await expect(cosmosEntry(this)).toHaveAttribute('data-status', 'ok');
 });
 
-Then('a personalisation note should say an aisle seat will be pre-selected', async function (this: CustomWorld) {
-  await expect(this.chat.personalisationNote).toContainText(/aisle/i);
+Then('no personalisation note should be shown at the flight-search stage', async function (this: CustomWorld) {
+  await expect(this.chat.personalisationNote).not.toBeVisible();
 });
 
-Then('the personalisation note should say a vegetarian meal will be pre-selected', async function (this: CustomWorld) {
-  await expect(this.chat.personalisationNote).toContainText(/vegetarian/i);
+Then('a flight option should be labelled {string}', async function (this: CustomWorld, label: string) {
+  await expect(this.page.getByTestId('preferred-badge').first()).toBeVisible();
+  await expect(this.page.getByTestId('preferred-badge').first()).toContainText(label);
+});
+
+Then('the first flight option should be on a preferred airline', async function (this: CustomWorld) {
+  await expect(this.page.getByTestId('flight-option-0')).toContainText(/British Airways|Vueling/i);
 });
 
 Then('the personalisation note should reference the available preferences', async function (this: CustomWorld) {
@@ -122,6 +127,10 @@ Then('the booking confirmation should state an aisle seat assignment', async fun
 
 Then('the booking confirmation should note a vegetarian in-flight meal', async function (this: CustomWorld) {
   await expect(this.chat.bookingConfirmation).toContainText(/vegetarian/i);
+});
+
+Then('the booking confirmation should say the preferences can be amended before departure', async function (this: CustomWorld) {
+  await expect(this.chat.bookingConfirmation).toContainText(/amend/i);
 });
 
 Then('the booking confirmation should show the reward points earned on this trip', async function (this: CustomWorld) {

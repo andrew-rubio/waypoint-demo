@@ -326,6 +326,28 @@ export function supplierCurrencyFor(destination: string): string | undefined {
   return CATALOGUE[cityKey(destination)]?.currency;
 }
 
+/**
+ * Reorder flights so the traveller's preferred airlines come first (each flagged
+ * `preferred: true`), backfilled with the rest, capped at `limit` (FR-006-2).
+ * Matching is case-insensitive and tolerant of name variants (e.g. "Vueling" vs
+ * "Vueling Airlines"). Order within each group is preserved (stable).
+ */
+export function prioritiseByPreferredAirlines(
+  flights: FlightOption[],
+  preferredAirlines: string[] = [],
+  limit = 3,
+): FlightOption[] {
+  const wanted = preferredAirlines.map((a) => a.trim().toLowerCase()).filter(Boolean);
+  const isPreferred = (airline: string): boolean => {
+    const name = airline.trim().toLowerCase();
+    return wanted.some((w) => name === w || name.includes(w) || w.includes(name));
+  };
+  const flagged = flights.map((f) => (isPreferred(f.airline) ? { ...f, preferred: true } : f));
+  const preferred = flagged.filter((f) => f.preferred);
+  const others = flagged.filter((f) => !f.preferred);
+  return [...preferred, ...others].slice(0, limit);
+}
+
 /** Live flight/hotel results (from the RouteStack sandbox) to merge with the offline base. */
 export interface LiveTravelResult {
   flights: FlightOption[];

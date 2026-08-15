@@ -19,3 +19,10 @@ services:
     docker:
       path: ./Dockerfile
       context: ../..
+  waypoint-data:
+    project: ./src/mcp
+    language: ts
+    host: containerapp
+    docker:
+      path: ./Dockerfile
+      context: ../..

@@ -46,6 +46,8 @@ export interface FlightOption {
   /** Outbound arrival clock time, e.g. "10:40". */
   arriveTime?: string;
   best?: boolean;
+  /** True when the airline is one of the traveller's saved preferred airlines. */
+  preferred?: boolean;
 }
 
 export interface HotelOption {

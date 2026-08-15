@@ -14,6 +14,7 @@ import {
   bookingSelectionFromMessage,
   isBookingQuery,
   isTravelSearchQuery,
+  prioritiseByPreferredAirlines,
   searchTravel,
   simulateBooking,
   supplierCurrencyFor,
@@ -206,8 +207,11 @@ export class LocalAgentDriver implements AgentDriver {
       };
       yield { type: 'tool_result', name: 'routestack.hotels', ok: true, result: { count: result.hotels.length, currency } };
 
-      // The traveller's saved seat + meal are applied to the shown options (FR-006-2).
-      yield* personaliseEvents(input.message);
+      // Rank the shown flights by the traveller's preferred airlines (FR-006-2) — silent, no note.
+      const profile = getTravellerProfile();
+      yield { type: 'tool_call', name: 'cosmos.getTravellerProfile', args: { query: 'preferred airlines and travel preferences' } };
+      yield { type: 'tool_result', name: 'cosmos.getTravellerProfile', ok: true, result: profileAuditSummary(profile) };
+      result.flights = prioritiseByPreferredAirlines(result.flights, profile.preferredAirlines);
     }
 
     yield { type: 'tool_call', name: 'travel-search', args: { ...request } };
@@ -331,8 +335,9 @@ function composeBookingReply(confirmation: BookingConfirmation): string {
   if (!confirmation.seatAssignment) return base;
   return (
     base +
-    ` I've reserved seat ${confirmation.seatAssignment} and requested a ${confirmation.mealRequested?.toLowerCase()} in-flight meal, ` +
-    `and earned ${formatPoints(confirmation.pointsEarned ?? 0)} reward points on membership ${confirmation.membershipNumber} (new balance ${formatPoints(confirmation.newBalance ?? 0)}).`
+    ` You've been booked for seat ${confirmation.seatAssignment} (${confirmation.seatClass}) with a ${confirmation.mealRequested?.toLowerCase()} in-flight meal from your saved preferences — ` +
+    `you can amend these any time up to 30 days before departure. ` +
+    `You earned ${formatPoints(confirmation.pointsEarned ?? 0)} reward points on membership ${confirmation.membershipNumber} (new balance ${formatPoints(confirmation.newBalance ?? 0)}).`
   );
 }
 

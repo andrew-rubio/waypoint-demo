@@ -24,11 +24,16 @@ Feature: Personalisation via Cosmos DB
     And the reward points balance shown should come from the Cosmos profile, not invented
 
   @personalisation @happy
-  Scenario: Saved preferences are applied when flights are presented
+  Scenario: Saved preferences are not announced at the flight-search stage
     Given flights and hotels have been shown for a covered destination
     When the agent presents the flight options
-    Then a personalisation note should say an aisle seat will be pre-selected
-    And the personalisation note should say a vegetarian meal will be pre-selected
+    Then no personalisation note should be shown at the flight-search stage
+
+  @personalisation @happy
+  Scenario: Preferred airlines are ranked first and labelled at flight search
+    Given flights and hotels have been shown for a covered destination
+    Then a flight option should be labelled "Your Preferred"
+    And the first flight option should be on a preferred airline
 
   @personalisation @happy
   Scenario: The booking confirmation echoes the assigned seat and meal
@@ -36,6 +41,7 @@ Feature: Personalisation via Cosmos DB
     When the Traveller books the first flight and hotel
     Then the booking confirmation should state an aisle seat assignment
     And the booking confirmation should note a vegetarian in-flight meal
+    And the booking confirmation should say the preferences can be amended before departure
 
   @personalisation @happy
   Scenario: The booking confirmation shows reward points earned on the membership

@@ -74,10 +74,19 @@ describe('personalisation via Cosmos DB', () => {
     expect(String(profile.membershipNumber)).toBe('39302492');
   });
 
-  it('notes an aisle seat and vegetarian meal when flights are presented (AC-006-2)', async () => {
-    const note = toolResult(await run(SEARCH_LISBON), 'personalise');
-    expect(String(note.appliedSeat)).toMatch(/aisle/i);
-    expect(String(note.appliedMeal)).toMatch(/vegetarian/i);
+  it('queries the profile to rank airlines at flight search without showing a note (AC-006-2 revised)', async () => {
+    const names = toolCallNames(await run(SEARCH_LISBON));
+    expect(names).toContain('cosmos.getTravellerProfile');
+    expect(names).not.toContain('personalise');
+  });
+
+  it('ranks preferred airlines first and flags them at flight search (FR-006-2)', async () => {
+    const result = toolResult(await run(SEARCH_LISBON), 'travel-search');
+    const flights = result.flights as Array<{ airline: string; preferred?: boolean }>;
+    // John Doe prefers Vueling + British Airways; BA floats above TAP/easyJet and is flagged.
+    expect(flights[0].airline).toMatch(/British Airways/i);
+    expect(flights[0].preferred).toBe(true);
+    expect(flights.some((f) => /TAP/i.test(f.airline) && f.preferred)).toBe(false);
   });
 
   it('echoes the assigned seat and vegetarian meal in the simulated booking (AC-006-5)', async () => {
@@ -86,6 +95,7 @@ describe('personalisation via Cosmos DB', () => {
     expect(String(booking.seatAssignment)).toMatch(/^\d{1,2}[A-F]$/);
     expect(String(booking.mealRequested)).toMatch(/vegetarian/i);
     expect(reply(events)).toMatch(/vegetarian/i);
+    expect(reply(events)).toMatch(/amend/i);
   });
 
   it('shows simulated reward points earned against the saved membership at booking (AC-006-5/FR-006-6)', async () => {

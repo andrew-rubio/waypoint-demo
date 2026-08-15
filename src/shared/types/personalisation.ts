@@ -65,6 +65,8 @@ export interface PersonalisationResult {
 export interface BookingPersonalisation {
   /** Assigned seat, e.g. "23C". */
   seatAssignment: string;
+  /** Human label for the seat class, e.g. "aisle". */
+  seatClass: string;
   /** In-flight meal requested, e.g. "Vegetarian". */
   mealRequested: DietaryRequirement;
   /** Simulated reward points earned on this trip. */

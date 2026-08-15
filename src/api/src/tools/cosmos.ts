@@ -21,7 +21,7 @@ const PROFILE: PersonalisationProfile = {
   membershipNumber: '39302492',
   tier: 'Gold',
   rewardPoints: 7463,
-  preferredAirlines: ['TAP Air Portugal', 'British Airways'],
+  preferredAirlines: ['Vueling', 'British Airways'],
   preferredCabin: 'Economy',
   seat: 'Aisle',
   dietary: 'Vegetarian',
@@ -89,7 +89,8 @@ export function personalise(profile: PersonalisationProfile, message = ''): Pers
     override && override !== profile.seat
       ? `You usually prefer ${article(seatWord(profile.seat))} ${seatWord(profile.seat)} seat, but because ${status}, ` +
         `I'll apply ${article(seatWord(appliedSeat))} ${seatWord(appliedSeat)} seat this time as you asked and keep your ${appliedMeal.toLowerCase()} meal.`
-      : `Because ${status}, I'll pre-select ${article(seatWord(appliedSeat))} ${seatWord(appliedSeat)} seat and a ${appliedMeal.toLowerCase()} meal.`;
+      : `Because ${status}, I've tailored these destination ideas to your travel style. ` +
+        `Your saved ${seatWord(appliedSeat)} seat and ${appliedMeal.toLowerCase()} meal will be applied automatically when you book.`;
 
   return {
     available: true,
@@ -121,9 +122,11 @@ export function bookingPersonalisation(
   const seat = opts.seat ?? profile.seat;
   const row = 10 + (Math.abs(hash(opts.ref)) % 21); // rows 10–30
   const seatAssignment = `${row}${SEAT_LETTER[seat]}`;
+  const seatClass = seat === 'Any' ? 'aisle' : seat.toLowerCase();
   const pointsEarned = Math.max(1, Math.round((opts.flightGBP * opts.party) / 2));
   return {
     seatAssignment,
+    seatClass,
     mealRequested: profile.dietary as DietaryRequirement,
     pointsEarned,
     membershipNumber: profile.membershipNumber,

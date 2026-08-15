@@ -29,17 +29,17 @@ unavailable.
 ## User Stories
 
 - As a **Traveller**, the agent tailors suggestions to my loyalty status and past destinations.
-- As a **Traveller**, the agent applies my travel preferences (aisle seat, vegetarian meal) when presenting flights.
+- As a **Traveller**, the agent applies my travel preferences (aisle seat, vegetarian meal) at booking.
 - As a **Demo Presenter**, I can visibly show the agent querying the Cosmos profile in the audit trail.
 
 ## Functional Requirements
 
 - **FR-006-1** The agent can query the Cosmos profile (via the `waypoint-data` MCP, `cosmos.getTravellerProfile`) for the synthetic profile: **loyalty profile** (reward-programme membership number, tier, and reward points balance), **past destinations** (city + country), and **travel preferences** (seat — aisle/window/middle — and dietary requirement).
-- **FR-006-2** Retrieved data influences destination suggestions (FRD-003 — including avoiding recently-visited past destinations), default origin (FRD-005), which flight/cabin is pre-selected (seat + meal preference), and the reward points shown in the header and summary (FRD-007).
+- **FR-006-2** Retrieved data influences destination suggestions (FRD-003 — including avoiding recently-visited past destinations), default origin (FRD-005), the applied seat + meal **at simulated booking** (FR-006-6), and the reward points shown in the header and summary (FRD-007). At **flight search** (FRD-005) the results are silently **ranked by the traveller's preferred airlines** (preferred first, backfilled with others to fill up to three), and each preferred flight is labelled **"Your Preferred"** — no chat note is shown at this step. **[UI-REVISED 2026-08-15]**
 - **FR-006-3** When personalisation is used, the agent explains *why* ("Because you're Gold Tier and enjoyed Lisbon, Portugal before, and you prefer an aisle seat…").
 - **FR-006-4** If the Cosmos profile is unavailable, the agent proceeds using only the live conversation and states that personalisation is unavailable.
 - **FR-006-5** Every Cosmos MCP call (`cosmos.getTravellerProfile`) is emitted as an audit event (type `mcp`) with a query and result summary (secrets redacted).
-- **FR-006-6** At **simulated booking** (FRD-005) the confirmation echoes the applied **seat assignment** (e.g. aisle seat 23C) and **in-flight meal** from saved preferences, and shows the **reward points earned** on this trip against the saved **membership number** with the **updated balance**. This accrual is **simulated for display only** and is never written back to Cosmos. **[UI-REVISED 2026-08-15]**
+- **FR-006-6** At **simulated booking** (FRD-005) the confirmation echoes the applied **seat assignment** (e.g. aisle seat 23C) and **in-flight meal** from saved preferences, states they can be **amended up to 30 days before departure**, and shows the **reward points earned** on this trip against the saved **membership number** with the **updated balance**. This accrual is **simulated for display only** and is never written back to Cosmos. **[UI-REVISED 2026-08-15]**
 
 ## Acceptance Criteria
 
@@ -48,10 +48,11 @@ unavailable.
 - **When** the Traveller asks for destination ideas
 - **Then** the agent's suggestions reference relevant profile facts (e.g. loyalty tier, a past destination) and it explains the reasoning.
 
-**AC-006-2 — Preference-aware selection**
+**AC-006-2 — Preference-aware selection** **[UI-REVISED 2026-08-15]**
 - **Given** the traveller's saved preferences are aisle seat and vegetarian meal
-- **When** flights are presented (FRD-005) or a trip is summarised (FRD-007)
-- **Then** the agent notes that an aisle seat and vegetarian meal will be pre-selected.
+- **When** destination ideas are given (FRD-003)
+- **Then** the agent notes that the saved aisle seat and vegetarian meal will be applied when the trip is booked
+- **And** at the flight-search step (FRD-005) the flights are ranked by the traveller's preferred airlines (Vueling, British Airways), preferred flights are labelled "Your Preferred", and no chat note is shown.
 
 **AC-006-3 — Graceful degradation**
 - **Given** the Cosmos profile store is unreachable
@@ -67,6 +68,7 @@ unavailable.
 - **Given** saved preferences (aisle seat, vegetarian meal) and reward membership 39302492
 - **When** a booking is simulated (FRD-005)
 - **Then** the confirmation notes the assigned aisle seat (e.g. 23C) and vegetarian in-flight meal
+- **And** it states the preferences can be amended up to 30 days before departure
 - **And** it shows the reward points earned on this trip and the updated balance against the membership number.
 
 ## Edge Cases
