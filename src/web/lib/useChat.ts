@@ -5,6 +5,7 @@ import type { AgentEvent } from '../../shared/types/chat-and-agent-runtime';
 import type { DestinationAdviceResult } from '../../shared/types/destination-advice';
 import type { WeatherCardResult } from '../../shared/types/weather-and-timing';
 import type { BookingConfirmation, TravelCardResult } from '../../shared/types/flight-hotel-search-booking';
+import type { PersonalisationResult } from '../../shared/types/personalisation';
 import { applyAuditEvent, auditTurns, emptyAuditState, type AuditState } from '../../shared/audit';
 
 /** A message as shown in the UI (flat list; index drives the data-testid). */
@@ -15,6 +16,7 @@ export interface UiMessage {
   weatherAdvice?: WeatherCardResult;
   travelOptions?: TravelCardResult;
   booking?: BookingConfirmation;
+  personalisation?: PersonalisationResult;
 }
 
 /** Anything longer than this is shortened for the agent (edge case). */
@@ -187,6 +189,14 @@ function applyEvent(
       if (last?.role === 'assistant') next[next.length - 1] = { ...last, booking };
       return next;
     });
+  } else if (event.type === 'tool_result' && event.name === 'personalise' && event.ok && isPersonalisation(event.result)) {
+    const personalisation = event.result;
+    setMessages((prev) => {
+      const next = [...prev];
+      const last = next[next.length - 1];
+      if (last?.role === 'assistant') next[next.length - 1] = { ...last, personalisation };
+      return next;
+    });
   } else if (event.type === 'error') {
     setError(event.message);
   }
@@ -223,6 +233,16 @@ function isBooking(value: unknown): value is BookingConfirmation {
     typeof value === 'object' &&
     (value as { simulated?: unknown }).simulated === true &&
     typeof (value as { ref?: unknown }).ref === 'string'
+  );
+}
+
+/** Only an available personalisation note renders; the degraded case shows the error notice instead. */
+function isPersonalisation(value: unknown): value is PersonalisationResult {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    (value as { available?: unknown }).available === true &&
+    typeof (value as { rationale?: unknown }).rationale === 'string'
   );
 }
 

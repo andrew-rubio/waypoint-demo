@@ -11,6 +11,7 @@
  * back to a deterministic embedded catalogue.
  */
 
+import type { BookingPersonalisation } from './personalisation.js';
 /** A price as quoted by a supplier, in its own ISO 4217 currency. */
 export interface Money {
   amount: number;
@@ -121,10 +122,13 @@ export type TravelSearchResult =
 export type TravelCardResult = TravelOptionsResult;
 
 /** A clearly-simulated booking confirmation — no payment, no real reservation (FR-005-5/6). */
-export interface BookingConfirmation {
+export interface BookingConfirmation extends Partial<BookingPersonalisation> {
   ref: string;
   simulated: true;
   /** Human-readable itinerary echo, e.g. "TAP LON→LIS · Hotel do Mar, Lisbon · 14–21 Oct". */
   itinerary: string;
   estimatedTotalGBP: number;
+  // Applied personalisation from Cosmos (FRD-006) — the optional seatAssignment,
+  // mealRequested, pointsEarned, membershipNumber and newBalance fields are inherited
+  // from BookingPersonalisation and are simulated, display-only.
 }

@@ -21,8 +21,9 @@ flowchart LR
     I1 --> I3[INC-3<br/>Destination advice]
     I3 --> I4[INC-4<br/>Weather & timing]
     I4 --> I5[INC-5<br/>Flights/Hotels + Booking]
-    I5 --> I6[INC-6<br/>Personalisation - Fabric IQ]
+    I5 --> I6[INC-6<br/>Personalisation - Cosmos DB]
     I6 --> I7[INC-7<br/>Trip summary, budget & currency]
+    I6 --> I8[INC-8<br/>Travel-guide RAG - AI Search]
 ```
 
 ## Increments
@@ -72,14 +73,21 @@ flowchart LR
 - **New tech introduced:** RouteStack MCP, Currency MCP (for GBP normalisation).
 - **Exit:** Live options in GBP; selection yields a clearly-simulated confirmation.
 
-### INC-6 — Personalisation via Fabric IQ
-- **FRD:** FRD-006 · **Priority:** P1 · **Depends on:** INC-1 (consumed by INC-3/5/7) · **Complexity:** M
-- **Scope:** **Microsoft Fabric Data Agent MCP** serving synthetic MVP datasets — loyalty
-  profile (+7,463 pts), trip history, travel preferences (aisle seat, meal). Enriches
-  suggestions/origin/seat+meal; header/summary points; graceful degradation if unavailable.
+### INC-6 — Personalisation via Cosmos DB (real MCP)
+- **FRD:** FRD-006 · **Priority:** P1 · **Depends on:** INC-1, INC-3, INC-5 · **Complexity:** M
+- **Scope:** Traveller profile — loyalty programme + **membership number** + tier + **reward
+  points**; preferences (seat aisle/window/middle + dietary); and **past destinations**
+  (city + country only) — stored in **Azure Cosmos DB (serverless)** and retrieved through a
+  real MCP call: the self-hosted **`waypoint-data` MCP** tool `cosmos.getTravellerProfile`
+  (ADR-007, ADR-009). Enriches suggestions/origin/seat+meal pre-select; header/summary
+  reward points; booking echoes seat + meal + a **simulated** points accrual on the
+  membership; graceful degradation if the store is unavailable. A deterministic offline
+  profile backs tests.
 - **Screens/flows:** S2 personalisation note, S5 personalisation-off; Flow 2, Flow 7.
-- **New tech introduced:** Fabric Data Agent MCP + synthetic dataset provisioning.
-- **Exit:** Suggestions reference profile facts; Fabric-down still functions.
+- **New tech introduced:** Azure Cosmos DB (serverless) + the self-hosted `waypoint-data`
+  MCP server (Container App); direct-grounding MCP client.
+- **Exit:** Suggestions reference real profile facts fetched from Cosmos via a visible MCP
+  call; Cosmos-down still functions.
 
 ### INC-7 — Trip summary, budget & currency
 - **FRD:** FRD-007 · **Priority:** P1 · **Depends on:** INC-4, INC-5, INC-6 · **Complexity:** M
@@ -90,6 +98,23 @@ flowchart LR
 - **Screens/flows:** S3 summary/budget/currency, S5 currency-fallback; Flow 5, Flow 7.
 - **Exit:** Correct totals; EUR toggle shows rate; personalisation reflected.
 
+### INC-8 — Travel-guide knowledge base + data-driven destination advice
+- **FRD:** FRD-003 (reworked) · **Priority:** P1 · **Depends on:** INC-6 · **Complexity:** L
+- **Scope:** Vectorise the supplied travel-guide PDF (`src/assets/eBook - Where To
+  Go-When…pdf`) into an **Azure AI Search (Free tier)** index via a Foundry **embedding
+  deployment** (ADR-008). Add the `travel-guide.searchByMonth` tool to the `waypoint-data`
+  MCP (ADR-009). The destination turn calls `cosmos.getTravellerProfile` +
+  `travel-guide.searchByMonth` (**Shape A** — two real MCP calls) and the agent reasons
+  over both to produce a **month-aware, preference-aware, guide-grounded** shortlist that
+  avoids recently-visited past destinations. **Replaces the hardcoded `destination-advisor`
+  pool** with data-driven results (same `destination-list` UI contract).
+- **Screens/flows:** S2 destination card (now month-aware + guide-cited); Flow 2.
+- **New tech introduced:** Azure AI Search (Free tier) vector index + Foundry embedding
+  deployment; RAG over the guide.
+- **Exit:** Asking for ideas for a given month returns guide-grounded, personalised
+  suggestions; both MCP calls visible in the audit; FRD-003 scenarios/tests updated +
+  re-approved.
+
 ## Summary
 
 | Inc | FRD | Priority | Depends on | Complexity | New tech |
@@ -99,9 +124,9 @@ flowchart LR
 | INC-3 | FRD-003 | P0 | INC-1 | S | SDK skill |
 | INC-4 | FRD-004 | P0 | INC-1, INC-3 | M | Open-Meteo MCP |
 | INC-5 | FRD-005 | P0/P1 | INC-1, INC-3 | L | RouteStack MCP, Currency MCP |
-| INC-6 | FRD-006 | P1 | INC-1 | M | Fabric Data Agent MCP |
+| INC-6 | FRD-006 | P1 | INC-1, INC-3, INC-5 | M | Azure Cosmos DB + self-hosted waypoint-data MCP |
 | INC-7 | FRD-007 | P1 | INC-4, INC-5, INC-6 | M | (Currency MCP reuse) |
-
+| INC-8 | FRD-003 (reworked) | P1 | INC-6 | L | Azure AI Search (Free) + Foundry embeddings; travel-guide RAG |
 **Demo-ready checkpoints:** after **INC-2** the "how the agent thinks" story is
 demonstrable; after **INC-5** a full plan-and-book flow works; after **INC-7** the
 complete experience (personalised, priced, EUR-convertible) is live.

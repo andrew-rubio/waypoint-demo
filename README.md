@@ -22,21 +22,21 @@ session.on('assistant.message_delta', e => /* stream tokens to the browser */); 
 
 Every **permission decision**, **tool call** and **MCP call** is turned into a streamed event — that stream *is* the audit trail. The agent's private reasoning is never forwarded.
 
-To keep the app runnable offline and in CI, a deterministic **local driver** ([`local-driver.ts`](src/api/src/agent/local-driver.ts)) implements the same event contract and is selected automatically when no `COPILOT_GITHUB_TOKEN` is present.
+To keep the app runnable offline and in CI, a deterministic **local driver** ([`local-driver.ts`](src/api/src/agent/local-driver.ts)) implements the same event contract and is selected automatically when no Foundry model is configured.
 
 ---
 
 ## Architecture
 
 ```
-Browser ──► Next.js (web) ──► Route Handler proxy ──► Express (api) ──► Copilot SDK ──► Copilot models
+Browser ──► Next.js (web) ──► Route Handler proxy ──► Express (api) ──► Copilot SDK ──► Foundry model
    ▲            │  CSS Modules + design tokens          │ POST /api/chat (SSE)     │
    └── SSE ◄────┘  streamed chat + audit panel          └── AgentEvent stream ◄────┘  + MCP servers
 ```
 
 - **Web** — Next.js 15 (App Router) + React 19, TypeScript, CSS Modules with design tokens (no Tailwind). Streams the reply via `fetch()` + `ReadableStream`. Same‑origin `/api/chat` is proxied to the API by a [Route Handler](src/web/app/api/chat/route.ts).
 - **API** — Express 5 on Node 22. `POST /api/chat` returns `text/event-stream` of `AgentEvent`s. Zod validation, pino structured logging, server‑side secret redaction.
-- **Agent** — one Copilot SDK session per request; a permission hook + MCP allowlist power the audit trail. MCP servers (weather, flights/hotels, currency, Fabric data) arrive in later increments.
+- **Agent** — one Copilot SDK session per request; a permission hook + MCP allowlist power the audit trail. MCP servers: weather (Open-Meteo), flights/hotels (RouteStack), currency, and the **Cosmos profile + travel-guide search** via the self-hosted **`waypoint-data`** MCP.
 - **Shared** — contract types in [`src/shared/types`](src/shared/types) are the single source of truth for both apps.
 - **Infra** — Azure Container Apps via `azd` + Bicep ([`infra/`](infra)); Application Insights + OpenTelemetry.
 
@@ -56,7 +56,7 @@ src/
   shared/   Contract types shared by api + web
 e2e/        Playwright end-to-end tests + Page Object Models
 tests/      Cucumber.js BDD step definitions
-infra/      Azure Bicep (Container Apps, ACR, Log Analytics, App Insights, managed identity)
+infra/      Azure Bicep (Container Apps, ACR, Log Analytics, App Insights, managed identity, Cosmos DB, AI Search, waypoint-data MCP)
 specs/      PRD, FRDs, Gherkin, UI design system, contracts, ADRs, increment plan
 ```
 
@@ -123,7 +123,7 @@ azd up
 
 > **Important:** `azd provision` on its own resets the container apps to a placeholder image. Always follow provisioning with `azd deploy` — or just use `azd up` (provision + deploy).
 
-The API image installs `ca-certificates` (the Copilot native runtime needs a system CA store for TLS). Auth is **managed identity** — the Container App identity is granted **Cognitive Services OpenAI User** on the Foundry resource; there is no key or secret to store.
+The API image installs `ca-certificates` (the Copilot native runtime needs a system CA store for TLS). Auth is **managed identity** — the Container App identity is granted **Cognitive Services OpenAI User** on the Foundry resource, plus **Cosmos DB Data Reader** and **Search Index Data Reader**; there is no key or secret to store. Cosmos DB (serverless) and Azure AI Search (Free tier) are provisioned by Bicep.
 
 ---
 
@@ -138,6 +138,7 @@ The API image installs `ca-certificates` (the Copilot native runtime needs a sys
 | `FOUNDRY_API_KEY` | api | Alternative to managed identity (only if the resource allows keys). All auth absent → local‑driver mode. |
 | `FOUNDRY_WIRE_API` | api | `responses` (default) or `completions`. |
 | `API_BASE_URL` | web | Upstream API base for the `/api/chat` proxy. |
+| `WAYPOINT_DATA_MCP_URL` | api | Internal URL of the self-hosted `waypoint-data` MCP (Cosmos profile + travel-guide search). Cosmos + AI Search are reached **keyless via managed identity** — no secret. |
 | `PORT` | api | API port (default `8080`). |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | api | Telemetry (set in Azure). |
 | `COPILOT_GITHUB_TOKEN` | api | *(Superseded by ADR-005; kept commented for the demo.)* GitHub token for the original Copilot‑models path. |
@@ -148,7 +149,7 @@ No secrets are hardcoded; nothing that looks like a credential is logged or stre
 
 ## Tech stack
 
-TypeScript · Node 22 · Next.js 15 / React 19 · Express 5 · `@github/copilot-sdk` · Zod · pino · Vitest · Cucumber.js · Playwright · Azure Container Apps · Bicep · `azd` · Application Insights / OpenTelemetry.
+TypeScript · Node 22 · Next.js 15 / React 19 · Express 5 · `@github/copilot-sdk` · Zod · pino · Vitest · Cucumber.js · Playwright · Azure Cosmos DB · Azure AI Search · Azure Container Apps · Bicep · `azd` · Application Insights / OpenTelemetry.
 
 ## License
 

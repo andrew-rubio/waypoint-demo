@@ -20,8 +20,31 @@ import {
   travelRequestFromConversation,
 } from '../tools/routestack.js';
 import { rememberSearchOptions, resolveBookingOptions } from '../tools/booking-context.js';
+import {
+  bookingPersonalisation,
+  detectSeatOverride,
+  formatPoints,
+  getTravellerProfile,
+  personalise,
+  profileAuditSummary,
+} from '../tools/cosmos.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Emit the Cosmos personalisation lifecycle: the `cosmos.getTravellerProfile`
+ * MCP query and the `personalise` skill result the audit trail and
+ * personalisation note are built from (FRD-006). Shared by destination and
+ * travel turns.
+ */
+async function* personaliseEvents(message: string): AsyncIterable<AgentEvent> {
+  const profile = getTravellerProfile();
+  yield { type: 'tool_call', name: 'cosmos.getTravellerProfile', args: { query: 'traveller loyalty, preferences and past destinations' } };
+  yield { type: 'tool_result', name: 'cosmos.getTravellerProfile', ok: true, result: profileAuditSummary(profile) };
+  const note = personalise(profile, message);
+  yield { type: 'tool_call', name: 'personalise', args: { seat: note.appliedSeat, meal: note.appliedMeal } };
+  yield { type: 'tool_result', name: 'personalise', ok: true, result: note };
+}
 
 /**
  * Deterministic, dependency-free agent used for tests and for running the demo
@@ -59,11 +82,18 @@ export class LocalAgentDriver implements AgentDriver {
     // 1) An observable decision ALWAYS precedes the reply text.
     yield {
       type: 'decision',
-      summary: `Use destination-advisor to help with "${preview(input.message)}".`,
+      summary: `Check your Cosmos profile, then use destination-advisor for "${preview(input.message)}".`,
     };
 
     // 2) Preserve the model audit lifecycle while surfacing the nested skill call.
     yield { type: 'tool_call', name: 'copilot.chat', args: { model: 'local', prompt: input.message } };
+
+    // Personalise when we will actually show suggestions or the traveller states a preference.
+    const hasSuggestions = destinationResult.kind === 'shortlist' || destinationResult.kind === 'no-match';
+    if (hasSuggestions || detectSeatOverride(input.message)) {
+      yield* personaliseEvents(input.message);
+    }
+
     yield { type: 'tool_call', name: 'destination-advisor', args: { ...destinationRequest } };
     yield { type: 'tool_result', name: 'destination-advisor', ok: true, result: destinationResult };
 
@@ -175,6 +205,9 @@ export class LocalAgentDriver implements AgentDriver {
         args: { destination: result.place, checkIn: result.checkIn, checkOut: result.checkOut, rooms: request.rooms ?? 1 },
       };
       yield { type: 'tool_result', name: 'routestack.hotels', ok: true, result: { count: result.hotels.length, currency } };
+
+      // The traveller's saved seat + meal are applied to the shown options (FR-006-2).
+      yield* personaliseEvents(input.message);
     }
 
     yield { type: 'tool_call', name: 'travel-search', args: { ...request } };
@@ -192,7 +225,7 @@ export class LocalAgentDriver implements AgentDriver {
   }
 
   private async *runBooking(input: AgentInput): AsyncIterable<AgentEvent> {
-    yield { type: 'decision', summary: 'Simulate a booking for the selected flight and hotel.' };
+    yield { type: 'decision', summary: 'Simulate a booking for the selected flight and hotel, with your saved preferences.' };
     yield { type: 'tool_call', name: 'copilot.chat', args: { model: 'local', prompt: input.message } };
 
     const options = resolveBookingOptions(input.sessionId, input.history);
@@ -209,7 +242,23 @@ export class LocalAgentDriver implements AgentDriver {
       return;
     }
 
+    // Apply saved preferences + accrue simulated reward points on the membership (FR-006-6).
+    const profile = getTravellerProfile();
+    yield { type: 'tool_call', name: 'cosmos.getTravellerProfile', args: { query: 'traveller loyalty, preferences and membership' } };
+    yield { type: 'tool_result', name: 'cosmos.getTravellerProfile', ok: true, result: profileAuditSummary(profile) };
+
     const confirmation = simulateBooking(options, selection, 1);
+    const flight = options.flights[Math.min(selection.flightIndex, options.flights.length - 1)];
+    Object.assign(
+      confirmation,
+      bookingPersonalisation(profile, {
+        ref: confirmation.ref,
+        flightGBP: flight.pricePerTraveller.amountGBP,
+        party: options.party,
+        seat: detectSeatOverride(input.message),
+      }),
+    );
+
     yield { type: 'tool_call', name: 'booking-simulator', args: { ...selection } };
     yield { type: 'tool_result', name: 'booking-simulator', ok: true, result: confirmation };
 
@@ -275,10 +324,15 @@ function composeTravelReply(result: TravelSearchResult): string {
 
 /** A concise conversational wrapper around a simulated booking confirmation. */
 function composeBookingReply(confirmation: BookingConfirmation): string {
-  return (
+  const base =
     'Done — this is a demo simulation, so no payment was taken and no real reservation was made. ' +
     `Your reference is ${confirmation.ref}. Itinerary: ${confirmation.itinerary}. ` +
-    `Estimated total £${confirmation.estimatedTotalGBP}.`
+    `Estimated total £${confirmation.estimatedTotalGBP}.`;
+  if (!confirmation.seatAssignment) return base;
+  return (
+    base +
+    ` I've reserved seat ${confirmation.seatAssignment} and requested a ${confirmation.mealRequested?.toLowerCase()} in-flight meal, ` +
+    `and earned ${formatPoints(confirmation.pointsEarned ?? 0)} reward points on membership ${confirmation.membershipNumber} (new balance ${formatPoints(confirmation.newBalance ?? 0)}).`
   );
 }
 

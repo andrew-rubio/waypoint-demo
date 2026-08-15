@@ -22,7 +22,7 @@
   header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px;background:var(--color-surface);border-bottom:1px solid var(--color-border);box-shadow:var(--shadow-sm);z-index:20;flex:0 0 auto}
   .brand{display:flex;align-items:center;gap:10px;font-family:var(--font-heading);font-weight:700;font-size:18px}.brand svg{width:24px;height:24px;color:var(--color-primary)}
   .header-right{display:flex;align-items:center;gap:12px}
-  .user-chip{display:flex;align-items:center;gap:8px;background:#CFFAFE;color:var(--color-primary);border-radius:var(--radius-full);padding:5px 12px;font-weight:600;font-size:13px}
+  .user-chip{display:flex;align-items:center;gap:8px;background:#CFFAFE;color:var(--color-primary);border:1.5px solid var(--color-secondary);border-radius:var(--radius-full);padding:5px 12px;font-weight:600;font-size:13px}
   .user-chip .avatar{width:22px;height:22px;border-radius:50%;background:var(--color-primary);color:#fff;display:grid;place-items:center;font-size:11px}
   .audit-toggle{display:flex;align-items:center;gap:8px;border:1px solid var(--color-border);background:var(--color-surface);color:var(--color-text);border-radius:var(--radius-md);padding:8px 12px;font-weight:600;font-size:14px;cursor:pointer;transition:transform var(--dur-press) var(--ease-out),background var(--dur-fast)}
   .audit-toggle svg{width:18px;height:18px}.audit-toggle:hover{border-color:var(--color-primary)}.audit-toggle:active{transform:scale(.97)}
@@ -72,7 +72,7 @@
   <header data-testid="app-header">
     <a href="index.html" class="brand" data-testid="brand-home" style="text-decoration:none;color:inherit;cursor:pointer" aria-label="Open the prototype menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>Waypoint</a>
     <div class="header-right">
-      <div class="user-chip" data-testid="user-chip"><span class="avatar">JD</span>John Doe · Gold Tier · 7,463 Pts</div>
+      <div class="user-chip" data-testid="user-chip"><span class="avatar">JD</span>John Doe · Gold Tier · 7,463 Reward Points</div>
       <a class="newchat" href="welcome.html" data-testid="new-chat" aria-label="Start a new chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>New chat</a>
       <button class="audit-toggle" id="auditToggle" data-testid="audit-toggle" aria-pressed="false" aria-controls="auditPanel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m9 12 2 2 4-4"/><path d="M15 3h4a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-4"/></svg>Audit trail</button>
     </div>
@@ -129,7 +129,7 @@
         <div class="entry" data-testid="audit-entry-err-wx"><div class="entry-top"><span class="type-badge t-mcp">mcp</span><span class="name">open-meteo.climate</span><span class="dur">3005ms</span></div><div class="summary">retry 1/1 failed · <span class="s-err">error: timeout</span></div></div>
         <div class="entry" data-testid="audit-entry-err-flight"><div class="entry-top"><span class="type-badge t-mcp">mcp</span><span class="name">routestack.searchFlights</span><span class="dur">76ms</span></div><div class="summary">0 results for 2026-10-14 · <span class="s-warn">ok · empty</span></div></div>
         <div class="entry" data-testid="audit-entry-err-quota"><div class="entry-top"><span class="type-badge t-mcp">mcp</span><span class="name">routestack.searchHotels</span><span class="dur">12ms</span></div><div class="summary">quota exhausted (token refunded) · <span class="s-err">error: quota</span></div></div>
-        <div class="entry" data-testid="audit-entry-err-fabric"><div class="entry-top"><span class="type-badge t-mcp">mcp</span><span class="name">fabric.getProfile</span><span class="dur">2010ms</span></div><div class="summary">unreachable → degraded · <span class="s-err">error: timeout</span></div></div>
+        <div class="entry" data-testid="audit-entry-err-cosmos"><div class="entry-top"><span class="type-badge t-mcp">mcp</span><span class="name">cosmos.getTravellerProfile</span><span class="dur">2010ms</span></div><div class="summary">unreachable → degraded · <span class="s-err">error: timeout</span></div></div>
         <div class="entry" data-testid="audit-entry-err-fx"><div class="entry-top"><span class="type-badge t-mcp">mcp</span><span class="name">currency.convert</span><span class="dur">1508ms</span></div><div class="summary">no rate → GBP fallback · <span class="s-err">error</span></div></div>
       </div>
     </aside>

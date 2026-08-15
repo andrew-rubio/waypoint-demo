@@ -16,9 +16,9 @@ flowchart TD
     A([Traveler opens web app]) --> B[Chat with holiday-planning agent]
     B --> C{What is the traveler asking for?}
 
-    C -->|"Describe interests / ask for ideas"| D[Destination Advisor Skill<br/>recommends destinations]
+    C -->|"Describe interests / best month"| D[Destination Advice<br/>Travel-Guide AI Search + Cosmos profile]
     C -->|"Best month to go?"| E[Open-Meteo MCP<br/>climate + forecast]
-    C -->|"Personalise for me"| F[Microsoft Fabric IQ<br/>Data Agent MCP<br/>loyalty + points, history, preferences]
+    C -->|"Personalise for me"| F[Azure Cosmos DB<br/>via waypoint-data MCP<br/>reward points + membership, past destinations, preferences]
     C -->|"Find flights / hotels"| G[RouteStack.ai MCP<br/>live search: flights + hotels]
 
     D --> H[Agent synthesises a recommendation]
@@ -88,7 +88,7 @@ for scale.
 
 - **Role**: The Copilot SDK agent runtime that plans, decides, and invokes tools.
 - **Needs**: Access to skills (custom domain logic), MCP servers (weather, travel,
-  Fabric data), SDK lifecycle events, a permission handler, and application
+  Cosmos profile + travel-guide search), SDK lifecycle events, a permission handler, and application
   instrumentation to emit observable audit events.
 - **Goals**: Fulfil the traveller's request by orchestrating skills and MCP tools.
 - **Source**: **Inferred:** the SDK exposes a programmatic agent runtime with custom
@@ -103,11 +103,11 @@ for scale.
 | F-001 | Conversational chat UI | Single-page chat interface (Next.js) where the traveller talks to the agent; streaming responses; a **New chat** control to reset the session, and a logo that returns to home. | P0 | — |
 | F-002 | Copilot SDK agent runtime | Backend (Express) hosts a GitHub Copilot SDK agent that plans and invokes skills/tools/MCP. Streams tokens and tool events to the UI. | P0 | F-001 |
 | F-003 | Audit-trail side panel | Toggleable panel showing a live, chronological log of observable orchestration events: model request lifecycle, app-generated decision summaries, permission decisions, skill invocations, MCP calls, retries, and outbound API calls with inputs/outputs, timing, and status. Hidden model reasoning/chain-of-thought is never requested or displayed. | P0 | F-002 |
-| F-004 | Destination advice (Destination Advisor skill) | Traveller describes interests in conversation; a custom skill recommends destinations with rationale. | P0 | F-002 |
+| F-004 | Destination advice (guide-grounded, personalised) | Traveller describes interests (and optionally a target month); the agent recommends destinations **grounded in a travel-guide knowledge base (Azure AI Search)** and **personalised from the Cosmos profile** (preferences + past destinations), month-aware. Replaces the earlier hardcoded pool (INC-8). | P0 | F-002, F-008 |
 | F-005 | Weather & best-time-to-travel (Open-Meteo MCP) | Agent retrieves monthly climate/forecast for a place via the Open-Meteo MCP and advises on ideal travel months. | P0 | F-002 |
 | F-006 | Live flight & hotel search (RouteStack.ai MCP) | For a chosen destination, the agent searches live flights and hotels via RouteStack's MCP-native travel API (sandbox), preserves supplier currency, and normalises displayed prices to GBP through the Currency MCP. | P0 | F-002, F-004 |
 | F-007 | Simulated booking | Traveller selects an option; the agent produces a mock confirmation (no payment, no real reservation). | P1 | F-006 |
-| F-008 | Personalisation via Fabric IQ (Fabric Data Agent MCP) | Agent enriches recommendations using the approved synthetic MVP data (loyalty profile with reward points, trip history, and travel preferences such as aisle seat and meal) served by a Microsoft Fabric Data Agent over MCP. This is a **B2C** traveller product — no corporate/travel-policy data. | P1 | F-002 |
+| F-008 | Personalisation via Cosmos DB (waypoint-data MCP) | Agent enriches recommendations using a synthetic traveller profile stored in **Azure Cosmos DB** (serverless) and retrieved via the self-hosted **`waypoint-data` MCP** (`cosmos.getTravellerProfile`): loyalty profile (reward-programme **membership number**, tier, **reward points** balance), **past destinations** (city + country), and travel preferences (**seat** — aisle/window/middle — and **dietary** requirement). At simulated booking the confirmation echoes the assigned seat + meal and a **simulated reward-points accrual** (display only). This is a **B2C** traveller product — no corporate/travel-policy data. | P1 | F-002 |
 | F-009 | Trip summary / itinerary | The agent assembles a readable summary of the chosen destination, dates, weather note, flight, and hotel. | P1 | F-005, F-006 |
 | F-010 | Well-commented, demo-ready codebase | Source is structured and annotated for live walkthrough; concise comments explain intent, not mechanics. | P0 | — |
 | F-011 | Budget estimate + currency conversion (Budget Estimator skill + Currency MCP) | A small skill totals flight + hotel. Prices display in **GBP by default** with an option to convert to **EUR** (demo audience is Spain-based) via a Currency MCP. | P1 | F-006 |
@@ -125,14 +125,16 @@ for scale.
   CDN needed for a single-presenter demo.
 
 ### Security
-- **No hardcoded secrets.** `COPILOT_GITHUB_TOKEN`/`GITHUB_TOKEN`, `ROUTESTACK_API_KEY`,
-  and Fabric credentials come from environment variables only.
+- **No hardcoded secrets.** `ROUTESTACK_API_KEY`/`ROUTESTACK_SECRET` come from environment
+  variables only; the model (Microsoft Foundry) and data stores (Cosmos DB, Azure AI
+  Search) use **managed identity** (keyless). *(The original `COPILOT_GITHUB_TOKEN` path is
+  retained commented — ADR-005.)*
 - Single demo user, no auth surface; the app must not be exposed publicly with live
   booking. Booking is simulated, so no PCI/payment scope.
 - The Copilot SDK per-tool **permission handler** governs tool execution. SDK events
   plus application instrumentation produce observable audit events; hidden model
   reasoning/chain-of-thought is not captured or displayed.
-- Outbound MCP allowlist: only the four declared MCP servers are enabled.
+- Outbound MCP allowlist: only the declared MCP servers are enabled (`routestack, open-meteo, currency, cosmos, travel-guide`).
 - Traveller prompts and all MCP/API responses are untrusted input. The backend
   validates tool arguments and external responses against schemas, limits payload
   sizes, redacts secrets before streaming, and treats returned prose as data rather
@@ -160,7 +162,7 @@ for scale.
 - **Real payments / real reservations.** Booking is simulated; no merchant, no Stripe,
   no ticketing. (RouteStack *can* handle real checkout — intentionally not used.)
 - **Authentication, accounts, multi-user, or persistence of user profiles.** Single
-  demo user; profile data is synthetic and read-only from Fabric.
+  demo user; profile data is synthetic and read-only from Cosmos DB.
 - **Production hardening**: rate limiting, autoscaling, HA, CDN, secrets vaulting
   beyond env vars.
 - **Native mobile apps** and offline support.
@@ -184,7 +186,7 @@ sequenceDiagram
     participant SK as Skills (Destination Advisor, etc.)
     participant WX as Open-Meteo MCP
     participant RS as RouteStack.ai MCP
-    participant FAB as Fabric IQ Data Agent MCP
+    participant FAB as waypoint-data MCP (Cosmos + Travel Guide)
     participant FX as Currency MCP
     participant AUD as Audit Trail (side panel)
 
@@ -193,7 +195,7 @@ sequenceDiagram
     SDK-->>AUD: emit "decision: planning"
     SDK->>SK: Invoke Destination Advisor
     SK-->>AUD: emit "skill call + args"
-    SDK->>FAB: Query synthetic profile (loyalty+points/history/preferences)
+    SDK->>FAB: Query Cosmos profile (reward points/past destinations/preferences)
     FAB-->>AUD: emit "MCP call + result"
     SDK->>WX: Get monthly climate for candidate places
     WX-->>AUD: emit "MCP call + result"
@@ -227,11 +229,11 @@ above traces to one of these sources.
 | Copilot SDK capabilities (agent runtime, skills, tools, MCP, permission handler, BYOK, streaming) | `github/copilot-sdk` README — `npm install @github/copilot-sdk`; "same engine behind Copilot CLI", custom agents/skills/tools/MCP, per-tool permission handler |
 | Flight/hotel search + simulated booking | RouteStack.ai — MCP-native travel API, 3M+ hotels / 950+ airlines, free sandbox with real cached data, `@routestack/sdk`, hosted checkout (unused) |
 | Weather / best-time-to-travel | Open-Meteo — free no-key JSON weather API; forecast, historical (ERA5 from 1940), climate, and geocoding endpoints; community Open-Meteo MCP wrapper |
-| Personalisation data | Microsoft Fabric IQ / Fabric Data Agent — semantic layer + natural-language data agent, consumable over MCP (synthetic datasets defined in Appendix B) |
+| Personalisation data | Azure Cosmos DB (serverless) traveller profile + Azure AI Search travel-guide index, consumed over the self-hosted `waypoint-data` MCP (synthetic data defined in Appendix B; ADR-007/008/009) |
 
 ---
 
-## Appendix B: Recommended Skills, MCP Servers & Fabric IQ Datasets
+## Appendix B: Recommended Skills, MCP Servers & Data Stores
 
 This appendix answers the stakeholder's explicit requests. **Inferred:** these are
 *recommendations* for what to build/wire; none are pre-existing published assets
@@ -256,30 +258,29 @@ except the MCP servers/APIs noted.
 |-----------|------|-------|
 | **RouteStack.ai** (core) | Live flights + hotels; simulated booking | MCP-native; free unlimited **sandbox** with real cached data; swap key for prod. Use sandbox for the demo. Car rental supported but unused. |
 | **Open-Meteo MCP** (core) | Weather forecast + monthly climate averages + geocoding | Wraps the free, no-API-key Open-Meteo endpoints (Forecast, Historical/ERA5, Climate, Geocoding). |
-| **Microsoft Fabric Data Agent** (core) | Natural-language retrieval over the synthetic Fabric IQ datasets | Demonstrates "Fabric IQ" retrieval; exposed to the agent over MCP. |
+| **waypoint-data** (self-hosted, core) | `cosmos.getTravellerProfile` (Cosmos DB profile) + `travel-guide.searchByMonth` (AI Search travel-guide index) | Real MCP calls the agent reasons over; keyless via managed identity (ADR-007/008/009). |
 | **Currency-exchange MCP** (core) | Convert displayed prices; **GBP default, EUR on request** | Powers F-011. Default all prices to GBP; convert to EUR for the Spain-based demo audience. |
 
 > Already present in `.mcp.json` for *development* (not app runtime): `github`,
 > `playwright`, `azure`, `deepwiki`, `context7`, `microsoft.docs.mcp`, `aspire`.
 > The four core servers above are what the **agent** consumes at runtime.
 
-### B.3 Microsoft Fabric IQ — Synthetic Dataset Ideas
+### B.3 Synthetic Data — Cosmos Profile + Travel-Guide Knowledge Base
 
-Synthetic data the Fabric Data Agent can serve so the demo can show "the agent is
-querying Fabric IQ". All fictional; one demo traveller ("John Doe").
+Synthetic data the `waypoint-data` MCP serves so the demo can show "the agent is
+querying my profile and a travel guide". All fictional; one demo traveller ("John Doe").
 
 | Dataset | Fields (illustrative) | What it enables in the demo |
 |---------|-----------------------|-----------------------------|
-| **Traveller loyalty profile** | tier (Gold), **reward points balance (7,463)**, preferred airline/hotel chains, preferred cabin | "Because you're Gold Tier with 7,463 points, I prioritised your preferred airlines…" |
-| **Past trip history** | destinations, dates, spend, party size, satisfaction rating | "You loved coastal Portugal last spring — here are similar spots." |
-| **Travel preferences** | **seat preference (aisle)**, **meal preference (vegetarian)**, activity interests, pace (relaxed/packed), climate preference | Pre-selects aisle seat + meal; grounds the Destination Advisor beyond the live chat. |
-| **Saved traveller companions** | names, ages, passport validity (synthetic) | Party-size-aware flight/hotel search. |
-| **Internal destination knowledge base** | curated "best time to visit", visa notes, safety notes per city | Shows Fabric IQ enriching answers the public MCPs don't cover. |
+| **Traveller loyalty profile** (Cosmos) | tier (Gold), **reward points balance (7,463)**, **membership number**, preferred airlines, preferred cabin | "Because you're Gold Tier with 7,463 points, I prioritised your preferred airlines…" |
+| **Past destinations** (Cosmos) | city + country (e.g. Lisbon, Portugal) | "You've already been to Lisbon — here's somewhere new that fits." |
+| **Travel preferences** (Cosmos) | **seat preference (aisle)**, **dietary (vegetarian)** | Pre-selects aisle seat + vegetarian meal; echoed at booking (seat 23C + points). |
+| **Travel-guide knowledge base** (AI Search) | vectorised PDF — best places to visit per month | Grounds **month-aware** destination advice (INC-8); the agent cites the guide. |
 
-> **Approved MVP:** *loyalty profile* (incl. reward points), *past trip history*, and
-> *travel preferences* (aisle seat, meal). Saved companions and the destination
-> knowledge base are stretch datasets outside the MVP. This is a B2C product — there is
-> no corporate travel-policy dataset.
+> **Approved MVP:** *loyalty profile* (incl. reward points + membership), *past destinations*
+> (city + country), and *travel preferences* (aisle seat, vegetarian meal), stored in
+> **Cosmos DB**; plus the **travel-guide** knowledge base in **Azure AI Search** (INC-8).
+> This is a B2C product — there is no corporate travel-policy dataset.
 
 ---
 
@@ -291,7 +292,7 @@ requirements at the stakeholder's direction.
 
 - **Features identified:** 12 (F-001…F-012); 6 are P0.
 - **Personas:** 3 (Traveller = explicit; Demo Presenter & Agent = inferred, high confidence).
-- **Heavy-inference areas (lower confidence):** Fabric IQ dataset specifics (B.3),
+- **Heavy-inference areas (lower confidence):** profile / knowledge-base specifics (B.3),
   Budget Estimator (F-011), audit export (F-012), and exact Copilot SDK skill vs. tool
   boundaries — all flagged **Inferred:**.
 - **Simulated/stubbed by design:** booking (F-007) is intentionally mock; car rental

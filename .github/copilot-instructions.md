@@ -179,7 +179,7 @@ specs/
 - **Language:** TypeScript everywhere. **Node 22 LTS**.
 - **Web:** Next.js 15 (App Router) + React 19 in `src/web/`. Styling = **CSS Modules + design tokens** from `specs/ui/design-system.md` (no Tailwind). Icons = inline Lucide-style SVG, never emoji. Stream chat via `fetch()` + `ReadableStream` (SSE).
 - **API:** Express 5 in `src/api/`, embedding **`@github/copilot-sdk`** (bundled Copilot CLI). `POST /api/chat` returns `text/event-stream`. Validate with **Zod**; log with **pino** (never `console.log`); redact secrets server-side before logging/streaming.
-- **Agent:** one Copilot SDK agent per request; register custom **skills** (`src/api/src/skills/`) and the 4 MCP servers via SDK MCP config with an **allowlist** (routestack, open-meteo, microsoft-fabric-data-agent, currency). Attach the permission/telemetry hook to emit audit events — observable orchestration only, never hidden model reasoning.
+- **Agent:** one Copilot SDK agent per request; register custom **skills** (`src/api/src/skills/`) and the MCP servers via SDK MCP config with an **allowlist** (routestack, open-meteo, currency, cosmos, travel-guide). Attach the permission/telemetry hook to emit audit events — observable orchestration only, never hidden model reasoning.
 - **Auth/model:** `COPILOT_GITHUB_TOKEN` service credential (ADR-002); no user login. Secrets from env / Container App secrets only.
 - **Shared types:** `src/shared/types/`.
 - **Orchestration/deploy:** Aspire AppHost locally (`aspire start`); Azure Container Apps via `azd` + Bicep (`infra/`, generated at INC-1 to match `specs/contracts/infra/resources.yaml`). Telemetry via Application Insights + OpenTelemetry.

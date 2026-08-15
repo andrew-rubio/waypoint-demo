@@ -10,7 +10,7 @@
 
 | Region | Contents | FRD |
 |--------|----------|-----|
-| Header | Product mark "Waypoint" (links to home / prototype menu), demo-user chip ("John Doe · Gold Tier · 7,463 Pts"), **New chat** button, **Audit trail toggle** | FRD-001, FRD-002, FRD-006 |
+| Header | Product mark "Waypoint" (links to home / prototype menu), demo-user chip ("John Doe · Gold Tier · 7,463 Reward Points"), **New chat** button, **Audit trail toggle** | FRD-001, FRD-002, FRD-006 |
 | Chat column | Scrollable message list + composer (textarea + send) | FRD-001 |
 | Audit panel | Right slide-in panel (bottom sheet on mobile): live event list, Clear, Export (P3), empty state | FRD-002 |
 
@@ -53,7 +53,7 @@
 ### S5 — Degraded & error states
 - **File:** [prototypes/error-states.html](prototypes/error-states.html)
 - **Purpose:** Show graceful degradation for the demo's failure paths.
-- **Serves:** FRD-004 (weather MCP down), FRD-005 (no availability / sandbox quota), FRD-006 (Fabric unavailable → personalisation off), FRD-007 (currency fallback to GBP)
+- **Serves:** FRD-004 (weather MCP down), FRD-005 (no availability / sandbox quota), FRD-006 (Cosmos unavailable → personalisation off), FRD-007 (currency fallback to GBP)
 - **Key elements:** non-fatal in-chat error notices, matching `error`-status audit entries, "personalisation unavailable" banner.
 
 ### Hub

@@ -1,15 +1,30 @@
 # FRD-003: Destination Advice
 
-> Priority **P0**. Traces to PRD feature **F-004**. Depends on **FRD-001**.
+> Priority **P0**. Traces to PRD feature **F-004**. Depends on **FRD-001**, **FRD-006**.
+>
+> **[UI-REVISED 2026-08-15 — PLANNED INC-8]** Destination advice moves from a hardcoded
+> candidate pool to **data-driven, month-aware, personalised** recommendations: grounded in
+> a **travel-guide knowledge base (Azure AI Search)** and personalised from the **Cosmos
+> profile** (preferences + past destinations). Two real MCP calls
+> (`travel-guide.searchByMonth`, `cosmos.getTravellerProfile`) are made via the
+> `waypoint-data` MCP and the agent reasons over both. See **ADR-008**, **ADR-009**.
+> The current shipped behaviour (INC-3) uses the in-process `destination-advisor` pool; the
+> requirements below describe the INC-8 target.
 
 ## Overview
 
-A custom Copilot SDK Markdown skill, **`destination-advice`**, that guides the agent's
-destination-discovery workflow, backed by an executable **`destination-advisor`** tool.
-Together they turn free-text interests ("warm, walkable, great food, not too touristy")
-into a ranked shortlist of destinations with a short rationale for each. The skill
-optionally consults personalisation data (FRD-006) but functions without it. It is the
-entry point that later drives weather (FRD-004) and flight/hotel search (FRD-005).
+A custom Copilot SDK Markdown skill, **`destination-advice`**, guides the agent's
+destination-discovery workflow. In the **INC-8 target**, recommendations are **grounded in a
+travel-guide knowledge base** (a PDF vectorised into **Azure AI Search**) and
+**personalised** from the traveller's **Cosmos profile** — preferences and **past
+destinations** — so the agent can answer "where should I go in June?" with month-appropriate,
+preference-aware ideas that avoid places the traveller has recently visited, each with a
+short rationale drawn from the guide. It is the entry point that later drives weather
+(FRD-004) and flight/hotel search (FRD-005).
+
+> **Current (INC-3):** the `destination-advisor` tool proposes/ranks candidates from an
+> in-process pool. INC-8 replaces that source with the guide + profile (same
+> `destination-list` UI contract).
 
 ### Skill and Tool Responsibilities
 
@@ -33,11 +48,12 @@ entry point that later drives weather (FRD-004) and flight/hotel search (FRD-005
 
 ## Functional Requirements
 
-- **FR-003-1** The `destination-advice` skill applies the destination workflow and invokes the `destination-advisor` tool, which accepts the traveller's stated interests/constraints and returns a **ranked list** (3–5) of destinations, each with a one-line rationale.
+- **FR-003-1** The `destination-advice` skill turns the traveller's interests (and an optional target **month**) into a **ranked list** (3–5) of destinations, each with a one-line rationale. **[INC-8]** Candidates are grounded in the **travel-guide** knowledge base (`travel-guide.searchByMonth`) and personalised from the **Cosmos profile** (`cosmos.getTravellerProfile`); the agent reasons over both.
 - **FR-003-2** When input is insufficient to recommend (e.g. no preferences at all), the agent asks **one** clarifying question instead of returning a list.
 - **FR-003-3** The skill supports **refinement**: a follow-up message adjusts the previous shortlist rather than restarting.
 - **FR-003-4** Each suggestion includes a canonical place name usable by downstream skills (geocoding in FRD-004, search in FRD-005).
-- **FR-003-5** The skill-driven tool invocation and its result are emitted as audit events (type `skill`).
+- **FR-003-5** **[INC-8]** The `travel-guide.searchByMonth` and `cosmos.getTravellerProfile` calls are emitted as audit events (type `mcp`); a guide-grounded rationale cites the travel guide.
+- **FR-003-6** **[INC-8]** For a target month, suggestions reflect the guide's month-appropriate picks and **avoid destinations the traveller has recently visited** (past destinations from the Cosmos profile).
 
 ## Acceptance Criteria
 
@@ -61,6 +77,11 @@ entry point that later drives weather (FRD-004) and flight/hotel search (FRD-005
 - **When** the Traveller picks one
 - **Then** the chosen destination is expressed as a canonical name/location the weather and search skills can consume.
 
+**AC-003-5 — Month-aware, guide-grounded & personalised** **[INC-8]**
+- **Given** the Traveller asks "where should I go in June?"
+- **When** the agent responds
+- **Then** it calls `travel-guide.searchByMonth` and `cosmos.getTravellerProfile` (both visible as `mcp` audit entries), returns month-appropriate destinations grounded in the guide, applies the traveller's preferences, and avoids places they have recently visited.
+
 ## Edge Cases
 
 | Condition | Expected behaviour |
@@ -68,6 +89,8 @@ entry point that later drives weather (FRD-004) and flight/hotel search (FRD-005
 | Contradictory interests ("hot and snowy beaches") | Agent acknowledges the tension and offers options for each interpretation. |
 | Extremely niche request with no good match | Agent says it has no strong match and suggests the closest alternatives. |
 | Non-travel input | Agent gently steers back to trip planning. |
+| **[INC-8]** No target month given | Agent uses stated interests/preferences, or asks for a month if timing matters. |
+| **[INC-8]** No guide passage for a month/interest | Agent falls back to preference-based suggestions and says the guide had no strong match. |
 
 ## Error Handling
 
@@ -77,19 +100,23 @@ entry point that later drives weather (FRD-004) and flight/hotel search (FRD-005
 
 ## API & Data Requirements
 
-Internal Markdown skill plus in-process tool (no external HTTP). Suggested tool result shape emitted to the model/UI:
+**Current (INC-3):** internal Markdown skill plus in-process tool (no external HTTP).
+**Target (INC-8):** two MCP calls via the `waypoint-data` server — `travel-guide.searchByMonth`
+(Azure AI Search vector query over the guide PDF) and `cosmos.getTravellerProfile` (Cosmos DB)
+— both keyless via managed identity. The agent reasons over the results. Tool result shape
+emitted to the model/UI (unchanged UI contract):
 
 ```ts
 type DestinationSuggestion = {
   name: string;            // canonical, e.g. "Lisbon, Portugal"
-  rationale: string;       // one line tied to stated interests
+  rationale: string;       // one line, guide-grounded + personalised
   tags: string[];          // e.g. ["warm", "coastal", "food"]
 };
 ```
 
 ## Dependencies
 
-- **FRD-001** (runtime). Optional enrichment from **FRD-006** (personalisation).
+- **FRD-001** (runtime), **FRD-006** (Cosmos profile). **[INC-8]** Azure AI Search travel-guide index (ADR-008) + `waypoint-data` MCP (ADR-009).
 
 ## Non-Functional Requirements
 

@@ -26,6 +26,13 @@ import {
 } from '../tools/routestack.js';
 import { rememberSearchOptions, resolveBookingOptions } from '../tools/booking-context.js';
 import { hasRouteStackCredentials, searchLiveTravel } from '../tools/routestack-client.js';
+import {
+  bookingPersonalisation,
+  detectSeatOverride,
+  getTravellerProfile,
+  personalise,
+  profileAuditSummary,
+} from '../tools/cosmos.js';
 
 /**
  * The showcase: a real agent powered by the GitHub Copilot SDK.
@@ -41,13 +48,13 @@ import { hasRouteStackCredentials, searchLiveTravel } from '../tools/routestack-
  * call, its result — is turned into an AgentEvent and streamed out. That stream
  * IS the audit trail. We never forward the model's private reasoning.
  *
- * MCP servers (weather, flights/hotels, currency, Fabric data) are added in
- * later increments; INC-1 only needs chat, but the permission hook and
- * allowlist below are already in place so the audit wiring is demonstrable.
+ * MCP servers (weather, flights/hotels, currency, and the Cosmos profile /
+ * travel-guide search) are added per increment; the permission hook and
+ * allowlist below keep the audit wiring demonstrable.
  */
 
-/** The only MCP servers this agent is ever allowed to call (INC-1: none live yet). */
-const MCP_ALLOWLIST = ['routestack', 'open-meteo', 'microsoft-fabric-data-agent', 'currency'];
+/** The only MCP servers this agent is ever allowed to call. */
+const MCP_ALLOWLIST = ['routestack', 'open-meteo', 'currency', 'cosmos', 'travel-guide'];
 
 /**
  * Choose a model the current token can actually use. Prefer COPILOT_MODEL, then
@@ -149,6 +156,9 @@ export class CopilotAgentDriver implements AgentDriver {
       handler: (args) => {
         const proposed = args as { candidates?: DestinationCandidate[] };
         const result = adviseDestinations({ ...conversationContext, candidates: proposed?.candidates });
+        if (result.kind === 'shortlist' || result.kind === 'no-match' || detectSeatOverride(input.message)) {
+          emitPersonalisation(input.message, (event) => queue.push(event));
+        }
         queue.push({ type: 'tool_result', name: 'destination-advisor', ok: true, result });
         return result;
       },
@@ -192,7 +202,10 @@ export class CopilotAgentDriver implements AgentDriver {
           rooms: proposed.rooms ?? travelContext.rooms,
         };
         const result = await groundTravel(request, (event) => queue.push(event));
-        if (result.kind === 'options') rememberSearchOptions(input.sessionId, result);
+        if (result.kind === 'options') {
+          rememberSearchOptions(input.sessionId, result);
+          emitPersonalisation(input.message, (event) => queue.push(event));
+        }
         queue.push({ type: 'tool_result', name: 'travel-search', ok: true, result });
         return result;
       },
@@ -216,6 +229,20 @@ export class CopilotAgentDriver implements AgentDriver {
           return result;
         }
         const confirmation = simulateBooking(options, selection, 1);
+        // Apply saved preferences + accrue simulated reward points (FR-006-6).
+        const profile = getTravellerProfile();
+        queue.push({ type: 'tool_call', name: 'cosmos.getTravellerProfile', args: { query: 'traveller loyalty, preferences and membership' } });
+        queue.push({ type: 'tool_result', name: 'cosmos.getTravellerProfile', ok: true, result: profileAuditSummary(profile) });
+        const flight = options.flights[Math.min(selection.flightIndex, options.flights.length - 1)];
+        Object.assign(
+          confirmation,
+          bookingPersonalisation(profile, {
+            ref: confirmation.ref,
+            flightGBP: flight.pricePerTraveller.amountGBP,
+            party: options.party,
+            seat: detectSeatOverride(input.message),
+          }),
+        );
         queue.push({ type: 'tool_result', name: 'booking-simulator', ok: true, result: confirmation });
         return confirmation;
       },
@@ -230,7 +257,7 @@ export class CopilotAgentDriver implements AgentDriver {
       systemMessage: {
         mode: 'append',
         content:
-          'You are Waypoint, a concise holiday-planning assistant. For destination recommendations, refinements or travel-fit questions, call destination-advisor and propose three to five candidate destinations (each a canonical "City, Country" name with a one-line rationale and matchedPreferences) drawn from the traveller\'s stated preferences. For any weather or best-time-to-travel question, call weather-window with the place (and the month if the traveller named one); it geocodes the place and reads Open-Meteo ERA5 1991–2020 climate normals for you. To search flights and hotels, call travel-search with the destination, departure city, outbound and return dates (ISO yyyy-mm-dd) and party size; it searches the RouteStack sandbox and normalises prices to GBP — if the traveller has not given a departure city, ask for it. When the traveller chooses options to book, call booking-simulator; the booking is always a clearly-labelled demo simulation with no payment. Ground every reply only in the tools\' validated results, preserve canonical place names exactly, always attribute weather figures to Open-Meteo, and never invent prices, weather, availability or travel times.',
+          'You are Waypoint, a concise holiday-planning assistant. For destination recommendations, refinements or travel-fit questions, call destination-advisor and propose three to five candidate destinations (each a canonical "City, Country" name with a one-line rationale and matchedPreferences) drawn from the traveller\'s stated preferences. For any weather or best-time-to-travel question, call weather-window with the place (and the month if the traveller named one); it geocodes the place and reads Open-Meteo ERA5 1991–2020 climate normals for you. To search flights and hotels, call travel-search with the destination, departure city, outbound and return dates (ISO yyyy-mm-dd) and party size; it searches the RouteStack sandbox and normalises prices to GBP — if the traveller has not given a departure city, ask for it. When the traveller chooses options to book, call booking-simulator; the booking is always a clearly-labelled demo simulation with no payment. The traveller\'s Cosmos profile (Gold Tier, reward points, past destinations and seat/meal preferences) is applied automatically to suggestions, flights and the booking — briefly reference it and explain why you personalised, and if it is unavailable say so and continue. Ground every reply only in the tools\' validated results, preserve canonical place names exactly, always attribute weather figures to Open-Meteo, and never invent prices, weather, availability or travel times.',
       },
 
       // Called before every tool call. This is where the audit trail is born: we
@@ -333,6 +360,21 @@ function buildContextualPrompt(message: string, history: ChatMessage[]): string 
 
 function truncate(value: string, max: number): string {
   return value.length > max ? value.slice(0, max - 1) + '…' : value;
+}
+
+/**
+ * Emit the Cosmos personalisation lifecycle (FRD-006): the
+ * `cosmos.getTravellerProfile` MCP query and the `personalise` skill result the
+ * audit trail and the personalisation note are built from. Synthetic profile;
+ * no real PII.
+ */
+function emitPersonalisation(message: string, push: (event: AgentEvent) => void): void {
+  const profile = getTravellerProfile();
+  push({ type: 'tool_call', name: 'cosmos.getTravellerProfile', args: { query: 'traveller loyalty, preferences and past destinations' } });
+  push({ type: 'tool_result', name: 'cosmos.getTravellerProfile', ok: true, result: profileAuditSummary(profile) });
+  const note = personalise(profile, message);
+  push({ type: 'tool_call', name: 'personalise', args: { seat: note.appliedSeat, meal: note.appliedMeal } });
+  push({ type: 'tool_result', name: 'personalise', ok: true, result: note });
 }
 
 /**

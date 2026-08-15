@@ -43,7 +43,7 @@ export interface AuditState {
 }
 
 /** MCP servers wired into Waypoint; everything else is treated as a local skill. */
-const MCP_SERVERS = ['open-meteo', 'routestack', 'currency', 'microsoft-fabric-data-agent', 'fabric'];
+const MCP_SERVERS = ['open-meteo', 'routestack', 'currency', 'cosmos', 'travel-guide'];
 
 /** Direct API calls (the Copilot model itself); surfaced with the `api` badge. */
 const API_SERVERS = ['copilot'];

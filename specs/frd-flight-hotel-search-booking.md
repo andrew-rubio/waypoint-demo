@@ -79,9 +79,10 @@ confirmation is produced; no payment, no real reservation. Car rental is out of 
 ```ts
 type Money = { amount: number; currency: string; includesTaxesAndFees: boolean };
 type ConvertedMoney = { source: Money; amountGBP: number; rate: number; rateTimestamp: string };
-type FlightOption = { airline: string; from: string; to: string; durationMin: number; stops: number; pricePerTraveller: ConvertedMoney; best?: boolean };
-type HotelOption = { name: string; rating: number; nightlyRate: ConvertedMoney; best?: boolean };
-type BookingConfirmation = { ref: string; simulated: true; itinerary: string; estimatedTotalGBP: number };
+type FlightOption = { airline: string; flightNumber?: string; from: string; to: string; durationMin: number; stops: number; departTime?: string; arriveTime?: string; pricePerTraveller: ConvertedMoney; best?: boolean };
+type HotelOption = { name: string; rating: number; address?: string; nightlyRate: ConvertedMoney; best?: boolean };
+// Booking echoes applied personalisation from FRD-006 (simulated, display-only).
+type BookingConfirmation = { ref: string; simulated: true; itinerary: string; estimatedTotalGBP: number; seatAssignment?: string; mealRequested?: string; pointsEarned?: number; membershipNumber?: string; newBalance?: number };
 ```
 
 ## Dependencies

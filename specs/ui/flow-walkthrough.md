@@ -2,7 +2,7 @@
 
 > Phase 1b artifact and the **source of truth for e2e test flows** (Phase 2). Each flow
 > maps to FRD acceptance criteria and the prototype states in [screen-map.md](screen-map.md).
-> Prototypes are wireframes with realistic placeholder data (traveller: John Doe, Gold Tier, 7,463 pts).
+> Prototypes are wireframes with realistic placeholder data (traveller: John Doe, Gold Tier, 7,463 reward points).
 
 ## How to view
 Serve the prototypes and browse from the hub:
@@ -32,8 +32,8 @@ Covers: AC-001-1 (send & stream), AC-001-2 (empty rejected), AC-001-3 (ordering)
 **Screen:** [conversation.html](prototypes/conversation.html)
 
 1. User: *"Somewhere warm in October — I love hiking, good seafood, and a relaxed pace."*
-2. An inline **tool chip** shows "Checked your profile · Fabric IQ", then a
-   **personalisation note**: *"Because you're Gold Tier (7,463 pts) and rated your coastal Portugal trip 5/5, I'll pre-select an aisle seat + vegetarian meal…"*
+2. An inline **tool chip** shows "Checked your profile · Cosmos", then a
+   **personalisation note**: *"Because you're Gold Tier (7,463 reward points) and rated your coastal Portugal trip 5/5, I'll pre-select an aisle seat + vegetarian meal…"*
 3. A **destination card** lists 3 ranked options (Lisbon, Palermo, Crete) with rationale + tags.
 4. **Edge cases** (documented, shown in S5/other states): vague input → the agent asks one
    clarifying question; contradictory interests → it offers options per interpretation.
@@ -80,9 +80,11 @@ AC-006-2 (preference-aware — aisle seat + meal applied).
    £1,225`, **Estimated total £1,481**, "Excludes taxes & fees (not specified by supplier)".
 3. **Currency toggle** defaults to **GBP**; selecting **EUR** reveals `≈ €1,733` and the rate
    line (`1 GBP = 1.170 EUR · as of 12 Aug 2026`).
-4. **Preference & points note**: aisle seat + vegetarian meal pre-selected; Gold Tier balance 7,463 pts.
+4. **Preference & points note**: aisle seat + vegetarian meal pre-selected; Gold Tier balance 7,463 reward points.
 5. **Booking confirmation** with a "Demo simulation" ribbon, success check, and reference
-   `WAY-LIS-4X9K2` — explicitly *no payment, no real booking*.
+   `WAY-LIS-4X9K2`. It echoes the assigned **aisle seat 23C** and **vegetarian meal**, and the
+   **reward points earned** on this trip (**+121 → 7,584**) against membership **39302492** — a
+   *simulated* accrual, explicitly *no payment, no real booking*.
 6. Buttons: **Show the audit trail** (opens panel) and **Start over** (→ Welcome).
 
 Covers: AC-007-1 (summary), AC-007-2 (EUR conversion + rate in audit), AC-007-3 (preferences + points shown),

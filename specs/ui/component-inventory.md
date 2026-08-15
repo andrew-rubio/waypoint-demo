@@ -22,7 +22,8 @@
 
 ### UserChip
 - **testid:** `user-chip`
-- **Props:** name, tier, points. **Content:** "John Doe · Gold Tier · 7,463 Pts"
+- **Props:** name, tier, rewardPoints. **Content:** "John Doe · Gold Tier · 7,463 Reward Points"
+- **Emphasis:** distinct pill — cyan-tint background + bolder `--color-secondary` border + `JD` avatar, so it stands out from the header buttons.
 - **States:** default (static in demo)
 
 ### AuditToggle
@@ -107,7 +108,7 @@
 
 ### PersonalisationNote
 - **testid:** `personalisation-note`
-- **Props:** rationale (e.g. "Because you're Gold Tier (7,463 pts) and liked coastal Portugal, I'll pre-select an aisle seat + vegetarian meal…")
+- **Props:** rationale (e.g. "Because you're Gold Tier (7,463 reward points) and liked coastal Portugal, I'll pre-select an aisle seat + vegetarian meal…")
 - **States:** present, unavailable (degraded banner variant)
 - **Screens:** S2, S3, S5 · **FRD-006**
 
@@ -132,8 +133,8 @@
 
 ### BookingConfirmation
 - **testid:** `booking-confirmation`
-- **Props:** ref, itinerary, estimatedTotalGBP, `simulated: true`
-- **Elements:** "Demo simulation" ribbon, reference code, itinerary echo
+- **Props:** ref, itinerary, estimatedTotalGBP, appliedSeat?, appliedMeal?, pointsEarned?, membershipNumber?, newBalance?, `simulated: true`
+- **Elements:** "Demo simulation" ribbon, reference code, itinerary echo, applied-preference line (seat assignment + meal), reward-points-earned line (earned + membership number + new balance)
 - **States:** simulated (only)
 - **Screens:** S3 · **FRD-005**
 
@@ -175,7 +176,7 @@
 | TagPill | `tag-{label}` | default | destination tags |
 | BestBadge | `best-badge` | — | accent colour + label "Best" |
 | RatingStars | `rating-stars` | — | aria-label "N of 5" |
-| PreferenceNote | `preference-note` | present/unavailable | aisle seat + meal + points; icon + label, not colour-only |
+| PreferenceNote | `preference-note` | present/unavailable | aisle seat + dietary meal + reward points; icon + label, not colour-only |
 | StatusPill | `status-pill` | pending/ok/error | icon + label |
 | TypeBadge | `type-badge` | decision/skill/mcp/api | audit colour accents |
 | ErrorNotice | `error-notice` | — | non-fatal in-chat error |

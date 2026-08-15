@@ -26,6 +26,7 @@ export class ChatPage {
   readonly flightOptions: Locator;
   readonly hotelOptions: Locator;
   readonly bookingConfirmation: Locator;
+  readonly personalisationNote: Locator;
 
   constructor(page: Page) {
     this.page = page;
@@ -47,6 +48,7 @@ export class ChatPage {
     this.flightOptions = page.getByTestId('flight-options');
     this.hotelOptions = page.getByTestId('hotel-options');
     this.bookingConfirmation = page.getByTestId('booking-confirmation');
+    this.personalisationNote = page.getByTestId('personalisation-note');
   }
 
   async goto(): Promise<void> {

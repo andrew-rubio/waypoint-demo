@@ -1,11 +1,86 @@
 {
   "mode": "greenfield",
   "phase": "increment-delivery",
-  "step": "delivered",
+  "step": "tests",
   "status": "in-progress",
-  "currentIncrement": "INC-5",
+  "currentIncrement": "INC-6",
   "lastUpdated": "2026-08-15T00:00:00Z",
   "increments_progress": {
+    "INC-6": {
+      "frd": "FRD-006",
+      "name": "personalisation",
+      "depends_on": ["INC-1", "INC-3", "INC-5"],
+      "status": "replanned-cosmos-mcp",
+      "humanGates": { "gherkin": true, "testCode": true, "implementation": false, "deployment": false },
+      "replan": {
+        "date": "2026-08-15",
+        "decision": "User rejected in-process synthetic Fabric. INC-6 re-scoped: real Azure Cosmos DB (serverless) traveller profile (loyalty + preferences + pastDestinations city/country) retrieved via a real MCP call to a self-hosted waypoint-data MCP (tool cosmos.getTravellerProfile). Rename Fabric->Cosmos everywhere. ADR-007 (Cosmos), ADR-009 (waypoint-data MCP + direct-grounding Shape A). AI Search travel-guide RAG split to NEW INC-8 (ADR-008).",
+        "reuse": "The built personalisation logic (personalise/bookingPersonalisation/note/degrade, 8 unit + 6 e2e + 10 gherkin) is KEPT; only the data source swaps in-process->Cosmos-via-MCP and audit naming fabric.profile->cosmos.getTravellerProfile. Deterministic profile stays as offline/test fallback (rename fabric.ts->profile/cosmos).",
+        "pendingApproval": "planning artifacts (ADR-007/008/009, revised increment-plan INC-6+INC-8, tech-stack, infra contract) — awaiting user approval before propagating PRD/FRD-006/FRD-003/demo-guide/README and building."
+      },
+      "dataModel": {
+        "decision": "Enriched synthetic Fabric profile (user-approved 2026-08-15): LoyaltyProfile += programme 'Waypoint Skyward' + membershipNumber '39302492' + rewardPoints (relabelled from points); preferredCabin enum. TravelPreferences: seat adds 'Middle'; meal -> dietary enum (Vegetarian/Vegan/Halal/Kosher/Gluten-free/None) + optional allergies. New BookingPersonalisation (simulated at booking, display-only, never written back): seatAssignment (Aisle->C/D, Window->A/F, Middle->B/E e.g. 23C), mealRequested, pointsEarned (e.g. 121), newBalance.",
+        "labelling": "Currency unit is 'reward points' everywhere incl. navbar (A). Accrual reframed as simulated-display-only (B).",
+        "uiChange": "Navbar user-chip relabelled '7,463 Reward Points' + restyled distinct (cyan tint bg, 1.5px --color-secondary border, JD avatar) in live app (page.tsx/page.module.css) + all 5 prototypes; propagated to FRD-006 (FR-006-1/2/6, AC-006-5, data model, out-of-scope), PRD F-008 + flow diagram, component-inventory, screen-map, flow-walkthrough, increment-plan."
+      },
+      "tests": {
+        "status": "pending-approval",
+        "gherkin": {
+          "path": "specs/features/personalisation.feature",
+          "status": "approved",
+          "scenarios": 10,
+          "coverage": "AC-006-1 personalised suggestion+explain, reward points balance from profile, AC-006-2 aisle+veg preselect on flights, AC-006-5 booking echoes seat 23C+meal, AC-006-5 booking shows points earned+membership+new balance (simulated), AC-006-4/FR-006-5 audit mcp entry+redaction, edge partial data (no fabrication), edge live-overrides-stored preference, AC-006-3 Cosmos-down graceful degrade, Cosmos error non-blocking"
+        },
+        "e2e": { "path": "e2e/personalisation.spec.ts", "pom": "e2e/pages/chat.page.ts (+personalisationNote locator)", "tests": 6, "status": "pending-approval" },
+        "bdd": { "path": "tests/features/step-definitions/personalisation.steps.ts", "status": "pending-approval", "note": "reuses shared welcome/asks/says/opens-audit/should-see/usable steps; adds cosmos-specific Given/When/Then only" },
+        "unit": { "path": "src/api/tests/unit/personalisation.test.ts", "tests": 8, "status": "pending-approval" },
+        "redBaseline": "Unit 7 new fail / 59 pass (weather regression intact); skip scan clean; Cucumber 70 scenarios/368 steps mapped (0 undefined/ambiguous); Playwright 37 discovered/6 files; new TS compiles clean.",
+        "targetContract": "LocalAgentDriver must emit cosmos.getTravellerProfile (mcp, rewardPoints 7463 + membershipNumber 39302492) + personalise (skill: available/rationale/appliedSeat/appliedMeal) on destination+travel turns; booking-simulator result += seatAssignment/mealRequested/pointsEarned/membershipNumber/newBalance; NOT on weather turns. Runtime faults: cosmos-error (degrade: errorNotice 'Personalised data is unavailable right now' + still suggest destinations + cosmos mcp error entry), cosmos-no-history."
+      },
+      "contracts": {
+        "status": "done",
+        "sharedTypes": ["src/shared/types/personalisation.ts"],
+        "api": ["specs/contracts/api/personalisation.yaml"],
+        "extended": "BookingConfirmation extends Partial<BookingPersonalisation> — flat seatAssignment/mealRequested/pointsEarned/membershipNumber/newBalance (approved tests assert them at top level)",
+        "infra": "INC-6 (Cosmos) + INC-8 (AI Search) add resources per ADR-007/008/009; profile served via the waypoint-data MCP with a deterministic offline fallback."
+      },
+      "implementation": {
+        "status": "pending-approval",
+        "slices": {
+          "api": {
+            "modifiedFiles": [
+              "src/api/src/tools/cosmos.ts (new)",
+              "src/api/src/agent/local-driver.ts",
+              "src/api/src/agent/runtime.ts",
+              "src/api/src/agent/copilot-driver.ts",
+              "src/shared/types/personalisation.ts (new)",
+              "src/shared/types/flight-hotel-search-booking.ts"
+            ],
+            "validation": "66/66 unit pass (8 personalisation + 58 prior); tsc/diagnostics clean"
+          },
+          "web": {
+            "modifiedFiles": ["src/web/lib/useChat.ts", "src/web/app/page.tsx", "src/web/app/page.module.css", "src/web/app/page.tsx (navbar chip restyle)"],
+            "validation": "Next.js production build type-checks clean"
+          }
+        },
+        "verification": {
+          "unit": "66/66 pass",
+          "webBuild": "next build clean",
+          "cucumber": "70 scenarios/368 steps mapped (dry-run)",
+          "playwright": "37 discovered/6 files",
+          "skipScan": "clean",
+          "cohostedE2E": "blocked in this sandbox (spawned API+Web reaped ~1-2s, as in INC-3/INC-4) — full Playwright+Cucumber validated by deploy smoke at Step 4"
+        }
+      }
+    },
+    "INC-8": {
+      "frd": "FRD-003 (reworked)",
+      "name": "travel-guide-rag",
+      "depends_on": ["INC-6"],
+      "status": "planned",
+      "plan": "Vectorise src/assets travel-guide PDF into Azure AI Search (Free tier) via a Foundry text-embedding-3-small deployment (ADR-008). Add travel-guide.searchByMonth tool to the waypoint-data MCP (ADR-009). Destination turn calls cosmos.getTravellerProfile + travel-guide.searchByMonth (Shape A) and the agent reasons -> month-aware, preference-aware, guide-grounded shortlist avoiding recent past destinations. REPLACES hardcoded destination-advisor pool; reworks FRD-003 + its Gherkin/tests (needs re-approval). Same destination-list UI contract.",
+      "humanGates": { "gherkin": false, "testCode": false, "implementation": false, "deployment": false }
+    },
     "UI-003": {
       "type": "ui-refinement",
       "frd": "FRD-005",
@@ -684,7 +759,7 @@
       { "id": "FRD-003", "name": "destination-advice", "path": "specs/frd-destination-advice.md", "priority": "P0", "depends_on": ["FRD-001"] },
       { "id": "FRD-004", "name": "weather-and-timing", "path": "specs/frd-weather-and-timing.md", "priority": "P0", "depends_on": ["FRD-001"] },
       { "id": "FRD-005", "name": "flight-hotel-search-booking", "path": "specs/frd-flight-hotel-search-booking.md", "priority": "P0", "depends_on": ["FRD-001", "FRD-003"] },
-      { "id": "FRD-006", "name": "personalisation-fabric", "path": "specs/frd-personalisation-fabric.md", "priority": "P1", "depends_on": ["FRD-001"] },
+      { "id": "FRD-006", "name": "personalisation", "path": "specs/frd-personalisation.md", "priority": "P1", "depends_on": ["FRD-001"] },
       { "id": "FRD-007", "name": "trip-summary-and-budget", "path": "specs/frd-trip-summary-and-budget.md", "priority": "P1", "depends_on": ["FRD-004", "FRD-005", "FRD-006"] }
     ],
     "frdReview": {
@@ -722,7 +797,7 @@
         { "id": "INC-3", "frd": "FRD-003", "name": "destination-advice", "depends_on": ["INC-1"] },
         { "id": "INC-4", "frd": "FRD-004", "name": "weather-and-timing", "depends_on": ["INC-1", "INC-3"] },
         { "id": "INC-5", "frd": "FRD-005", "name": "flight-hotel-search-booking", "depends_on": ["INC-1", "INC-3"] },
-        { "id": "INC-6", "frd": "FRD-006", "name": "personalisation-fabric", "depends_on": ["INC-1"] },
+        { "id": "INC-6", "frd": "FRD-006", "name": "personalisation", "depends_on": ["INC-1", "INC-3", "INC-5"] },
         { "id": "INC-7", "frd": "FRD-007", "name": "trip-summary-and-budget", "depends_on": ["INC-4", "INC-5", "INC-6"] }
       ]
     },
@@ -755,7 +830,7 @@
     "stack": "Next.js frontend + Node/Express backend (TypeScript)",
     "booking": "simulated-only",
     "auth": "single demo user, no login",
-    "mcpServers": ["routestack.ai", "open-meteo", "microsoft-fabric-data-agent", "currency-exchange"],
+    "mcpServers": ["routestack.ai", "open-meteo", "currency-exchange", "waypoint-data (cosmos + travel-guide)"],
     "currency": { "default": "GBP", "convertTo": ["EUR"] },
     "syntheticPersona": "John Doe (Gold Tier, 7,463 points)",
     "fabricDatasetsMvp": ["loyalty-profile-with-points", "past-trip-history", "travel-preferences (aisle seat, meal)"],

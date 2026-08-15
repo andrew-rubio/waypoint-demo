@@ -7,7 +7,7 @@
 Once a destination, timing, flight, and hotel are chosen, the **`trip-summariser`** skill
 assembles a readable itinerary card, and the **`budget-estimator`** skill totals the cost.
 The summary reflects the traveller's **applied preferences** (aisle seat, meal) and
-**loyalty points balance** from Fabric IQ (FRD-006). Prices are shown in **GBP by
+**reward points balance** from the **Cosmos profile** (FRD-006). Prices are shown in **GBP by
 default**, with an option to convert to **EUR** via a **Currency MCP** — chosen because the
 demo audience is based in Spain.
 
@@ -27,7 +27,7 @@ demo audience is based in Spain.
 - **FR-007-1** `trip-summariser` produces one summary containing: destination, dates, a one-line weather note (from FRD-004), the selected flight, and the selected hotel.
 - **FR-007-2** `budget-estimator` calculates the estimated total in GBP as `(flight price per traveller × party size) + (nightly hotel rate × number of nights × room count)`. `number of nights` is the return date minus the outbound/check-in date. Taxes and fees are included only when the selected option explicitly marks them included; otherwise the summary labels the total as excluding unspecified taxes/fees.
 - **FR-007-3** On request ("show in euros"), the agent reuses the Currency MCP conversion path introduced in FRD-005 to convert the total and each line item GBP→EUR. It displays GBP and EUR together and records the exchange rate and rate timestamp.
-- **FR-007-4** The summary shows the traveller's applied preferences (aisle seat, meal) and their loyalty points balance, sourced from Fabric IQ (FRD-006). If personalisation is unavailable, these are omitted rather than guessed.
+- **FR-007-4** The summary shows the traveller's applied preferences (aisle seat, meal) and their reward points balance, sourced from the **Cosmos profile** (FRD-006). If personalisation is unavailable, these are omitted rather than guessed.
 - **FR-007-5** If only partial selections exist (e.g. flight but no hotel), the summary reflects what's chosen and notes what's missing.
 - **FR-007-6** Currency conversion and summary/budget skills are emitted as audit events (`mcp` for currency, `skill` for summariser/estimator).
 
@@ -45,7 +45,7 @@ demo audience is based in Spain.
 - **Then** the agent calls the Currency MCP and displays each line item and total in EUR alongside GBP, with the rate and rate timestamp visible in the audit trail.
 
 **AC-007-3 — Preferences & points shown**
-- **Given** Fabric IQ provides an aisle-seat/vegetarian-meal preference and a 7,463-point balance
+- **Given** the Cosmos profile provides an aisle-seat/vegetarian-meal preference and a 7,463-point balance
 - **When** the summary is shown
 - **Then** it notes the aisle seat and vegetarian meal are pre-selected and displays the points balance.
 

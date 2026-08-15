@@ -8,13 +8,18 @@ Waypoint is a deployed holiday-planning agent that separates three concerns:
 2. **Tools** perform trusted, typed, deterministic operations in TypeScript.
 3. **The agent runtime** decides when to apply a skill and invoke its tools.
 
-The destination-advice flow is the clearest example. The Markdown skill teaches
-the agent how to interview a traveller and present recommendations. The agent
-proposes candidate destinations from its own broad travel knowledge, and the
-`destination-advisor` tool validates, de-duplicates, ranks, and canonicalizes
-those candidates into structured results that the Web application safely renders
-as destination cards. A deterministic pool guarantees a valid shortlist when the
-agent proposes too few.
+The destination-advice flow is the clearest example of skills + tools. The Markdown skill
+teaches the agent how to interview a traveller and present recommendations; the
+`destination-advisor` tool validates, de-duplicates, ranks and canonicalizes candidates
+into structured results the Web app renders as cards.
+
+> **Data-driven (INC-6 / INC-8):** recommendations are grounded in **real data** retrieved
+> over real MCP calls — the traveller profile from **Azure Cosmos DB**
+> (`cosmos.getTravellerProfile`) and a **travel-guide knowledge base** in **Azure AI
+> Search** (`travel-guide.searchByMonth`) — both via the self-hosted `waypoint-data` MCP,
+> with the agent reasoning over both. *(These beats are live after the INC-6 and INC-8
+> deploys; the walking-skeleton demo still runs today on the deterministic offline
+> profile.)*
 
 ```mermaid
 flowchart LR
@@ -91,13 +96,11 @@ model interpretation:
 - the SDK-facing JSON schema the agent fills in;
 - canonical-name enforcement, de-duplication and ranking;
 - deterministic clarification and edge-case handling;
-- a keyword-matched fallback pool for reliability;
 - structured result types and shortlist refinement.
 
-The model proposes destinations from its broad knowledge; it does not manufacture
-the card payload. Application code validates and ranks those candidates before
-any of them reach the UI. Time-sensitive facts (live weather, prices,
-availability) are deferred to the specialist tools in later increments.
+The model reasons over the retrieved data (Cosmos profile + travel-guide passages, INC-6/8);
+application code validates and ranks candidates before any reach the UI. Time-sensitive
+facts (live weather, prices, availability) are deferred to the specialist tools.
 
 ### 5. Show Native Skill Loading
 
@@ -160,8 +163,8 @@ waypoint-demo/
 |  |  |- src/
 |  |  |  |- agent/                Copilot SDK runtime and skill loading
 |  |  |  |  `- skills/            Runtime Markdown skill packages
-|  |  |  |- tools/                Executable tools exposed to the agent
-|  |  |  |- session/              Conversation persistence
+|  |  |- tools/                Executable tools exposed to the agent (destination-advisor, cosmos, …)
+|  |  |  |- session/              In-memory session store
 |  |  |  |- security/             Server-side redaction
 |  |  |  `- validation/           API boundary validation
 |  |  `- tests/                   API unit and integration tests
@@ -182,6 +185,7 @@ sequenceDiagram
     participant Web as Next.js Web
     participant API as Express API
     participant Agent as Copilot SDK Agent
+    participant Data as waypoint-data MCP (Cosmos + Travel Guide)
     participant Skill as Destination Skill
     participant Tool as Destination Tool
 
@@ -189,7 +193,9 @@ sequenceDiagram
     Web->>API: Proxy SSE request
     API->>Agent: Message and conversation history
     Agent->>Skill: Load destination-advice instructions
-    Agent->>Tool: Propose 3-5 candidate destinations
+    Agent->>Data: cosmos.getTravellerProfile + travel-guide.searchByMonth (INC-6/8)
+    Data-->>Agent: Profile + month-appropriate guide passages
+    Agent->>Tool: Rank candidates
     Tool-->>Agent: Validated, ranked DestinationAdviceResult
     Agent-->>API: Tokens and observable events
     API-->>Web: Redacted SSE stream
@@ -201,14 +207,17 @@ sequenceDiagram
 | Prompt | Behavior to highlight |
 |---|---|
 | `I love warm weather, hiking, and good seafood.` | Structured ranked shortlist |
+| `Where should I go in June?` | **Month-aware, guide-grounded** suggestions (INC-8) |
+| `Where should I go for a warm coastal break?` | **Personalised** note from the Cosmos profile (INC-6) |
 | `Recommend somewhere.` | One clarification and no fabricated shortlist |
 | `Make it cheaper and more beach-focused.` | Context-aware refinement |
-| `I want hot weather and snowy beaches.` | Contradictory preference handling |
-| `Find midnight sun, tropical coral reefs, and nearby skiing.` | Closest alternatives |
+| `Find flights and hotels to Lisbon from London for 2, 14–21 Oct.` | RouteStack search, GBP-normalised, aisle+veg pre-select |
+| `Book the first flight and the first hotel.` | Simulated booking — seat 23C + reward points earned |
 | `Can you review my tax return?` | Travel-domain redirect |
 
 Foundry response latency varies. Allow the current turn to finish before sending
-a refinement, then open the Audit panel to show the observable execution path.
+a refinement, then open the Audit panel to show the observable execution path —
+including the `cosmos.getTravellerProfile` and `travel-guide.searchByMonth` MCP calls.
 
 ## Key Design Message
 

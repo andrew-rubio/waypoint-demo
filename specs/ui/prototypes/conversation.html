@@ -26,7 +26,7 @@
   .brand{display:flex;align-items:center;gap:10px;font-family:var(--font-heading);font-weight:700;font-size:18px}
   .brand svg{width:24px;height:24px;color:var(--color-primary)}
   .header-right{display:flex;align-items:center;gap:12px}
-  .user-chip{display:flex;align-items:center;gap:8px;background:#CFFAFE;color:var(--color-primary);border-radius:var(--radius-full);padding:5px 12px;font-weight:600;font-size:13px}
+  .user-chip{display:flex;align-items:center;gap:8px;background:#CFFAFE;color:var(--color-primary);border:1.5px solid var(--color-secondary);border-radius:var(--radius-full);padding:5px 12px;font-weight:600;font-size:13px}
   .user-chip .avatar{width:22px;height:22px;border-radius:50%;background:var(--color-primary);color:#fff;display:grid;place-items:center;font-size:11px}
   .audit-toggle{display:flex;align-items:center;gap:8px;border:1px solid var(--color-border);background:var(--color-surface);color:var(--color-text);border-radius:var(--radius-md);padding:8px 12px;font-weight:600;font-size:14px;cursor:pointer;position:relative;transition:transform var(--dur-press) var(--ease-out),background var(--dur-fast),border-color var(--dur-fast)}
   .audit-toggle svg{width:18px;height:18px}
@@ -145,7 +145,7 @@
   <header data-testid="app-header">
     <a href="index.html" class="brand" data-testid="brand-home" style="text-decoration:none;color:inherit;cursor:pointer" aria-label="Open the prototype menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>Waypoint</a>
     <div class="header-right">
-      <div class="user-chip" data-testid="user-chip"><span class="avatar">JD</span>John Doe · Gold Tier · 7,463 Pts</div>
+      <div class="user-chip" data-testid="user-chip"><span class="avatar">JD</span>John Doe · Gold Tier · 7,463 Reward Points</div>
       <a class="newchat" href="welcome.html" data-testid="new-chat" aria-label="Start a new chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>New chat</a>
       <button class="audit-toggle" id="auditToggle" data-testid="audit-toggle" aria-pressed="false" aria-controls="auditPanel">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m9 12 2 2 4-4"/><path d="M15 3h4a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-4"/></svg>
@@ -167,12 +167,12 @@
           <div class="msg assistant" data-testid="message-assistant-1">
             <div class="role">Waypoint</div>
             <div class="bubble">
-              <span class="tool-chip ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Checked your profile · Fabric IQ</span>
+              <span class="tool-chip ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Checked your profile · Cosmos</span>
               <p>Great brief. A few warm, walkable spots with great food and easy hiking for October:</p>
 
               <div class="pnote" data-testid="personalisation-note">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 2 7l10 5 10-5-10-5Z"/><path d="m2 17 10 5 10-5"/><path d="m2 12 10 5 10-5"/></svg>
-                <span>Because you're <strong>Gold Tier</strong> (7,463 pts) and rated your <strong>coastal Portugal</strong> trip 5/5, I've leaned towards warm coastal food spots — and I'll pre-select an <strong>aisle seat</strong> with a <strong>vegetarian meal</strong> from your preferences.</span>
+                <span>Because you're <strong>Gold Tier</strong> (7,463 reward points) and rated your <strong>coastal Portugal</strong> trip 5/5, I've leaned towards warm coastal food spots — and I'll pre-select an <strong>aisle seat</strong> with a <strong>vegetarian meal</strong> from your preferences.</span>
               </div>
 
               <div class="card" data-testid="destination-list">
@@ -293,7 +293,7 @@
         </div>
         <div class="turn-label">Turn 1 · destinations</div>
         <div class="entry" data-testid="audit-entry-e2">
-          <div class="entry-top"><span class="type-badge t-mcp">mcp</span><span class="name">fabric.getProfile</span><span class="dur">120ms</span></div>
+          <div class="entry-top"><span class="type-badge t-mcp">mcp</span><span class="name">cosmos.getTravellerProfile</span><span class="dur">120ms</span></div>
           <div class="summary">tier=Gold, points=7463, seat=Aisle, meal=Veg, lastTrip=Portugal(5/5) · <span class="status s-ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>ok</span></div>
         </div>
         <div class="entry" data-testid="audit-entry-e1">

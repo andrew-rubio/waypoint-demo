@@ -2,6 +2,8 @@ import type { AgentEvent } from '../../../shared/types/chat-and-agent-runtime.js
 import type { AgentInput, AgentDriver } from './driver.js';
 import { LocalAgentDriver } from './local-driver.js';
 import { CopilotAgentDriver, type FoundryProviderConfig } from './copilot-driver.js';
+import { adviseDestinations } from '../tools/destination-advisor.js';
+import { getTravellerProfile, personalise, profileAuditSummary } from '../tools/cosmos.js';
 import { logger } from '../logger.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -185,6 +187,55 @@ async function* runFault(kind: string): AsyncIterable<AgentEvent> {
       await sleep(60);
       yield { type: 'tool_result', name: 'booking-simulator', ok: false, result: 'booking simulation failed' };
       yield { type: 'error', code: 'booking_error', message: "Couldn't complete the (simulated) booking. Please try again." };
+      return;
+    }
+
+    // A destination turn where the Cosmos profile store (via the waypoint-data
+    // MCP) fails — the FRD-006 degrade path. The profile query fails
+    // (error-status mcp audit entry + a traveller notice), then the agent STILL
+    // suggests destinations from the conversation, without personalisation. One
+    // retry, then give up.
+    case 'cosmos-error': {
+      yield { type: 'decision', summary: 'Personalise from the Cosmos profile, then recommend destinations.' };
+      yield { type: 'tool_call', name: 'cosmos.getTravellerProfile', args: { query: 'traveller loyalty, preferences and past destinations' } };
+      await sleep(60);
+      yield { type: 'tool_result', name: 'cosmos.getTravellerProfile', ok: false, result: 'Cosmos profile request timed out' };
+      yield { type: 'error', code: 'personalisation_unavailable', message: 'Personalised data is unavailable right now. Please try again shortly.' };
+      const request = { interests: ['warm coastal break'], constraints: [] };
+      const result = adviseDestinations(request);
+      yield { type: 'tool_call', name: 'destination-advisor', args: { ...request } };
+      yield { type: 'tool_result', name: 'destination-advisor', ok: true, result };
+      const reply = "I couldn't reach your personalised profile, but here are some ideas for a warm coastal break.";
+      for (const word of reply.split(' ')) {
+        await sleep(8);
+        yield { type: 'token', value: word + ' ' };
+      }
+      yield { type: 'done' };
+      return;
+    }
+
+    // Partial Cosmos data — preferences present, past destinations missing. The
+    // agent uses only what is available and fabricates no past destination
+    // (FRD-006 edge case).
+    case 'cosmos-no-history': {
+      yield { type: 'decision', summary: 'Personalise from the Cosmos profile (preferences only), then recommend destinations.' };
+      yield { type: 'tool_call', name: 'cosmos.getTravellerProfile', args: { query: 'traveller loyalty and preferences' } };
+      await sleep(60);
+      const profile = getTravellerProfile({ includeHistory: false });
+      yield { type: 'tool_result', name: 'cosmos.getTravellerProfile', ok: true, result: profileAuditSummary(profile) };
+      const note = personalise(profile, '');
+      yield { type: 'tool_call', name: 'personalise', args: { seat: note.appliedSeat, meal: note.appliedMeal } };
+      yield { type: 'tool_result', name: 'personalise', ok: true, result: note };
+      const request = { interests: ['warm coastal break'], constraints: [] };
+      const result = adviseDestinations(request);
+      yield { type: 'tool_call', name: 'destination-advisor', args: { ...request } };
+      yield { type: 'tool_result', name: 'destination-advisor', ok: true, result };
+      const reply = 'Here are some ideas that match your saved preferences.';
+      for (const word of reply.split(' ')) {
+        await sleep(8);
+        yield { type: 'token', value: word + ' ' };
+      }
+      yield { type: 'done' };
       return;
     }
 

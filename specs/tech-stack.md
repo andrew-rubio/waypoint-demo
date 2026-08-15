@@ -12,10 +12,11 @@
 
 Waypoint is a **TypeScript monorepo**: a **Next.js** web app talks to a **Node/Express**
 API that embeds the **GitHub Copilot SDK** agent runtime. The agent orchestrates a small
-set of custom **skills** and four **MCP servers** (RouteStack, Open-Meteo, Microsoft
-Fabric Data Agent, Currency). Local orchestration is **.NET Aspire**; deployment is
-**Azure Container Apps** via **azd + Bicep**. No database, no auth, no persistence — a
-single demo user, in-memory sessions, simulated booking.
+set of custom **skills** and MCP servers (RouteStack, Open-Meteo, Currency, and a
+self-hosted **`waypoint-data`** MCP fronting **Azure Cosmos DB** + **Azure AI Search**).
+Local orchestration is **.NET Aspire**; deployment is **Azure Container Apps** via
+**azd + Bicep**. The only persistent data is a synthetic traveller profile in Cosmos and a
+travel-guide vector index in AI Search; sessions stay in-memory; booking is simulated.
 
 ```mermaid
 flowchart LR
@@ -27,8 +28,10 @@ flowchart LR
     end
     A -->|MCP| RS[RouteStack MCP]
     A -->|MCP| OM[Open-Meteo MCP]
-    A -->|MCP| FB[Fabric Data Agent MCP]
+    A -->|MCP| WD[waypoint-data MCP<br/>self-hosted]
     A -->|MCP| FX[Currency MCP]
+    WD --> COS[(Azure Cosmos DB<br/>traveller profile)]
+    WD --> SR[(Azure AI Search<br/>travel-guide vectors)]
     A -->|models| CP[(Microsoft Foundry model<br/>via BYOK API key)]
     A -.telemetry.-> AI[App Insights]
 ```
@@ -70,14 +73,14 @@ flowchart LR
 - **Validation:** **Zod** for chat requests, tool arguments, and MCP/API responses (FR-001-8/09). **Secret redaction** middleware before logging/streaming (FR-001-10).
 - **Rate limiting:** Not required (single demo user); `express-rate-limit` noted as optional hardening.
 
-### MCP servers (agent runtime, 4)
+### MCP servers (agent runtime)
 | Server | Package/endpoint | Purpose | Secret | Increment |
 |--------|------------------|---------|--------|-----------|
 | **RouteStack.ai** | `@routestack/sdk` / MCP (sandbox) | Live flights + hotels; simulated booking | `ROUTESTACK_API_KEY` | INC-5 |
 | **Open-Meteo** | direct REST client (`geocoding-api` + `archive-api`, keyless) | Geocoding + ERA5 1991–2020 climate | none (keyless) | INC-4 |
-| **Microsoft Fabric Data Agent** | Fabric-hosted MCP endpoint | Synthetic loyalty/points, trip history, preferences | `FABRIC_*` | INC-6 |
+| **waypoint-data (self-hosted)** | own Container App, Streamable HTTP; managed identity | `cosmos.getTravellerProfile` (Cosmos DB, INC-6) + `travel-guide.searchByMonth` (AI Search, INC-8) | none (managed identity) | INC-6 / INC-8 |
 | **Currency** | currency-exchange MCP | GBP→EUR conversion + rate/timestamp | `CURRENCY_API_KEY` (if required) | INC-5, INC-7 |
-- **Wiring:** Registered via Copilot SDK MCP configuration with an **allowlist** (only these four). Secrets from Container Apps secrets/env. All calls validated + redacted in the audit trail.
+- **Wiring:** RouteStack/Open-Meteo/Currency are reached by **direct grounding** (the API calls them and emits `mcp` audit entries — ADR-006). The **`waypoint-data`** MCP is a real MCP server the API calls as a client over the wire (ADR-009); `cosmos`/`travel-guide` are added to the audit classifier + runtime allowlist. Secrets from Container Apps secrets/env; Cosmos + AI Search use **managed identity** (keyless). All calls validated + redacted.
 
 ### Custom Copilot SDK skills (in-app, 5)
 `destination-advisor` (INC-3), `weather-window` (INC-4), `booking-simulator` (INC-5),
@@ -106,13 +109,13 @@ a "look how simple a skill is" teaching moment. Live in `src/api/src/skills/`.
 
 | # | Category | Decision |
 |---|----------|----------|
-| 1 | Data storage | **None** — in-memory sessions; synthetic data lives in Microsoft Fabric (external, via MCP). |
+| 1 | Data storage | **Azure Cosmos DB (serverless)** — synthetic traveller profile (ADR-007); **Azure AI Search (Free)** — travel-guide vector index (ADR-008). Chat sessions stay in-memory. |
 | 2 | Caching | **None** — optional in-memory memoisation of a currency rate per turn. |
-| 3 | AI/ML | **GitHub Copilot SDK** (runtime + models) + custom SSE streaming. |
+| 3 | AI/ML | **GitHub Copilot SDK** (runtime + Foundry model) + a Foundry **embedding deployment** (`text-embedding-3-small`) for the travel-guide index (INC-8) + custom SSE streaming. |
 | 4 | Voice/Speech | Not needed. |
-| 5 | Auth | **None** — single demo user, no login. Copilot auth = service token (ADR-002). |
+| 5 | Auth | **None** for users — single demo user, no login. Azure resources use **managed identity** (Cosmos, AI Search, Foundry). |
 | 6 | Real-time | **SSE** (fetch stream). |
-| 7 | Search | **None** — travel search is RouteStack MCP, not app search. |
+| 7 | Search | **Azure AI Search (Free tier)** vector/hybrid search over the travel-guide PDF (INC-8). Travel search is RouteStack MCP (not app search). |
 | 8 | File storage | Not needed. |
 | 9 | Messaging/events | **None** — in-process. |
 | 10 | Observability | **App Insights + pino + OpenTelemetry**; audit trail = UX observability. |
@@ -130,17 +133,23 @@ a "look how simple a skill is" teaching moment. Live in `src/api/src/skills/`.
 | Container Registry | `Microsoft.ContainerRegistry/registries` | **Basic** (cheapest) | Image storage | Managed identity (AcrPull) | INC-1 |
 | Log Analytics Workspace | `Microsoft.OperationalInsights/workspaces` | PerGB2018, **30-day retention + daily cap** | Logs | — | INC-1 |
 | Application Insights | `Microsoft.Insights/components` | Workspace-based, **sampling on** | Telemetry | Managed identity | INC-1 |
-| User-assigned Managed Identity | `Microsoft.ManagedIdentity/userAssignedIdentities` | — (**free**) | ACR pull, App Insights, (opt) Foundry BYOK | — | INC-1 |
+| User-assigned Managed Identity | `Microsoft.ManagedIdentity/userAssignedIdentities` | — (**free**) | ACR pull, App Insights, Foundry/Cosmos/Search data-plane | — | INC-1 |
+| **Azure Cosmos DB** | `Microsoft.DocumentDB/databaseAccounts` | **Serverless** | Synthetic traveller profile (ADR-007) | Managed identity (Cosmos Data Reader) | INC-6 |
+| **waypoint-data MCP** | `Microsoft.App/containerApps` | Consumption, scale-to-zero, **internal** | Cosmos + AI Search retrieval tools (ADR-009) | Managed identity | INC-6 |
+| **Azure AI Search** | `Microsoft.Search/searchServices` | **Free** | Travel-guide vector index (ADR-008) | Managed identity (Search Index Data Reader) | INC-8 |
+| Foundry embedding deployment | `Microsoft.CognitiveServices/accounts/deployments` | `text-embedding-3-small` | Embeds the guide PDF (ADR-008) | Managed identity | INC-8 |
 | *(optional, skipped by default)* Key Vault | `Microsoft.KeyVault/vaults` | Standard | Secret hardening | Managed identity | INC-1+ |
 
 **External (not azd-provisioned) — prerequisites:**
-- **Microsoft Fabric** workspace + **Data Agent** exposing the synthetic MVP datasets over MCP (INC-6). Documented as a setup prerequisite; consumed via `FABRIC_*` credentials.
-- **RouteStack.ai** sandbox account/key (INC-5); **Open-Meteo** (keyless, INC-4); **Currency** MCP (INC-5/7).
+- **RouteStack.ai** sandbox account/key (INC-5); **Open-Meteo** (keyless, INC-4); **Currency** MCP (keyless Frankfurter, INC-5/7).
+
+> Cosmos DB (INC-6) and Azure AI Search (INC-8) are **azd-provisioned** (see the table above), reached **keyless via managed identity** through the self-hosted `waypoint-data` MCP — there is **no external Fabric dependency**.
 
 **Container App secrets / env (by increment):**
-- INC-1: `COPILOT_GITHUB_TOKEN` (or Foundry BYOK vars), `APPLICATIONINSIGHTS_CONNECTION_STRING`.
-- INC-5: `ROUTESTACK_API_KEY`, `CURRENCY_API_KEY` (if required).
-- INC-6: `FABRIC_ENDPOINT`, `FABRIC_*` credential.
+- INC-1: Foundry BYOK vars (`FOUNDRY_MODEL_URL` / `FOUNDRY_MODEL` / `FOUNDRY_USE_MANAGED_IDENTITY`; ADR-005), `APPLICATIONINSIGHTS_CONNECTION_STRING`.
+- INC-5: `ROUTESTACK_API_KEY`, `ROUTESTACK_SECRET`.
+- INC-6: `WAYPOINT_DATA_MCP_URL` — **no secret** (Cosmos is keyless via managed identity).
+- INC-8: none new — AI Search is keyless via managed identity.
 
 ## Cost optimisation (single-user demo)
 
@@ -153,13 +162,15 @@ Goal: keep idle cost near zero and pay only while demoing.
 | Logs | **Log Analytics 30-day retention + daily cap**; **App Insights sampling** | Caps ingestion cost; demo volume is tiny. |
 | Secrets | **Container App secrets** (skip Key Vault) | Key Vault is optional hardening; ACA secrets are free. |
 | Identity | **User-assigned managed identity** | Free; avoids key sprawl. |
-| Model | **Option A: `COPILOT_GITHUB_TOKEN`** (ADR-002) | Rides your Copilot subscription — **no Azure model spend**. Option B (Foundry BYOK) adds per-token Azure cost. |
+| Model | **Foundry BYOK, managed identity** (ADR-005) | Pay-as-you-go Azure model spend; keyless. Original `COPILOT_GITHUB_TOKEN` path kept commented for the demo. |
 | RouteStack | **Free sandbox (Hiker tier)** | Real cached data, 400 free tokens — £0 for the demo. |
 | Open-Meteo | **Free, keyless** | Non-commercial free tier. |
-| Currency | **Keyless/free provider** | Pick a free FX MCP at INC-5. |
-| **Microsoft Fabric** | **Trial capacity** or smallest **F2**, and **pause when idle** | Biggest potential cost. Use the 60-day Fabric trial, or an F2 you **pause** outside demos. |
+| Currency | **Keyless/free provider** | Frankfurter (ECB) — no key. |
+| **Cosmos DB** | **Serverless** (or free tier) | Pay-per-request; ~£0 at demo scale. |
+| **Azure AI Search** | **Free tier** | 50 MB / vector search; £0. Basic only if outgrown. |
+| **waypoint-data MCP** | **Container App, scale-to-zero** | ~£0 idle; internal ingress only. |
 
-**Teardown:** `azd down` removes all provisioned Azure resources between demos. Fabric is external — pause/stop its capacity separately.
+**Teardown:** `azd down` removes all provisioned Azure resources between demos, **including Cosmos DB and AI Search**. No external capacity to pause.
 
 ## Per-increment technology map
 
@@ -169,11 +180,12 @@ Goal: keep idle cost near zero and pay only while demoing.
 | INC-2 | — (consumes SDK event stream) | — | — |
 | INC-3 | first custom SDK **skill** | — | — |
 | INC-4 | **Open-Meteo grounding** (direct REST client; ADR-006 — pivoted from a self-hosted MCP to a REST client because the SDK preview could not surface MCP tools to a Foundry-BYOK session) | — (egress only) | — |
-| INC-5 | **RouteStack MCP**, **Currency MCP**, `booking-simulator` | — | `ROUTESTACK_API_KEY`, `CURRENCY_API_KEY?` |
-| INC-6 | **Fabric Data Agent MCP** + synthetic datasets | Fabric (external) | `FABRIC_*` |
+| INC-5 | **RouteStack MCP**, **Currency MCP**, `booking-simulator` | — | `ROUTESTACK_API_KEY`, `ROUTESTACK_SECRET` |
+| INC-6 | **Azure Cosmos DB** (serverless) + self-hosted **`waypoint-data` MCP** | Cosmos DB, waypoint-data Container App | — (keyless; `WAYPOINT_DATA_MCP_URL`) |
 | INC-7 | `trip-summariser`, `budget-estimator` (Currency reuse) | — | — |
+| INC-8 | **Azure AI Search** (Free) + Foundry **`text-embedding-3-small`**; travel-guide RAG | AI Search, embedding deployment | — (keyless) |
 
 ## Notes / gaps
 - `infra/main.bicep` does not exist yet — it is generated during **INC-1** deployment to match `specs/contracts/infra/resources.yaml`. The azure-deployment skill validates parity at ship time.
-- Currency MCP: if the chosen provider is keyless, drop `CURRENCY_API_KEY`.
-- Fabric Data Agent MCP wiring/credentials to be finalised at INC-6 via `research-best-practices` (Microsoft Learn MCP) before implementation.
+- Currency MCP: the Frankfurter provider is keyless — no `CURRENCY_API_KEY`.
+- Cosmos DB (INC-6), Azure AI Search (INC-8) and the `waypoint-data` MCP are added to `infra/main.bicep` at their increments to match the infra contract; all use **managed identity** (ADR-007 / ADR-008 / ADR-009). Fabric has been **dropped** (ADR-007).

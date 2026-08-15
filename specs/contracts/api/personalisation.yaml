@@ -1,0 +1,120 @@
+# API contract — Personalisation via Cosmos DB (FRD-006, INC-6)
+# This feature extends the existing POST /api/chat SSE stream. It adds no public
+# endpoint: `personalise` is an internal Copilot SDK skill and the traveller
+# profile is read from Azure Cosmos DB via the self-hosted `waypoint-data` MCP,
+# observable through the FRD-001 tool_call/tool_result event contract
+# (`cosmos.getTravellerProfile`, type mcp). All profile data is synthetic for one
+# demo traveller; Cosmos is reached keyless via managed identity.
+feature: personalisation
+version: "1.0"
+extends: chat-and-agent-runtime
+basePath: /api
+
+endpoints:
+  - path: /chat
+    method: POST
+    inheritedFrom: chat-and-agent-runtime
+    description: >-
+      Destination, travel and booking turns are personalised inside the existing
+      chat turn. The agent queries the Cosmos profile (via the waypoint-data MCP)
+      for the traveller profile, then the `personalise` skill folds it into a note
+      (present or a degraded/unavailable variant). At the simulated booking the
+      confirmation carries the applied seat/meal and a simulated reward-points
+      accrual. The response remains text/event-stream and adds the events below.
+    auth: none
+    request:
+      body:
+        type: ChatRequest
+    responses:
+      200:
+        contentType: text/event-stream
+        addedEventContract:
+          mcpProfile:
+            type: tool_call
+            name: cosmos.getTravellerProfile
+            args: { query: string }
+            note: Azure Cosmos DB query via the waypoint-data MCP, shown as cosmos.getTravellerProfile (type mcp) in the audit trail
+          mcpProfileResult:
+            type: tool_result
+            name: cosmos.getTravellerProfile
+            ok: boolean
+            result: PersonalisationProfile
+            note: Redacted result summary (tier, rewardPoints, membershipNumber, seat, dietary, pastDestinations); never any credential
+          toolCall:
+            type: tool_call
+            name: personalise
+            args: { seat: string, meal: string }
+          toolResult:
+            type: tool_result
+            name: personalise
+            ok: boolean
+            result: PersonalisationResult
+          bookingResult:
+            type: tool_result
+            name: booking-simulator
+            ok: boolean
+            result: BookingConfirmation
+            note: BookingConfirmation is extended with the BookingPersonalisation fields (seatAssignment, mealRequested, pointsEarned, membershipNumber, newBalance) by this feature
+      error:
+        description: >-
+          A Cosmos profile failure emits an error-status mcp audit entry and a
+          traveller-facing notice, then the agent continues to answer from the
+          conversation without personalisation (graceful degradation, one retry).
+        message: "Personalised data is unavailable right now. Please try again shortly."
+
+  # Test/demo-only fault hooks (test/demo builds only, never production).
+  faults:
+    - name: cosmos-error
+      effect: cosmos.getTravellerProfile fails; error notice + still suggests destinations; cosmos mcp entry status=error
+    - name: cosmos-no-history
+      effect: profile returned without past destinations; note references preferences only, fabricates no past destination
+
+schemas:
+  PersonalisationProfile:
+    type: object
+    required: [traveller, programme, membershipNumber, tier, rewardPoints, seat, dietary]
+    properties:
+      traveller: { type: string, example: John Doe }
+      programme: { type: string, example: Waypoint Skyward }
+      membershipNumber: { type: string, example: "39302492" }
+      tier: { type: string, example: Gold }
+      rewardPoints: { type: number, example: 7463 }
+      preferredAirlines: { type: array, items: { type: string } }
+      preferredCabin: { type: string, enum: [Economy, Premium, Business] }
+      seat: { type: string, enum: [Aisle, Window, Middle, Any] }
+      dietary: { type: string, enum: [Vegetarian, Vegan, Halal, Kosher, Gluten-free, None] }
+      pastDestinations:
+        type: array
+        description: Places already visited (city + country only); absent when history is unavailable.
+        items:
+          type: object
+          properties:
+            city: { type: string }
+            country: { type: string }
+
+  PersonalisationResult:
+    type: object
+    required: [available]
+    properties:
+      available: { type: boolean }
+      rationale: { type: string, description: One-line explanation ("Because you're Gold Tier…"). }
+      tier: { type: string }
+      rewardPoints: { type: number }
+      appliedSeat: { type: string, enum: [Aisle, Window, Middle, Any] }
+      appliedMeal: { type: string, enum: [Vegetarian, Vegan, Halal, Kosher, Gluten-free, None] }
+      reason: { type: string, description: Present when available is false. }
+
+  BookingPersonalisation:
+    type: object
+    required: [seatAssignment, mealRequested, pointsEarned, membershipNumber, newBalance]
+    properties:
+      seatAssignment: { type: string, example: "23C", description: "Aisle→C/D, Window→A/F, Middle→B/E" }
+      mealRequested: { type: string, example: Vegetarian }
+      pointsEarned: { type: number, example: 121, description: Simulated accrual for this trip. }
+      membershipNumber: { type: string, example: "39302492" }
+      newBalance: { type: number, example: 7584, description: rewardPoints + pointsEarned (display only). }
+
+notes:
+  - Personalisation applies to destination-advice, travel-search and booking turns — never to weather turns.
+  - The reward-points accrual at booking is simulated for display only and is never written back to Cosmos.
+  - Audit naming — cosmos.getTravellerProfile (mcp), personalise (skill); consistent with routestack.flights / weather-window.

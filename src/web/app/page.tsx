@@ -4,6 +4,7 @@ import { Fragment, useState, type KeyboardEvent } from 'react';
 import type { DestinationSuggestion } from '../../shared/types/destination-advice';
 import type { WeatherCardResult } from '../../shared/types/weather-and-timing';
 import type { FlightOption, HotelOption } from '../../shared/types/flight-hotel-search-booking';
+import type { PersonalisationResult } from '../../shared/types/personalisation';
 import { useChat, type UiMessage } from '../lib/useChat';
 import { AuditPanel } from './AuditPanel';
 import { Markdown } from './Markdown';
@@ -51,7 +52,8 @@ export default function ChatPage() {
           Waypoint
         </button>
         <span className={styles.userChip} data-testid="user-chip">
-          John Doe · Gold Tier · 7,463 Pts
+          <span className={styles.userAvatar} aria-hidden>JD</span>
+          John Doe · Gold Tier · 7,463 Reward Points
         </span>
         <span className={styles.spacer} />
         <button className={styles.headerBtn} data-testid="new-chat" onClick={reset}>
@@ -95,6 +97,9 @@ export default function ChatPage() {
                     {m.role === 'assistant' ? <Markdown>{m.content}</Markdown> : m.content}
                     {isStreamingBubble && <span className={styles.caret} data-testid="streaming-caret" aria-hidden />}
                   </div>
+                  {m.role === 'assistant' && !isStreamingBubble && m.personalisation?.available && (
+                    <PersonalisationNote note={m.personalisation} />
+                  )}
                   {showDestinations && (
                     <DestinationList message={m} onExplore={(name) => setDraft(`Tell me more about ${name}`)} />
                   )}
@@ -299,6 +304,7 @@ function DestinationItem({
 
 const ORDINALS = ['first', 'second', 'third'];
 const gbp = new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' });
+const pointsFmt = new Intl.NumberFormat('en-GB');
 
 function formatDuration(min: number): string {
   const h = Math.floor(min / 60);
@@ -505,6 +511,28 @@ function BookingConfirmationCard({ message }: { message: UiMessage }) {
         <p className={styles.bookingTotal}>
           Estimated total <strong>{gbp.format(booking.estimatedTotalGBP)}</strong>
         </p>
+        {booking.seatAssignment && (
+          <div className={styles.bookingPersonalisation} data-testid="preference-note">
+            <p>
+              Seat <strong>{booking.seatAssignment}</strong> · {booking.mealRequested} in-flight meal, applied from your saved preferences.
+            </p>
+            <p>
+              You earned <strong>{pointsFmt.format(booking.pointsEarned ?? 0)}</strong> reward points on membership{' '}
+              {booking.membershipNumber} — new balance {pointsFmt.format(booking.newBalance ?? 0)}.
+            </p>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function PersonalisationNote({ note }: { note: PersonalisationResult }) {
+  return (
+    <section className={styles.personalisationBubble} aria-label="Personalisation">
+      <div className={styles.personalisationNote} data-testid="personalisation-note">
+        <SparkleIcon />
+        <p>{note.rationale}</p>
       </div>
     </section>
   );
@@ -587,3 +615,13 @@ function CheckIcon() {
     </svg>
   );
 }
+
+function SparkleIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 3l1.9 4.8L18 9.6l-4.1 1.8L12 16l-1.9-4.6L6 9.6l4.1-1.8L12 3Z" />
+      <path d="M19 14l.9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9L19 14Z" />
+    </svg>
+  );
+}
+

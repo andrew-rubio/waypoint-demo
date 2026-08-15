@@ -34,7 +34,7 @@ this runtime.
 - **FR-001-4** The client uses `fetch()` to `POST /api/chat` and consumes a framed `text/event-stream` response through `ReadableStream`, emitting typed events: `token`, `decision`, `tool_call`, `tool_result`, `done`, `error`.
 - **FR-001-5** The UI renders `token` events incrementally into the current assistant message and finalises it on `done`.
 - **FR-001-6** Conversation state is kept **per session in memory** (no database); a `sessionId` correlates a browser session to its turns.
-- **FR-001-7** Model/token credentials are read **only from environment variables** (`COPILOT_GITHUB_TOKEN`/`GITHUB_TOKEN`); none are hardcoded or sent to the client.
+- **FR-001-7** Model credentials are read **only from the environment / managed identity**; none are hardcoded or sent to the client. The agent's model is a **Microsoft Foundry** deployment via the Copilot SDK BYOK path, authenticated with **managed identity** (keyless; ADR-005). *(The original `COPILOT_GITHUB_TOKEN`/`GITHUB_TOKEN` env path is retained commented.)*
 - **FR-001-8** The backend validates chat requests, tool arguments, and MCP/API responses against explicit schemas, rejects unknown tools, and enforces configurable input/output payload limits.
 - **FR-001-9** Prompts and MCP/API responses are treated as untrusted data. External prose cannot override the system prompt, permission policy, tool allowlist, or validation rules.
 - **FR-001-10** Secrets and authentication material are redacted on the server before any event is logged or streamed to the client.

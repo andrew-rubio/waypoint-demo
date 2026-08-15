@@ -23,7 +23,7 @@
   header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 20px;background:var(--color-surface);border-bottom:1px solid var(--color-border);box-shadow:var(--shadow-sm);z-index:20;flex:0 0 auto}
   .brand{display:flex;align-items:center;gap:10px;font-family:var(--font-heading);font-weight:700;font-size:18px}.brand svg{width:24px;height:24px;color:var(--color-primary)}
   .header-right{display:flex;align-items:center;gap:12px}
-  .user-chip{display:flex;align-items:center;gap:8px;background:#CFFAFE;color:var(--color-primary);border-radius:var(--radius-full);padding:5px 12px;font-weight:600;font-size:13px}
+  .user-chip{display:flex;align-items:center;gap:8px;background:#CFFAFE;color:var(--color-primary);border:1.5px solid var(--color-secondary);border-radius:var(--radius-full);padding:5px 12px;font-weight:600;font-size:13px}
   .user-chip .avatar{width:22px;height:22px;border-radius:50%;background:var(--color-primary);color:#fff;display:grid;place-items:center;font-size:11px}
   .audit-toggle{display:flex;align-items:center;gap:8px;border:1px solid var(--audit-bg);background:var(--audit-bg);color:var(--audit-text);border-radius:var(--radius-md);padding:8px 12px;font-weight:600;font-size:14px;cursor:pointer;transition:transform var(--dur-press) var(--ease-out)}
   .audit-toggle svg{width:18px;height:18px}.audit-toggle:active{transform:scale(.97)}.audit-toggle:focus-visible{outline:2px solid var(--color-secondary);outline-offset:2px}
@@ -77,7 +77,7 @@
   <header data-testid="app-header">
     <a href="index.html" class="brand" data-testid="brand-home" style="text-decoration:none;color:inherit;cursor:pointer" aria-label="Open the prototype menu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>Waypoint</a>
     <div class="header-right">
-      <div class="user-chip" data-testid="user-chip"><span class="avatar">JD</span>John Doe · Gold Tier · 7,463 Pts</div>
+      <div class="user-chip" data-testid="user-chip"><span class="avatar">JD</span>John Doe · Gold Tier · 7,463 Reward Points</div>
       <a class="newchat" href="welcome.html" data-testid="new-chat" aria-label="Start a new chat"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>New chat</a>
       <button class="audit-toggle" id="auditToggle" data-testid="audit-toggle" aria-pressed="true" aria-controls="auditPanel"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m9 12 2 2 4-4"/><path d="M15 3h4a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-4"/></svg>Audit trail</button>
     </div>
@@ -133,7 +133,7 @@
 
         <div class="turn-label">Turn 1 · destinations</div>
         <div class="entry" data-testid="audit-entry-e1b">
-          <div class="entry-top"><span class="type-badge t-mcp">mcp</span><span class="name">fabric.getProfile</span><span class="dur">120ms</span><svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></div>
+          <div class="entry-top"><span class="type-badge t-mcp">mcp</span><span class="name">cosmos.getTravellerProfile</span><span class="dur">120ms</span><svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m9 18 6-6-6-6"/></svg></div>
           <div class="summary">tier=Gold, points=7463, seat=Aisle · <span class="status s-ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg>ok</span></div>
           <div class="detail"><span class="k">request</span>  { datasets:["loyalty","history","preferences"], traveller:"John Doe" }
 <span class="k">response</span> { tier:"Gold", points:7463, seat:"Aisle", meal:"Vegetarian",
