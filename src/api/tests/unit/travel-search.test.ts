@@ -191,4 +191,13 @@ describe('booking-simulator skill', () => {
     expect(result).not.toHaveProperty('paymentUrl');
     expect(result).not.toHaveProperty('checkoutUrl');
   });
+
+  it('asks for travel dates before searching when none are given', async () => {
+    const events = await run('Find me flights and a hotel to Lisbon from London');
+    const result = toolResult(events, 'travel-search');
+    expect(result.kind).toBe('missing-dates');
+    expect(reply(events)).toMatch(/date/i);
+    // No RouteStack search should run until dates are provided.
+    expect(toolCallNames(events)).not.toContain('routestack.flights');
+  });
 });

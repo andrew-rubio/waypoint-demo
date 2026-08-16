@@ -1,9 +1,12 @@
-# API contract — Destination Advice (FRD-003, INC-3)
+# API contract — Destination Advice (FRD-003, reworked INC-8)
 # This feature extends the existing POST /api/chat SSE stream. It adds no public
 # endpoint: destination-advisor is an internal Copilot SDK skill whose invocation
-# is observable through the FRD-001 tool_call/tool_result event contract.
+# is observable through the FRD-001 tool_call/tool_result event contract. INC-8
+# grounds it in two real MCP calls over the waypoint-data server —
+# travel-guide.searchByMonth (Azure AI Search) and cosmos.getTravellerProfile —
+# both surfaced as `mcp` audit entries the agent reasons over (ADR-008, ADR-009).
 feature: destination-advice
-version: "1.0"
+version: "2.0"
 extends: chat-and-agent-runtime
 basePath: /api
 
@@ -13,8 +16,12 @@ endpoints:
     inheritedFrom: chat-and-agent-runtime
     description: >-
       Destination requests use the destination-advisor skill within the existing
-      chat turn. The response remains text/event-stream and includes a skill
-      tool_call followed by a tool_result carrying DestinationAdviceResult.
+      chat turn. On a month-aware turn the API first makes two MCP calls
+      (travel-guide.searchByMonth, cosmos.getTravellerProfile), then reasons over
+      the guide passages + profile to produce a month-aware, preference-aware,
+      guide-grounded shortlist that avoids recently-visited destinations. The
+      response remains text/event-stream and includes the two mcp tool_call/
+      tool_result pairs followed by the destination-advisor skill result.
     auth: none
     request:
       body:
@@ -23,6 +30,22 @@ endpoints:
       200:
         contentType: text/event-stream
         addedEventContract:
+          guideCall:
+            type: tool_call
+            name: travel-guide.searchByMonth
+            args: { month: string }
+          guideResult:
+            type: tool_result
+            name: travel-guide.searchByMonth
+            ok: boolean
+            result: { month: string, passages: integer }
+          profileCall:
+            type: tool_call
+            name: cosmos.getTravellerProfile
+          profileResult:
+            type: tool_result
+            name: cosmos.getTravellerProfile
+            ok: boolean
           toolCall:
             type: tool_call
             name: destination-advisor
@@ -52,6 +75,32 @@ schemas:
       previousSuggestions:
         type: array
         items: { type: DestinationSuggestion }
+      month:
+        type: string
+        optional: true
+        description: "INC-8 — target month extracted from the request, e.g. June."
+      guidePassages:
+        type: array
+        optional: true
+        description: "INC-8 — travel-guide passages retrieved for the month (grounded candidate pool)."
+        items: { type: GuidePassage }
+      pastDestinations:
+        type: array
+        optional: true
+        description: "INC-8 — canonical past-destination names to exclude, e.g. Lisbon, Portugal."
+        items: { type: string }
+
+  GuidePassage:
+    type: object
+    required: [name, rationale, tags, month]
+    properties:
+      name: { type: string, description: Canonical city-or-region and country. }
+      rationale: { type: string, description: Month-appropriate reason drawn from the travel guide. }
+      tags:
+        type: array
+        minItems: 1
+        items: { type: string }
+      month: { type: string }
 
   DestinationSuggestion:
     type: object
@@ -77,6 +126,11 @@ schemas:
             maxItems: 5
             items: { type: DestinationSuggestion }
           message: { type: string, optional: true }
+          guideMatched:
+            type: boolean
+            optional: true
+            description: "INC-8 — true when grounded in guide passages; false on preference fallback."
+          month: { type: string, optional: true }
       - kind: clarification
         required: [message]
         properties:
@@ -100,12 +154,22 @@ coverage:
   AC-003-2: clarification result with exactly one question and no suggestions
   AC-003-3: request carries prior context; shortlist reflects new constraints
   AC-003-4: every suggestion name is canonical and downstream-ready
-  FR-003-5: destination-advisor tool_call/tool_result events produce skill audit entries
+  AC-003-5: month turn makes travel-guide.searchByMonth + cosmos.getTravellerProfile mcp calls; grounded, personalised, avoids past destinations
+  FR-003-5: travel-guide.searchByMonth + cosmos.getTravellerProfile mcp entries and destination-advisor skill audit entry
+  FR-003-6: shortlist excludes the traveller's recently-visited past destinations
   edge-contradictory: shortlist message acknowledges both interpretations
   edge-niche: no-match result includes closest alternatives
   edge-non-travel: redirect result contains no suggestions
+  edge-no-guide-match: guideMatched false; preference-based fallback + "travel guide had no strong match" message
   error-skill: failed skill produces an error audit entry and rephrase message
 
 infrastructure:
-  changes: none
-  reason: Internal deterministic skill; no external HTTP service, secret, environment variable, or Azure resource.
+  changes: INC-8
+  resources:
+    - aiSearch (Microsoft.Search/searchServices, Free tier) — travel-guide vector index (ADR-008)
+    - foundry embedding deployment text-embedding-3-small — ingests the guide PDF (ADR-008)
+    - waypointDataMcp — hosts the travel-guide.searchByMonth tool alongside cosmos.getTravellerProfile (ADR-009)
+  reason: >-
+    Recommendations are grounded in a travel-guide PDF vectorised into Azure AI
+    Search and retrieved via the waypoint-data MCP. Offline, a deterministic
+    in-process dataset backs the same tool so tests/demo run without Azure.

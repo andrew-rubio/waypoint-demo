@@ -61,7 +61,13 @@ resources:
       - name: gpt-5.4-mini                       # = SDK `model`; version pinned in Bicep
         sku: { name: GlobalStandard, capacity: 20 }   # needs regional quota (Sweden Central)
       - name: text-embedding-3-small             # INC-8 (ADR-008) — embeds the travel-guide PDF into AI Search
-        sku: { name: Standard, capacity: 20 }
+        sku: { name: GlobalStandard, capacity: 20 }   # Sweden Central supports GlobalStandard/DataZoneStandard (not Standard)
+    connections:
+      - name: travel-guide-search                # INC-8 (ADR-008) — project connection so the AI Search index shows in the Foundry project
+        type: Microsoft.CognitiveServices/accounts/projects/connections
+        category: CognitiveSearch
+        target: aiSearch
+        auth: aad                                # project system-assigned identity; needs Search Index Data Reader on aiSearch
     auth: managedIdentity                        # Cognitive Services OpenAI User role (keys disabled by policy)
     increment: ADR-005
 
@@ -89,7 +95,18 @@ resources:
     type: Microsoft.Search/searchServices
     sku: free                                      # Free tier: 50 MB, 3 indexes, vector search — ADR-008
     purpose: Vector index of the travel-guide PDF (index: travel-guide)
-    auth: managedIdentity                         # Search Index Data Reader -> userAssignedManagedIdentity
+    authOptions: aadOrApiKey                       # RBAC (Entra) enabled so keyless roles + the Foundry connection work
+    roleAssignments:
+      - Search Index Data Reader -> userAssignedManagedIdentity   # waypoint-data MCP query path (keyless)
+      - Search Index Data Contributor -> userAssignedManagedIdentity  # one-time ingestion seeds the travel-guide index
+      - Search Service Contributor -> userAssignedManagedIdentity     # ingestion creates the index definition
+    foundryConnection:                             # ADR-008: surfaces the index inside the Foundry project (ai.azure.com)
+      type: Microsoft.CognitiveServices/accounts/projects/connections
+      parent: foundry.project (waypoint)
+      category: CognitiveSearch
+      auth: aad                                    # project system-assigned identity (local auth disabled on Foundry)
+      target: aiSearch endpoint
+      visibleAs: "Project → Management center → Connected resources; index under Data + indexes → Indexes"
     increment: INC-8
 
   - name: containerRegistry

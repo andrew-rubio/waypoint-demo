@@ -274,6 +274,13 @@ function validateDates(checkIn: string, checkOut: string): 'past' | 'reversed' |
  * Copilot driver's fallback. Returns one of the TravelSearchResult kinds.
  */
 export function searchTravel(raw: TravelSearchRequest): TravelSearchResult {
+  // Ask for dates before anything else — never search (or invent) without them.
+  if (!raw.checkIn?.trim() || !raw.checkOut?.trim()) {
+    return {
+      kind: 'missing-dates',
+      message: 'When are you travelling? Share your outbound (departure) and return dates and I’ll search flights and hotels.',
+    };
+  }
   const request = requestSchema.parse(raw);
 
   const dateProblem = validateDates(request.checkIn, request.checkOut);
@@ -382,7 +389,12 @@ export function mergeTravelResult(
   live: LiveTravelResult | undefined,
 ): TravelSearchResult {
   // A user-input problem short-circuits regardless of any live data.
-  if (offlineBase.kind === 'missing-origin' || offlineBase.kind === 'invalid-dates' || offlineBase.kind === 'party-clarify') {
+  if (
+    offlineBase.kind === 'missing-origin' ||
+    offlineBase.kind === 'missing-dates' ||
+    offlineBase.kind === 'invalid-dates' ||
+    offlineBase.kind === 'party-clarify'
+  ) {
     return offlineBase;
   }
 
@@ -458,6 +470,22 @@ export function simulateBooking(
 }
 
 // ── Conversation classification + parsing ────────────────────────────
+
+const MONTHS_RE = 'january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec';
+const DAY_MONTH = new RegExp(`\\b\\d{1,2}(st|nd|rd|th)?\\s+(of\\s+)?(${MONTHS_RE})\\b|\\b(${MONTHS_RE})\\s+\\d{1,2}\\b`, 'i');
+const ISO_DATE_ANY = /\d{4}-\d{2}-\d{2}/;
+const SLASH_DATE = /\b\d{1,2}[\/.]\d{1,2}(?:[\/.]\d{2,4})?\b/;
+const RELATIVE_DATE = /\b(today|tonight|tomorrow|this (week|weekend)|next (week|weekend|month)|in \d+ (day|days|week|weeks|month|months))\b/i;
+
+/**
+ * True when the conversation gives a specific travel-date reference (an ISO date,
+ * a day + month like "14 October", a DD/MM date, or a relative term). A bare
+ * month alone is NOT enough — the agent should ask for exact dates first.
+ */
+export function conversationMentionsDates(message: string, history: ChatMessage[] = []): boolean {
+  const text = [message, ...history.filter((m) => m.role === 'user').map((m) => m.content)].join(' ');
+  return ISO_DATE_ANY.test(text) || SLASH_DATE.test(text) || DAY_MONTH.test(text) || RELATIVE_DATE.test(text);
+}
 
 /** Does this turn ask to search flights/hotels (as opposed to booking one)? */
 export function isTravelSearchQuery(message: string): boolean {

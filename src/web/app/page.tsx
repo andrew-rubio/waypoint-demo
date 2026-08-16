@@ -1,6 +1,6 @@
 'use client';
 
-import { Fragment, useState, type KeyboardEvent } from 'react';
+import { Fragment, useEffect, useRef, useState, type KeyboardEvent } from 'react';
 import type { DestinationSuggestion } from '../../shared/types/destination-advice';
 import type { WeatherCardResult } from '../../shared/types/weather-and-timing';
 import type { FlightOption, HotelOption } from '../../shared/types/flight-hotel-search-booking';
@@ -20,6 +20,12 @@ export default function ChatPage() {
   const { messages, streaming, error, truncated, loadingStatus, started, send, reset, auditOpen, auditGroups, toggleAudit, clearAudit } =
     useChat();
   const [draft, setDraft] = useState('');
+  const threadEndRef = useRef<HTMLDivElement>(null);
+
+  // Keep the latest message (and loading indicator) in view as the chat grows.
+  useEffect(() => {
+    threadEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [messages, loadingStatus]);
 
   const canSend = draft.trim().length > 0 && !streaming;
   const activeDestinationMessage = latestDestinationMessageIndex(messages);
@@ -121,6 +127,7 @@ export default function ChatPage() {
                 <span>{loadingStatus}</span>
               </div>
             )}
+            <div ref={threadEndRef} aria-hidden />
           </div>
         )}
       </main>
@@ -486,7 +493,6 @@ function HotelOptionCard({
         <p className={styles.optionMeta} aria-label={`${hotel.rating}-star rating`}>
           <span className={styles.stars} aria-hidden>
             {'★'.repeat(hotel.rating)}
-            {'☆'.repeat(Math.max(0, 5 - hotel.rating))}
           </span>{' '}
           · {hotel.rating}-star
         </p>

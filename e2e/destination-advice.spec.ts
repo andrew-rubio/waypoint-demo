@@ -3,7 +3,41 @@ import { AuditPanel } from './pages/audit.page';
 import { ChatPage } from './pages/chat.page';
 
 test.describe('Destination advice (FRD-003) @flow:destination-advice @frd:FRD-003', () => {
-  test('interests produce a ranked destination shortlist (AC-003-1) @smoke', async ({ page }) => {
+  const PAST_CITIES = ['Lisbon', 'Barcelona', 'Chania'];
+
+  test('a month produces guide-grounded, personalised suggestions that avoid past trips (AC-003-5) @smoke', async ({ page }) => {
+    const chat = new ChatPage(page);
+    await chat.goto();
+
+    await chat.send('Where should I go in June?');
+
+    await expect(chat.destinationList).toBeVisible();
+    const destinations = chat.destinationList.getByTestId(/^destination-item-/);
+    const count = await destinations.count();
+    expect(count).toBeGreaterThanOrEqual(3);
+    expect(count).toBeLessThanOrEqual(5);
+    await expect(chat.assistantMessage(1)).toContainText(/guide/i);
+    await expect(chat.personalisationNote).toBeVisible();
+
+    const names = await chat.destinationList.getByRole('heading', { level: 4 }).allTextContents();
+    for (const name of names) for (const city of PAST_CITIES) expect(name).not.toContain(city);
+  });
+
+  test('a month turn shows both the travel-guide and Cosmos MCP calls in the audit (FR-003-5)', async ({ page }) => {
+    const chat = new ChatPage(page);
+    const audit = new AuditPanel(page);
+    await chat.goto();
+    await chat.send('Where should I go in June?');
+    await expect(chat.destinationList).toBeVisible();
+
+    await audit.open();
+
+    await expect(audit.panel).toContainText('travel-guide');
+    await expect(audit.panel).toContainText('cosmos');
+    await expect(audit.panel).toContainText('destination-advisor');
+  });
+
+  test('interests produce a ranked destination shortlist (AC-003-1)', async ({ page }) => {
     const chat = new ChatPage(page);
     await chat.goto();
 

@@ -16,6 +16,9 @@
     },
     "routestackSecret": {
       "value": "${ROUTESTACK_SECRET}"
+    },
+    "deployerPrincipalId": {
+      "value": "${AZURE_PRINCIPAL_ID}"
     }
   }
 }

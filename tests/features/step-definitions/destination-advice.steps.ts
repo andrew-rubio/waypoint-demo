@@ -64,6 +64,11 @@ Given('the destination advisor will fail', async function (this: CustomWorld) {
   await expect(this.chat.header).toBeVisible();
 });
 
+Given('the travel guide has no strong match for the request', async function (this: CustomWorld) {
+  await this.page.goto(`${this.webBaseURL}/?fault=travel-guide-no-match`);
+  await expect(this.chat.header).toBeVisible();
+});
+
 When('the Traveller asks for destinations with {string}', async function (this: CustomWorld, interests: string) {
   await askForDestinations(this, interests);
 });
@@ -195,4 +200,49 @@ Then("the skill entry should summarise the Traveller's interests and ranked resu
   const entry = audit(this).entriesOfType('skill').filter({ hasText: 'destination-advisor' });
   await expect(entry).toContainText(/warm|hiking|seafood/i);
   await expect(entry).toContainText(/[3-5] ranked/i);
+});
+
+const PAST_CITIES = ['Lisbon', 'Barcelona', 'Chania'];
+
+Then('the suggestions should be grounded in the travel guide', async function (this: CustomWorld) {
+  await expect(this.chat.destinationList).toBeVisible();
+  await expect(this.chat.assistantMessage((this.sent - 1) * 2 + 1)).toContainText(/guide/i);
+});
+
+Then("the suggestions should reflect the Traveller's saved preferences", async function (this: CustomWorld) {
+  await expect(this.chat.personalisationNote).toBeVisible();
+  await expect(this.chat.personalisationNote).toContainText(/Gold|aisle|reward|prefer|Vegetarian/i);
+});
+
+Then("the suggestions should avoid the Traveller's recently visited destinations", async function (this: CustomWorld) {
+  const names = await destinationNames(this);
+  expect(names.length).toBeGreaterThanOrEqual(3);
+  for (const name of names) for (const city of PAST_CITIES) expect(name).not.toContain(city);
+});
+
+Then("no suggestion should be one of the Traveller's recently visited destinations", async function (this: CustomWorld) {
+  const names = await destinationNames(this);
+  for (const name of names) for (const city of PAST_CITIES) expect(name).not.toContain(city);
+});
+
+Then('the agent should say the travel guide had no strong match', async function (this: CustomWorld) {
+  await expect(this.chat.assistantMessage((this.sent - 1) * 2 + 1)).toContainText(/guide.*(no (strong|good) match|didn't|nothing)|no (strong|good) match.*guide/i);
+});
+
+Then("the agent should still suggest destinations based on the Traveller's preferences", async function (this: CustomWorld) {
+  await expect(this.chat.destinationList).toBeVisible();
+  const count = await this.chat.destinationList.getByTestId(/^destination-item-/).count();
+  expect(count).toBeGreaterThanOrEqual(3);
+});
+
+Then('the audit trail should contain a successful travel-guide search entry', async function (this: CustomWorld) {
+  await audit(this).open();
+  const entry = audit(this).entriesOfType('mcp').filter({ hasText: 'travel-guide' });
+  await expect(entry.first()).toHaveAttribute('data-status', 'ok');
+});
+
+Then('the travel-guide search entry should summarise the requested month and result', async function (this: CustomWorld) {
+  const entry = audit(this).entriesOfType('mcp').filter({ hasText: 'travel-guide' }).first();
+  await expect(entry).toContainText(/June/i);
+  await expect(entry).toContainText(/destination|result|match|passage/i);
 });

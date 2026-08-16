@@ -1,7 +1,7 @@
 # Design System — Waypoint
 
 > Phase 1b artifact. Grounded in the `ui-ux-pro-max` recommendation (Soft UI Evolution,
-> fresh-cyan palette, Figtree/Noto Sans, WCAG AA+) and refined with the `emil-design-eng`
+> fresh-cyan palette, Source Sans 3, WCAG AA+) and refined with the `emil-design-eng`
 > craft principles (custom easings, press feedback, origin-aware motion, reduced-motion).
 > These tokens are binding for the Web slice implementation.
 
@@ -54,9 +54,9 @@ error `#F87171`.
 ## Typography
 
 ```css
-@import url('https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&family=Noto+Sans:wght@400;500;700&display=swap');
---font-heading: 'Figtree', system-ui, sans-serif;
---font-body: 'Noto Sans', system-ui, sans-serif;
+@import url('https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@400;500;600;700&display=swap');
+--font-heading: 'Source Sans 3', system-ui, sans-serif;
+--font-body: 'Source Sans 3', system-ui, sans-serif;
 --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', monospace; /* audit values */
 ```
 

@@ -91,6 +91,11 @@ export interface TravelMissingOriginResult {
   message: string;
 }
 
+export interface TravelMissingDatesResult {
+  kind: 'missing-dates';
+  message: string;
+}
+
 export interface TravelInvalidDatesResult {
   kind: 'invalid-dates';
   reason: 'past' | 'reversed';
@@ -115,6 +120,7 @@ export interface TravelPartyClarifyResult {
 export type TravelSearchResult =
   | TravelOptionsResult
   | TravelMissingOriginResult
+  | TravelMissingDatesResult
   | TravelInvalidDatesResult
   | TravelNoResultsResult
   | TravelOutsideCoverageResult

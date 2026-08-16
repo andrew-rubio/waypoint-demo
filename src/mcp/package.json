@@ -12,6 +12,7 @@
   "dependencies": {
     "@azure/cosmos": "^4.2.0",
     "@azure/identity": "^4.5.0",
+    "@azure/search-documents": "^12.1.0",
     "@modelcontextprotocol/express": "^2.0.0",
     "@modelcontextprotocol/node": "^2.0.0",
     "@modelcontextprotocol/server": "^2.0.0",

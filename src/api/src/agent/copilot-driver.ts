@@ -2,7 +2,7 @@ import type { AgentEvent, ChatMessage } from '../../../shared/types/chat-and-age
 import type { AgentDriver, AgentInput } from './driver.js';
 import type { ProviderConfig } from '@github/copilot-sdk';
 import type { TokenCredential } from '@azure/identity';
-import type { DestinationCandidate } from '../../../shared/types/destination-advice.js';
+import type { DestinationCandidate, GuidePassage } from '../../../shared/types/destination-advice.js';
 import type { WeatherIntent, WeatherRequest, WeatherResult } from '../../../shared/types/weather-and-timing.js';
 import type { TravelSearchRequest, TravelSearchResult } from '../../../shared/types/flight-hotel-search-booking.js';
 import { logger } from '../logger.js';
@@ -11,12 +11,16 @@ import {
   adviseDestinations,
   destinationAdvisorParameters,
   destinationRequestFromConversation,
+  isDetailQuery,
 } from '../tools/destination-advisor.js';
+import { guideAuditSummary } from '../tools/travel-guide.js';
+import { extractResearchPlace, researchAuditSummary, researchPlace } from '../tools/research.js';
 import { assessWeather, weatherRequestFromConversation, weatherWindowParameters } from '../tools/weather-window.js';
 import { climateNormals, geocode } from '../tools/open-meteo.js';
 import {
   bookingSelectionFromMessage,
   bookingSimulatorParameters,
+  conversationMentionsDates,
   isBookingQuery,
   mergeTravelResult,
   prioritiseByPreferredAirlines,
@@ -48,7 +52,7 @@ import {
   personalise,
   profileAuditSummary,
 } from '../tools/cosmos.js';
-import { fetchTravellerProfile } from '../tools/waypoint-data-client.js';
+import { fetchTravellerProfile, fetchGuideByMonth } from '../tools/waypoint-data-client.js';
 import type { PersonalisationProfile } from '../../../shared/types/personalisation.js';
 
 /**
@@ -175,6 +179,8 @@ export class CopilotAgentDriver implements AgentDriver {
     // A tiny async queue bridges the SDK's callback events into the
     // `for await` stream the route consumes.
     const queue = new EventQueue();
+    // Cleared when the first reply token arrives (used by the research turn).
+    let clearStatusOnFirstToken = false;
     // Accumulated reply text, echoed into the model's audit entry.
     let reply = '';
     // The model streams prose before a tool call and again after it; this flags
@@ -192,12 +198,32 @@ export class CopilotAgentDriver implements AgentDriver {
       parameters: destinationAdvisorParameters,
       defer: 'never',
       handler: async (args) => {
-        const proposed = args as { candidates?: DestinationCandidate[] };
-        const result = adviseDestinations({ ...conversationContext, candidates: proposed?.candidates });
-        if (result.kind === 'shortlist' || result.kind === 'no-match' || detectSeatOverride(input.message)) {
-          await emitPersonalisation(input.message, (event) => queue.push(event));
+        // A "tell me more about X" turn is answered as a rich description (research), not a shortlist.
+        if (isDetailQuery(input.message)) {
+          const result = { kind: 'redirect' as const, message: 'Detail request — describe this place in depth from the research provided; do not list options.' };
+          queue.push({ type: 'tool_result', name: 'destination-advisor', ok: true, result });
+          return result;
         }
+        const proposed = args as { candidates?: DestinationCandidate[] };
+        // INC-8: preview the kind so we only ground (guide + profile) when we'll show suggestions.
+        const preview = adviseDestinations({ ...conversationContext, candidates: proposed?.candidates });
+        const willSuggest = preview.kind === 'shortlist' || preview.kind === 'no-match';
+        const detail = isDetailQuery(input.message);
+        const month = conversationContext.month;
+        let guidePassages: GuidePassage[] = [];
+        if (willSuggest && month) {
+          queue.push({ type: 'status', message: `Searching the travel guide for ${month} recommendations…` });
+          guidePassages = await groundGuide(month, (event) => queue.push(event));
+        }
+        let pastDestinations: string[] = [];
+        // Skip personalisation on a "tell me more about X" detail turn so the note isn't repeated.
+        if ((willSuggest || detectSeatOverride(input.message)) && !detail) {
+          const profile = await emitPersonalisation(input.message, (event) => queue.push(event));
+          pastDestinations = (profile.pastDestinations ?? []).map((d) => `${d.city}, ${d.country}`);
+        }
+        const result = adviseDestinations({ ...conversationContext, candidates: proposed?.candidates, guidePassages, pastDestinations });
         queue.push({ type: 'tool_result', name: 'destination-advisor', ok: true, result });
+        if (willSuggest && month) queue.push({ type: 'status', message: '' });
         return result;
       },
     });
@@ -210,14 +236,17 @@ export class CopilotAgentDriver implements AgentDriver {
       defer: 'never',
       handler: async (args) => {
         const proposed = args as Partial<WeatherRequest>;
+        const place = proposed.place ?? weatherContext.place;
+        queue.push({ type: 'status', message: `Looking up weather data for ${place}…` });
         const result = await groundWeather(
           {
-            place: proposed.place ?? weatherContext.place,
+            place,
             intent: proposed.intent ?? weatherContext.intent,
             month: proposed.month ?? weatherContext.month,
           },
           (event) => queue.push(event),
         );
+        queue.push({ type: 'status', message: '' });
         queue.push({ type: 'tool_result', name: 'weather-window', ok: true, result });
         return result;
       },
@@ -230,6 +259,16 @@ export class CopilotAgentDriver implements AgentDriver {
       parameters: travelSearchParameters,
       defer: 'never',
       handler: async (args) => {
+        // Ask for dates first when the conversation gives no specific travel date
+        // (guards against the model inventing dates the traveller never stated).
+        if (!conversationMentionsDates(input.message, input.history)) {
+          const result = {
+            kind: 'missing-dates' as const,
+            message: 'When are you travelling? Share your outbound (departure) and return dates and I’ll search flights and hotels.',
+          };
+          queue.push({ type: 'tool_result', name: 'travel-search', ok: true, result });
+          return result;
+        }
         const proposed = args as Partial<TravelSearchRequest>;
         const request: TravelSearchRequest = {
           destination: proposed.destination ?? travelContext.destination,
@@ -295,7 +334,7 @@ export class CopilotAgentDriver implements AgentDriver {
       systemMessage: {
         mode: 'append',
         content:
-          'You are Waypoint, a concise holiday-planning assistant. For destination recommendations, refinements or travel-fit questions, call destination-advisor and propose three to five candidate destinations (each a canonical "City, Country" name with a one-line rationale and matchedPreferences) drawn from the traveller\'s stated preferences. For any weather or best-time-to-travel question, call weather-window with the place (and the month if the traveller named one); it geocodes the place and reads Open-Meteo ERA5 1991–2020 climate normals for you. To search flights and hotels, call travel-search with the destination, departure city, outbound and return dates (ISO yyyy-mm-dd) and party size; it searches the RouteStack sandbox and normalises prices to GBP — if the traveller has not given a departure city, ask for it. When you present options and offer to book, say you can "book one of the flights and hotels from these options" — do NOT use the words "simulate" or "simulation" at the search stage. When the traveller chooses options to book, call booking-simulator; only in the resulting booking confirmation do you make clear it is a demo simulation with no payment. When the traveller asks for a summary, the total cost, or to see the price in euros, a trip summary card with the itinerary, budget total (in GBP, and EUR when they ask) and their preferences is generated for you automatically — keep your own reply brief, refer them to the card, and never recompute or restate the totals yourself. The traveller\'s Cosmos profile (Gold Tier, reward points, past destinations and seat/meal preferences) is applied automatically to suggestions, flights, the booking and the summary — briefly reference it and explain why you personalised, and if it is unavailable say so and continue. Ground every reply only in the tools\' validated results, preserve canonical place names exactly, always attribute weather figures to Open-Meteo, and never invent prices, weather, availability or travel times.',
+          'You are Waypoint, a concise holiday-planning assistant. For destination recommendations, refinements or travel-fit questions, call destination-advisor and propose three to five candidate destinations (each a canonical "City, Country" name with a one-line rationale and matchedPreferences) drawn from the traveller\'s stated preferences. For any weather or best-time-to-travel question, call weather-window with the place (and the month if the traveller named one); it geocodes the place and reads Open-Meteo ERA5 1991–2020 climate normals for you. To search flights and hotels, call travel-search with the destination, departure city, outbound and return dates (ISO yyyy-mm-dd) and party size; it searches the RouteStack sandbox and normalises prices to GBP — if the traveller has not given a departure city, ask for it. When you present options and offer to book, say you can "book one of the flights and hotels from these options" — do NOT use the words "simulate" or "simulation" at the search stage. When the traveller chooses options to book, call booking-simulator; only in the resulting booking confirmation do you make clear it is a demo simulation with no payment. When the traveller asks for a summary, the total cost, or to see the price in euros, a trip summary card with the itinerary, budget total (in GBP, and EUR when they ask) and their preferences is generated for you automatically — keep your own reply brief, refer them to the card, and never recompute or restate the totals yourself. The traveller\'s Cosmos profile (Gold Tier, reward points, past destinations and seat/meal preferences) is applied automatically to suggestions, flights, the booking and the summary — briefly reference it and explain why you personalised, and if it is unavailable say so and continue. Ground every reply only in the tools\' validated results, preserve canonical place names exactly, always attribute weather figures to Open-Meteo, and never invent prices, weather, availability or travel times. Never invent travel dates: if the traveller has not given both an outbound (departure) and a return date, ask them for the dates before calling travel-search. When the traveller asks to know more about a specific place (for example "tell me more about Lisbon"), do NOT call destination-advisor or any card tool — instead write a rich, engaging description of that place: a vivid overview, the top things to see and do, notable food, and one practical travel tip, grounded in any researched background provided.',
       },
 
       // Called before every tool call. This is where the audit trail is born: we
@@ -340,6 +379,11 @@ export class CopilotAgentDriver implements AgentDriver {
     // `assistant.reasoning_delta` — hidden chain-of-thought never leaves here.
     session.on('assistant.message_delta', (e: any) => {
       const delta: string = e.data.deltaContent ?? '';
+      // Clear a lingering "Researching…" indicator once the description starts.
+      if (clearStatusOnFirstToken && delta.length > 0) {
+        clearStatusOnFirstToken = false;
+        queue.push({ type: 'status', message: '' });
+      }
       // When prose resumes after a tool call, separate it from the pre-amble with
       // a paragraph break so segments don't splice together ("traveller.Found").
       if (resumedAfterTool && delta.length > 0) {
@@ -364,6 +408,21 @@ export class CopilotAgentDriver implements AgentDriver {
       queue.push({ type: 'decision', summary: 'Plan a reply for the traveller.' });
       queue.push({ type: 'tool_call', name: 'copilot.chat', args: { model: model ?? 'copilot', prompt: input.message } });
 
+      // Research a "tell me more about X" turn: fetch grounded facts (Wikipedia)
+      // and feed them to the model, which writes the rich description (no cards).
+      let researchNote = '';
+      if (isDetailQuery(input.message)) {
+        const place = extractResearchPlace(input.message, input.history);
+        queue.push({ type: 'status', message: `Researching more into ${place}…` });
+        const research = await researchPlace(place);
+        queue.push({ type: 'tool_call', name: 'wikipedia.summary', args: { title: place.split(',')[0].trim() } });
+        queue.push({ type: 'tool_result', name: 'wikipedia.summary', ok: true, result: researchAuditSummary(place, research) });
+        if (research?.extract) {
+          researchNote = `\n\nResearched background on ${place} (from Wikipedia) — weave these facts in and add practical travel advice; do not call any tool:\n${research.extract}`;
+        }
+        clearStatusOnFirstToken = true;
+      }
+
       // Direct-ground a summary turn (FRD-007): the summary card must be built
       // from the remembered options + tools, not left to the model to compute or
       // to decide to call. When the traveller asks for a summary/total/euros and
@@ -378,7 +437,7 @@ export class CopilotAgentDriver implements AgentDriver {
         }
       }
 
-      await session.send({ prompt: buildContextualPrompt(input.message, input.history) });
+      await session.send({ prompt: buildContextualPrompt(input.message, input.history) + researchNote });
       // Drain events until the session goes idle.
       for await (const event of queue) {
         yield event;
@@ -511,11 +570,26 @@ async function resolveProfileWithAudit(query: string, push: (event: AgentEvent) 
  * `cosmos.getTravellerProfile` MCP query and the `personalise` skill result the
  * audit trail and the personalisation note are built from.
  */
-async function emitPersonalisation(message: string, push: (event: AgentEvent) => void): Promise<void> {
+async function emitPersonalisation(message: string, push: (event: AgentEvent) => void): Promise<PersonalisationProfile> {
   const profile = await resolveProfileWithAudit('traveller loyalty, preferences and past destinations', push);
   const note = personalise(profile, message);
   push({ type: 'tool_call', name: 'personalise', args: { seat: note.appliedSeat, meal: note.appliedMeal } });
   push({ type: 'tool_result', name: 'personalise', ok: true, result: note });
+  return profile;
+}
+
+/**
+ * Ground a month-aware destination turn (FRD-003, INC-8): call the
+ * `travel-guide.searchByMonth` tool on the `waypoint-data` MCP (a real hybrid
+ * vector query over the guide index in production; the offline dataset backs it
+ * otherwise), surface the mcp lifecycle in the audit, and return the passages
+ * the agent reasons over.
+ */
+async function groundGuide(month: string, push: (event: AgentEvent) => void): Promise<GuidePassage[]> {
+  push({ type: 'tool_call', name: 'travel-guide.searchByMonth', args: { month } });
+  const { passages, source } = await fetchGuideByMonth(month);
+  push({ type: 'tool_result', name: 'travel-guide.searchByMonth', ok: true, result: guideAuditSummary(month, passages, source) });
+  return passages;
 }
 
 /**

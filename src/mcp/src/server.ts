@@ -3,6 +3,7 @@ import { McpServer } from '@modelcontextprotocol/server';
 import { NodeStreamableHTTPServerTransport } from '@modelcontextprotocol/node';
 import { z } from 'zod';
 import { cosmosConfigured, readTravellerProfile } from './cosmos.js';
+import { searchConfigured, searchGuideByMonth } from './search.js';
 
 /**
  * waypoint-data MCP server (ADR-009). A real MCP server the Waypoint API calls
@@ -33,13 +34,29 @@ server.registerTool(
   },
 );
 
+server.registerTool(
+  'searchByMonth',
+  {
+    description:
+      'Search the travel-guide knowledge base (Azure AI Search) for the best destinations to visit in a given month, each with a short guide-grounded rationale and tags.',
+    inputSchema: z.object({ month: z.string().describe('The target month, e.g. "June".') }),
+  },
+  async ({ month }) => {
+    const { passages, source } = await searchGuideByMonth(month);
+    return {
+      content: [{ type: 'text', text: JSON.stringify(passages) }],
+      structuredContent: { passages, month, source },
+    };
+  },
+);
+
 const transport = new NodeStreamableHTTPServerTransport({ sessionIdGenerator: undefined });
 await server.connect(transport);
 
 const app = express();
 app.use(express.json());
 app.get('/health', (_req, res) => {
-  res.json({ ok: true, cosmos: cosmosConfigured() });
+  res.json({ ok: true, cosmos: cosmosConfigured(), search: searchConfigured() });
 });
 app.post('/mcp', (req, res) => {
   void transport.handleRequest(req, res, req.body);

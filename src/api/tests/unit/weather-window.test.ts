@@ -126,4 +126,11 @@ describe('weather-window skill', () => {
     expect(result.kind).toBe('weather-window');
     expect(String(result.place)).toMatch(/Innsbruck/);
   });
+
+  it('shows a loading status while looking up weather data, then clears it', async () => {
+    const events = await run('What is the weather like in Lisbon in October?');
+    const statuses = events.filter((e): e is Extract<AgentEvent, { type: 'status' }> => e.type === 'status').map((e) => e.message);
+    expect(statuses.some((m) => /looking up weather data/i.test(m))).toBe(true);
+    expect(statuses).toContain('');
+  });
 });

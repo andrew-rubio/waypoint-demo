@@ -4,6 +4,7 @@ import { LocalAgentDriver } from './local-driver.js';
 import { CopilotAgentDriver, type FoundryProviderConfig } from './copilot-driver.js';
 import { adviseDestinations } from '../tools/destination-advisor.js';
 import { getTravellerProfile, personalise, profileAuditSummary } from '../tools/cosmos.js';
+import { extractMonth, guideAuditSummary } from '../tools/travel-guide.js';
 import { searchTravel } from '../tools/routestack.js';
 import { estimateBudget, isSummaryQuery, summariseTrip, weatherNoteFor } from '../tools/trip-summary.js';
 import type { TravelOptionsResult } from '../../../shared/types/flight-hotel-search-booking.js';
@@ -234,6 +235,37 @@ async function* runFault(kind: string, input: RunAgentInput): AsyncIterable<Agen
       yield { type: 'tool_call', name: 'destination-advisor', args: { ...request } };
       yield { type: 'tool_result', name: 'destination-advisor', ok: true, result };
       const reply = 'Here are some ideas that match your saved preferences.';
+      for (const word of reply.split(' ')) {
+        await sleep(8);
+        yield { type: 'token', value: word + ' ' };
+      }
+      yield { type: 'done' };
+      return;
+    }
+
+    // A month turn where the travel guide has no strong match — the FRD-003
+    // (INC-8) fallback path. The travel-guide search succeeds but returns no
+    // passages, so the agent falls back to preference-based suggestions and says
+    // so, while the profile still personalises the shortlist.
+    case 'travel-guide-no-match': {
+      const month = extractMonth(input.message) ?? 'that month';
+      yield { type: 'decision', summary: `Search the travel guide for ${month}, then recommend from your preferences.` };
+      yield { type: 'tool_call', name: 'copilot.chat', args: { model: 'local', prompt: input.message } };
+      yield { type: 'tool_call', name: 'travel-guide.searchByMonth', args: { month } };
+      await sleep(60);
+      yield { type: 'tool_result', name: 'travel-guide.searchByMonth', ok: true, result: guideAuditSummary(month, []) };
+      const profile = getTravellerProfile();
+      yield { type: 'tool_call', name: 'cosmos.getTravellerProfile', args: { query: 'traveller loyalty, preferences and past destinations' } };
+      yield { type: 'tool_result', name: 'cosmos.getTravellerProfile', ok: true, result: profileAuditSummary(profile) };
+      const note = personalise(profile, input.message);
+      yield { type: 'tool_call', name: 'personalise', args: { seat: note.appliedSeat, meal: note.appliedMeal } };
+      yield { type: 'tool_result', name: 'personalise', ok: true, result: note };
+      const pastDestinations = (profile.pastDestinations ?? []).map((d) => `${d.city}, ${d.country}`);
+      const request = { interests: [input.message], constraints: [], month, guidePassages: [], pastDestinations };
+      const result = adviseDestinations(request);
+      yield { type: 'tool_call', name: 'destination-advisor', args: { ...request } };
+      yield { type: 'tool_result', name: 'destination-advisor', ok: true, result };
+      const reply = `The travel guide had no strong match for ${month}, so here are ideas based on your saved preferences.`;
       for (const word of reply.split(' ')) {
         await sleep(8);
         yield { type: 'token', value: word + ' ' };

@@ -2,7 +2,9 @@ import type { AgentEvent } from '../../../shared/types/chat-and-agent-runtime.js
 import type { WeatherResult } from '../../../shared/types/weather-and-timing.js';
 import type { TravelSearchResult } from '../../../shared/types/flight-hotel-search-booking.js';
 import type { AgentDriver, AgentInput } from './driver.js';
-import { adviseDestinations, destinationRequestFromConversation } from '../tools/destination-advisor.js';
+import { adviseDestinations, destinationRequestFromConversation, isDetailQuery } from '../tools/destination-advisor.js';
+import { guideAuditSummary, searchGuideByMonth } from '../tools/travel-guide.js';
+import { composeResearchReply, extractResearchPlace, researchAuditSummary, researchPlace } from '../tools/research.js';
 import {
   assessWeather,
   isWeatherQuery,
@@ -40,6 +42,9 @@ const TEST = process.env.NODE_ENV === 'test';
 const SEARCH_LOAD_MS = TEST ? 0 : 1200;
 const BOOK_LOAD_MS = TEST ? 0 : 3000;
 const CARD_GAP_MS = TEST ? 0 : 1000;
+const GUIDE_LOAD_MS = TEST ? 0 : 1200;
+const WEATHER_LOAD_MS = TEST ? 0 : 1200;
+const RESEARCH_LOAD_MS = TEST ? 0 : 1200;
 
 /** The city label for the search progress line, e.g. "Lisbon". */
 const cityLabel = (place: string): string => place.split(',')[0].trim();
@@ -89,17 +94,30 @@ export class LocalAgentDriver implements AgentDriver {
       yield* this.runSummary(input);
       return;
     }
+    if (isDetailQuery(input.message)) {
+      yield* this.runResearch(input);
+      return;
+    }
     yield* this.runDestinations(input);
   }
 
   private async *runDestinations(input: AgentInput): AsyncIterable<AgentEvent> {
-    const destinationRequest = destinationRequestFromConversation(input.message, input.history);
+    const conversationRequest = destinationRequestFromConversation(input.message, input.history);
+    const month = conversationRequest.month;
+
+    // INC-8: a month turn retrieves guide passages and the traveller's past destinations to avoid.
+    const guidePassages = month ? searchGuideByMonth(month) : [];
+    const profile = getTravellerProfile();
+    const pastDestinations = (profile.pastDestinations ?? []).map((d) => `${d.city}, ${d.country}`);
+    const destinationRequest = { ...conversationRequest, guidePassages, pastDestinations };
     const destinationResult = adviseDestinations(destinationRequest);
 
     // 1) An observable decision ALWAYS precedes the reply text.
     yield {
       type: 'decision',
-      summary: `Check your Cosmos profile, then use destination-advisor for "${preview(input.message)}".`,
+      summary: month
+        ? `Search the travel guide for ${month}, check your Cosmos profile, then use destination-advisor for "${preview(input.message)}".`
+        : `Check your Cosmos profile, then use destination-advisor for "${preview(input.message)}".`,
     };
 
     // 2) Preserve the model audit lifecycle while surfacing the nested skill call.
@@ -107,7 +125,19 @@ export class LocalAgentDriver implements AgentDriver {
 
     // Personalise when we will actually show suggestions or the traveller states a preference.
     const hasSuggestions = destinationResult.kind === 'shortlist' || destinationResult.kind === 'no-match';
-    if (hasSuggestions || detectSeatOverride(input.message)) {
+    const detail = isDetailQuery(input.message);
+
+    // INC-8: the travel-guide MCP call is visible in the audit when a month grounds the shortlist.
+    if (month && hasSuggestions) {
+      yield { type: 'status', message: `Searching the travel guide for ${month} recommendations…` };
+      await sleep(GUIDE_LOAD_MS);
+      yield { type: 'tool_call', name: 'travel-guide.searchByMonth', args: { month } };
+      yield { type: 'tool_result', name: 'travel-guide.searchByMonth', ok: true, result: guideAuditSummary(month, guidePassages) };
+      yield { type: 'status', message: '' };
+    }
+
+    // Skip personalisation on a "tell me more about X" detail turn so the note isn't repeated.
+    if ((hasSuggestions || detectSeatOverride(input.message)) && !detail) {
       yield* personaliseEvents(input.message);
     }
 
@@ -125,6 +155,26 @@ export class LocalAgentDriver implements AgentDriver {
     yield { type: 'done' };
   }
 
+  /** A "tell me more about X" turn: research the place (Wikipedia) and describe it richly. */
+  private async *runResearch(input: AgentInput): AsyncIterable<AgentEvent> {
+    const place = extractResearchPlace(input.message, input.history);
+    yield { type: 'decision', summary: `Research more detail about ${place} for the traveller.` };
+    yield { type: 'tool_call', name: 'copilot.chat', args: { model: 'local', prompt: input.message } };
+    yield { type: 'status', message: `Researching more into ${place}…` };
+    await sleep(RESEARCH_LOAD_MS);
+    const research = await researchPlace(place);
+    yield { type: 'tool_call', name: 'wikipedia.summary', args: { title: place.split(',')[0].trim() } };
+    yield { type: 'tool_result', name: 'wikipedia.summary', ok: true, result: researchAuditSummary(place, research) };
+    yield { type: 'status', message: '' };
+    const reply = composeResearchReply(place, research);
+    for (const word of reply.split(' ')) {
+      await sleep(8);
+      yield { type: 'token', value: word + ' ' };
+    }
+    yield { type: 'tool_result', name: 'copilot.chat', ok: true, result: reply };
+    yield { type: 'done' };
+  }
+
   private async *runWeather(input: AgentInput): AsyncIterable<AgentEvent> {
     const request = weatherRequestFromConversation(input.message, input.history);
     const result = assessWeather(request);
@@ -132,6 +182,10 @@ export class LocalAgentDriver implements AgentDriver {
 
     yield { type: 'decision', summary: `Use the Open-Meteo MCP to answer "${preview(input.message)}".` };
     yield { type: 'tool_call', name: 'copilot.chat', args: { model: 'local', prompt: input.message } };
+
+    // Progress feedback while the Open-Meteo lookup runs.
+    yield { type: 'status', message: `Looking up weather data for ${cityLabel(request.place)}…` };
+    await sleep(WEATHER_LOAD_MS);
 
     // Open-Meteo MCP: geocode the place first (FR-004-1).
     yield { type: 'tool_call', name: 'open-meteo.geocoding', args: { query: request.place } };
@@ -174,6 +228,7 @@ export class LocalAgentDriver implements AgentDriver {
     // The weather-window skill structures the grounded figures into an answer.
     yield { type: 'tool_call', name: 'weather-window', args: { ...request } };
     yield { type: 'tool_result', name: 'weather-window', ok: true, result };
+    yield { type: 'status', message: '' };
 
     const reply = composeWeatherReply(result);
     for (const word of reply.split(' ')) {
@@ -418,6 +473,8 @@ function composeTravelReply(result: TravelSearchResult): string {
       return `Here are your best flight and hotel options for ${result.place}, priced in GBP. Tell me which flight and hotel to book.`;
     case 'missing-origin':
       return 'I need a departure city before I can search flights. Which city are you flying from?';
+    case 'missing-dates':
+      return result.message;
     case 'invalid-dates':
       return result.reason === 'past'
         ? 'Those dates are in the past. Could you give me valid travel dates in the future?'

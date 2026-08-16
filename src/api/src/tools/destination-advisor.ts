@@ -6,12 +6,20 @@ import type {
   DestinationSuggestion,
 } from '../../../shared/types/destination-advice.js';
 import type { ChatMessage } from '../../../shared/types/chat-and-agent-runtime.js';
+import { extractMonth } from './travel-guide.js';
 
 const candidateSchema = z.object({
   name: z.string().trim().min(1),
   rationale: z.string().trim().min(1),
   matchedPreferences: z.array(z.string().trim().min(1)).optional(),
   tags: z.array(z.string().trim().min(1)).optional(),
+});
+
+const guidePassageSchema = z.object({
+  name: z.string().trim().min(1),
+  rationale: z.string().trim().min(1),
+  tags: z.array(z.string().trim().min(1)),
+  month: z.string().trim().min(1),
 });
 
 const requestSchema = z.object({
@@ -27,6 +35,9 @@ const requestSchema = z.object({
       }),
     )
     .optional(),
+  month: z.string().trim().min(1).optional(),
+  guidePassages: z.array(guidePassageSchema).optional(),
+  pastDestinations: z.array(z.string().trim().min(1)).default([]),
 });
 
 /** SDK-facing JSON schema. The agent proposes candidates; the tool validates and ranks them. */
@@ -133,19 +144,41 @@ function rankCandidates(candidates: DestinationCandidate[], matched: string[]): 
     const tags = (candidate.tags?.length ? candidate.tags : prefs.length ? prefs : ['destination']).slice(0, 5);
     scored.push({ suggestion: { name, rationale: candidate.rationale.trim(), tags }, score });
   }
-  return scored.sort((a, b) => b.score - a.score).slice(0, 3).map((entry) => entry.suggestion);
+  return scored.sort((a, b) => b.score - a.score).map((entry) => entry.suggestion);
 }
 
 /** Deterministically propose a preference-appropriate shortlist from the pool. */
 function proposeFromPool(matched: string[]): DestinationSuggestion[] {
   const scored = POOL.map((entry) => ({ entry, score: entry.tags.filter((tag) => matched.includes(tag)).length }));
   scored.sort((a, b) => b.score - a.score);
-  return scored.slice(0, 3).map(({ entry }) => {
+  return scored.map(({ entry }) => {
     const hits = entry.tags.filter((tag) => matched.includes(tag));
     const tags = [...hits, ...entry.tags.filter((tag) => !hits.includes(tag))].slice(0, 5);
     const rationale = hits.length ? `${entry.rationale} Great for ${hits.join(', ')}.` : entry.rationale;
     return { name: entry.name, rationale, tags };
   });
+}
+
+/** Remove destinations the traveller has recently visited (by canonical name or city). */
+function withoutPast<T extends { name: string }>(items: T[], past: string[]): T[] {
+  if (!past.length) return items;
+  const names = new Set(past.map((p) => p.toLowerCase()));
+  const cities = new Set(past.map((p) => p.split(',')[0].trim().toLowerCase()));
+  return items.filter((item) => {
+    const name = item.name.toLowerCase();
+    const city = item.name.split(',')[0].trim().toLowerCase();
+    return !names.has(name) && !cities.has(city);
+  });
+}
+
+/** Rank guide passages by how well their tags match the traveller's stated preferences. */
+function rankGuidePassages(passages: DestinationAdviceRequest['guidePassages'], matched: string[]): DestinationSuggestion[] {
+  const scored = (passages ?? []).map((passage) => ({
+    suggestion: { name: passage.name, rationale: passage.rationale, tags: passage.tags.slice(0, 5) },
+    score: passage.tags.filter((tag) => matched.includes(tag)).length,
+  }));
+  scored.sort((a, b) => b.score - a.score);
+  return scored.map((entry) => entry.suggestion);
 }
 
 /** Pure, deterministic tool handler shared by the real SDK and local test driver. */
@@ -184,8 +217,30 @@ export function adviseDestinations(raw: DestinationAdviceRequest): DestinationAd
   }
 
   const matched = matchPreferences(text);
-  const proposed = request.candidates ? rankCandidates(request.candidates, matched) : [];
-  const suggestions = proposed.length >= 3 ? proposed : proposeFromPool(matched);
+  const past = request.pastDestinations;
+
+  // INC-8: when the month yielded guide passages, ground the shortlist in them.
+  if (request.guidePassages && request.guidePassages.length > 0) {
+    const grounded = withoutPast(rankGuidePassages(request.guidePassages, matched), past).slice(0, 5);
+    const suggestions = grounded.length >= 3 ? grounded : withoutPast(proposeFromPool(matched), past).slice(0, 5);
+    const month = request.month ? ` for ${request.month}` : '';
+    return { kind: 'shortlist', suggestions, guideMatched: true, month: request.month, message: `From the travel guide${month}.` };
+  }
+
+  // INC-8: a month was requested but the guide had no strong match — fall back to preferences.
+  if (request.month) {
+    const suggestions = withoutPast(proposeFromPool(matched), past).slice(0, 3);
+    return {
+      kind: 'shortlist',
+      suggestions,
+      guideMatched: false,
+      month: request.month,
+      message: `The travel guide had no strong match for ${request.month}, so here are ideas based on your preferences.`,
+    };
+  }
+
+  const proposed = request.candidates ? withoutPast(rankCandidates(request.candidates, matched), past) : [];
+  const suggestions = proposed.length >= 3 ? proposed.slice(0, 3) : withoutPast(proposeFromPool(matched), past).slice(0, 3);
   const message = matched.length ? `Ranked for ${matched.join(', ')}.` : undefined;
   return { kind: 'shortlist', suggestions, message };
 }
@@ -195,6 +250,7 @@ export function destinationRequestFromConversation(message: string, _history: Ch
   return {
     interests: [message],
     constraints: extractConstraints(message),
+    month: extractMonth(message),
   };
 }
 
@@ -205,6 +261,11 @@ function extractConstraints(message: string): string[] {
 
 function isVague(text: string): boolean {
   return /^(recommend somewhere|somewhere|anywhere|where should i go)\??$/.test(text.trim());
+}
+
+/** Detect a "tell me more about X" style follow-up asking for detail on a place (INC-8). */
+export function isDetailQuery(message: string): boolean {
+  return /\b(tell me (more|about)|more about|more info|read more|describe|what'?s it like|what is it like)\b/i.test(message);
 }
 
 function isNonTravel(text: string): boolean {

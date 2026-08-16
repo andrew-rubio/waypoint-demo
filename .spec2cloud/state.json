@@ -3,14 +3,14 @@
   "phase": "increment-delivery",
   "step": "tests",
   "status": "in-progress",
-  "currentIncrement": "INC-7",
+  "currentIncrement": "INC-8",
   "lastUpdated": "2026-08-15T00:00:00Z",
   "increments_progress": {
     "INC-7": {
       "frd": "FRD-007",
       "name": "trip-summary-and-budget",
       "depends_on": ["INC-4", "INC-5", "INC-6"],
-      "status": "in-progress",
+      "status": "deployed-verified",
       "started_at": "2026-08-15T00:00:00Z",
       "humanGates": { "gherkin": true, "testCode": true, "implementation": true, "deployment": false },
       "scope": "trip-summariser + budget-estimator skills; itinerary + budget card; budget maths (flight x party) + (nightly x nights x rooms); taxes/fees labelling; GBP default + EUR on request via currency.convert (rate + timestamp in audit); applied preferences + reward points from Cosmos; partial-selection + currency-fallback + personalisation-degraded paths.",
@@ -192,9 +192,115 @@
       "frd": "FRD-003 (reworked)",
       "name": "travel-guide-rag",
       "depends_on": ["INC-6"],
-      "status": "planned",
+      "status": "in-progress",
+      "step": "tests",
+      "started_at": "2026-08-15T00:00:00Z",
       "plan": "Vectorise src/assets travel-guide PDF into Azure AI Search (Free tier) via a Foundry text-embedding-3-small deployment (ADR-008). Add travel-guide.searchByMonth tool to the waypoint-data MCP (ADR-009). Destination turn calls cosmos.getTravellerProfile + travel-guide.searchByMonth (Shape A) and the agent reasons -> month-aware, preference-aware, guide-grounded shortlist avoiding recent past destinations. REPLACES hardcoded destination-advisor pool; reworks FRD-003 + its Gherkin/tests (needs re-approval). Same destination-list UI contract.",
-      "humanGates": { "gherkin": false, "testCode": false, "implementation": false, "deployment": false }
+      "tests": {
+        "status": "pending-approval",
+        "gherkin": { "path": "specs/features/destination-advice.feature", "status": "approved", "scenarios": 12, "coverage": "month-aware guide+profile shortlist (AC-003-5), two-MCP audit (travel-guide.searchByMonth + cosmos.getTravellerProfile + destination-advisor skill), avoids recently-visited past destinations (FR-003-6), no-guide-match fallback to preferences, plus kept interests-shortlist/vague/refine/canonical/contradictory/niche/non-travel/error." },
+        "unit": { "path": "src/api/tests/unit/travel-guide.test.ts", "tests": 8, "status": "pending-approval", "note": "extractMonth + searchGuideByMonth (offline) + driver month turn emits travel-guide.searchByMonth+cosmos+destination-advisor + avoids past destinations + guide-miss fallback." },
+        "bdd": { "path": "tests/features/step-definitions/destination-advice.steps.ts", "status": "pending-approval", "note": "adds grounded-in-guide, reflect-preferences, avoid/no past-destination, travel-guide mcp entry+summary, guide-no-match fault Given + Then, still-suggest-from-preferences. Reuses cosmos-mcp + skill-entry + shortlist/tags/canonical steps." },
+        "e2e": { "path": "e2e/destination-advice.spec.ts", "tests": "+2 (month-aware guide-grounded personalised avoiding past trips @smoke; two-MCP audit)", "status": "pending-approval" },
+        "redBaseline": "Unit: travel-guide.test.ts fails to load (src/api/src/tools/travel-guide.ts absent) -> new suite red; 81 existing pass. Skip scan clean. Cucumber 85 scenarios/454 steps all mapped (0 undefined/ambiguous). Playwright 47 tests/7 files discovered (2 new destination specs compile).",
+        "targetContract": "New src/api/src/tools/travel-guide.ts: extractMonth(message), searchGuideByMonth(month) -> GuidePassage{name,rationale,tags,month}[] (offline deterministic dataset derived from src/assets guide PDF; [] for unknown month), guideAuditSummary(month,passages). Extend DestinationAdviceRequest with month?/guidePassages?/pastDestinations?; DestinationShortlistResult adds guideMatched?:boolean (+ guide-miss message). adviseDestinations: guide passages as candidate pool when present -> rank by prefs, FILTER OUT pastDestinations, 3-5, guideMatched true, guide-cited rationale; month + empty guide -> preference fallback (POOL) guideMatched false + 'travel guide had no strong match' message; always drop pastDestinations. local-driver.runDestinations: extractMonth -> emit travel-guide.searchByMonth mcp lifecycle + searchGuideByMonth + existing cosmos personaliseEvents + advise with guide+profile+pastDestinations. copilot-driver: direct-grounding groundDestinations (two mcp calls). runtime faults: travel-guide-no-match (forces empty guide) + reuse destination-advisor-error. Web: guide citation on reply; destination-list contract unchanged."
+      },
+      "contracts": {
+        "status": "done",
+        "sharedTypes": ["src/shared/types/destination-advice.ts (GuidePassage; request month/guidePassages/pastDestinations; result guideMatched/month)"],
+        "api": ["specs/contracts/api/destination-advice.yaml (v2.0: two MCP calls, guide fields, infra=INC-8 aiSearch+embedding+waypointDataMcp)"],
+        "infra": "resources.yaml already lists aiSearch (Free) + foundry text-embedding-3-small + waypointDataMcp; Bicep module + ingestion added at Step 4."
+      },
+      "implementation": {
+        "status": "review-pending",
+        "slices": {
+          "api": {
+            "status": "green",
+            "files": [
+              "src/api/src/tools/travel-guide.ts (new: offline month->destinations dataset derived from DK 'Where To Go When' PDF; extractMonth/searchGuideByMonth/guideAuditSummary; canonical City,Country names)",
+              "src/api/src/tools/destination-advisor.ts (guidePassages/month/pastDestinations schema; rankGuidePassages + withoutPast; guide-grounded pool -> filter past -> 3-5 guideMatched true; month+empty guide -> preference fallback guideMatched false 'no strong match'; destinationRequestFromConversation sets month)",
+              "src/api/src/agent/local-driver.ts (runDestinations emits travel-guide.searchByMonth mcp + passes guide+pastDestinations)",
+              "src/api/src/agent/runtime.ts (travel-guide-no-match fault: ok travel-guide entry with 0 passages + cosmos + preference fallback)",
+              "src/api/src/agent/copilot-driver.ts (groundGuide direct-grounding via fetchGuideByMonth; emitPersonalisation returns profile for pastDestinations)",
+              "src/api/src/tools/waypoint-data-client.ts (fetchGuideByMonth MCP client -> searchByMonth, offline fallback)"
+            ],
+            "validation": "89/89 unit (8 travel-guide + 81 prior); API tsc --noEmit clean"
+          },
+          "mcp": {
+            "status": "green",
+            "files": [
+              "src/mcp/src/travel-guide.ts (new: offline dataset mirror + allGuidePassages for ingestion)",
+              "src/mcp/src/search.ts (new: searchGuideByMonth -> AI Search hybrid+month-filter when SEARCH_ENDPOINT set, offline fallback; searchConfigured)",
+              "src/mcp/src/server.ts (registerTool searchByMonth; /health reports search)",
+              "src/mcp/package.json (+@azure/search-documents)"
+            ],
+            "validation": "tsc -p src/mcp clean; npm install ok"
+          },
+          "web": {
+            "status": "green",
+            "note": "No change needed — destination-list + personalisation-note already render from tool_results; reply text now cites the guide via composeDestinationReply message. next build clean.",
+            "validation": "next build clean (type-check)"
+          },
+          "integration": {
+            "status": "verified-via-unit-and-build",
+            "note": "Co-hosted Playwright+Cucumber blocked in this sandbox (spawned API+Web reaped ~1-2s, as prior increments). Validated via 89 unit + API/MCP/web tsc/build + skip scan + Cucumber 85 scenarios/454 steps mapped + Playwright 47 tests/7 files. Full e2e/BDD + live AI Search validated by deploy smoke at Step 4."
+          }
+        },
+        "liveSearchPending": "Step 4 (deploy): add AI Search (Free) + text-embedding-3-small Bicep AND a Foundry project connection (Microsoft.CognitiveServices/accounts/projects/connections, category CognitiveSearch, aad via project system-assigned identity) so the travel-guide index is visible inside the waypoint Foundry project (ai.azure.com) per ADR-008; grant project identity Search Index Data Reader; write ingestion to create+seed the travel-guide index (allGuidePassages + embeddings), wire MCP live queryAiSearch + SEARCH_ENDPOINT/SEARCH_INDEX env + Search Index Data Reader (MCP) / Data Contributor+Service Contributor (ingestion) to UAMI; azd provision+deploy all 3 services; live smoke of the two-MCP month turn."
+      },
+      "deployment": {
+        "status": "smoke-verified",
+        "date": "2026-08-15",
+        "env": "waypoint (sub c7233dbc..., swedencentral, rg-waypoint)",
+        "resources": "AI Search srch-dnszpz4hqfi7g (Free tier, RBAC); Foundry aif-dnszpz4hqfi7g/text-embedding-3-small (GlobalStandard) + project waypoint + CognitiveSearch connection 'travel-guide-search' (AAD) -> index visible IN the Foundry project (ai.azure.com); roles: UAMI Search Index Data Reader, project identity Reader, deployer Data Contributor+Service Contributor+OpenAI User.",
+        "infra": [
+          "infra/modules/aisearch.bicep, foundry-search-connection.bicep (new); foundry.bicep (embedding GlobalStandard); main.bicep + main.parameters.json (deployerPrincipalId=AZURE_PRINCIPAL_ID)",
+          "scripts/ingest-guide.mjs — created index + embedded 73/73 passages (text-embedding-3-small 1536d) + uploaded"
+        ],
+        "fix": "text-embedding-3-small SKU 'Standard' unsupported in swedencentral -> GlobalStandard (verify: az cognitiveservices model list -l swedencentral).",
+        "tool": "azd provision (2 runs: SKU fix) + node --import tsx scripts/ingest-guide.mjs + azd deploy (all 3) + azd deploy api (source-in-audit change)",
+        "endpoints": {
+          "web": "https://ca-web-dnszpz4hqfi7g.salmonflower-718a2dad.swedencentral.azurecontainerapps.io",
+          "api": "https://ca-api-dnszpz4hqfi7g.salmonflower-718a2dad.swedencentral.azurecontainerapps.io"
+        },
+        "health": "API /health ok; Web / 200; ca-mcp booted cosmos=true search=true.",
+        "auditEnhancement": "Surfaced the guide retrieval source in the travel-guide.searchByMonth audit entry (guideAuditSummary + fetchGuideByMonth read MCP structuredContent.source). 89/89 unit still pass; API tsc clean.",
+        "smoke": "Live 'Where should I go in June?': travel-guide.searchByMonth result source='ai-search' (LIVE Azure AI Search index, 7 June passages) + cosmos.getTravellerProfile + destination-advisor, month-aware June shortlist (Rome/Dalmatian Coast/Machu Picchu/Reykjavik/Kruger) with Barcelona (a June guide pick that is ALSO a past destination) correctly EXCLUDED. Index queried directly: 7 June docs. Foundry project connection 'travel-guide-search' (CognitiveSearch, AAD) confirmed present."
+      },
+      "refinements_2026-08-16": {
+        "request": "User during deployment verification: (1) auto-scroll chat to latest message; (2) extend loading feedback to guide search + weather (not just flights/hotels/booking); (3) hotel star rating shows only N gold stars (no empty ★ out of 5); (4) BUG: personalisation note repeated on 'tell me more about X' follow-ups — suppress it for detail turns.",
+        "change": [
+          "destination-advisor.ts: new isDetailQuery(message) ('tell me more/about', 'describe', etc.).",
+          "local-driver.ts + copilot-driver.ts: guide turn emits status 'Searching the travel guide for <month> recommendations…' (GUIDE_LOAD_MS) + clear; weather turn emits 'Looking up weather data for <place>…' (WEATHER_LOAD_MS) + clear; personalisation (cosmos+personalise note) SKIPPED when isDetailQuery (no repeated note).",
+          "web page.tsx: useEffect scrollIntoView threadEndRef on messages/loadingStatus (auto-scroll); hotel stars = '★'.repeat(rating) only (removed '☆'.repeat(5-rating)).",
+          "tests: +2 (guide loading status + detail-query no personalise note) in travel-guide.test.ts; +1 (weather loading status) in weather-window.test.ts. 92/92 unit."
+        ],
+        "validation": "92/92 unit; API tsc clean; web build clean; skip clean; Cucumber 85/454; Playwright 47/7.",
+        "deployment": {
+          "status": "smoke-verified",
+          "tool": "azd deploy api + azd deploy web (MCP unchanged)",
+          "smoke": "Live: T1 'planning a 2 week holiday in November, where would you recommend?' -> status 'Searching the travel guide for November recommendations…' + personalise note present. T2 'Tell me more about Rome, Italy' -> NO personalise (note suppressed). Weather 'Kyoto in April' -> status 'Looking up weather data for Kyoto…'. Auto-scroll + gold-only stars deployed (web build verified)."
+        }
+      },
+      "enhancements_2026-08-16b": {
+        "request": "(1) Make 'tell me more' richer — LLM/web-search-backed facts + travel advice, loading 'Researching more into [Location]'; (2) if a flight/hotel search has no dates, ask for departure+return dates before searching; (3) change all fonts to Source Sans 3.",
+        "change": [
+          "research.ts (new): extractResearchPlace + researchPlace (Wikipedia REST summary, keyless; deterministic stub under test) + researchAuditSummary + composeResearchReply.",
+          "local-driver.ts: runResearch turn (isDetailQuery dispatch) — status 'Researching more into <place>…' + wikipedia.summary audit + grounded description.",
+          "copilot-driver.ts: detail turn direct-grounds Wikipedia (wikipedia.summary audit) + injects facts into the prompt + systemMessage 'do NOT call destination-advisor for tell-me-more, write a rich description'; destination-advisor handler no-ops (redirect, no card) on detail turns; clears 'Researching…' status on first token.",
+          "audit.ts: 'wikipedia' added to MCP_SERVERS (shows as mcp/external call).",
+          "DATES: shared type +TravelMissingDatesResult; routestack.searchTravel returns missing-dates when no dates; mergeTravelResult short-circuits it; conversationMentionsDates(message,history) (ISO/day+month/DD-MM/relative — a bare month is NOT enough); copilot travel-search handler forces missing-dates when the conversation has no specific date (guards model-invented dates); composeTravelReply handles missing-dates; systemMessage 'never invent travel dates, ask first'.",
+          "FONT: globals.css + design-system.md + 6 prototypes + index.html + walkthrough.html -> Source Sans 3 (kept JetBrains Mono for code).",
+          "tests: +2 (research turn wikipedia+status+no-shortlist; missing-dates asks before searching). 94/94 unit."
+        ],
+        "validation": "94/94 unit; API tsc clean; web build clean; skip clean; Cucumber 85/454; Playwright 47/7.",
+        "deployment": {
+          "status": "smoke-verified",
+          "tool": "azd deploy api + web",
+          "smoke": "Live: 'Tell me more about Kyoto, Japan' -> status 'Researching more into Kyoto, Japan…' (no 'about' leak) + wikipedia.summary audit + destination-advisor NOT called + rich 676-char description ('Kyoto is Japan's cultural heart… Don't miss Fushimi Inari's torii gates…'). 'Find flights/hotel to Lisbon from London' (no dates) -> missing-dates, NO routestack. '…14-21 October 2026 for 2' -> routestack search runs. Source Sans 3 live."
+        }
+      },
+      "humanGates": { "gherkin": true, "testCode": true, "implementation": true, "deployment": false }
     },
     "UI-003": {
       "type": "ui-refinement",

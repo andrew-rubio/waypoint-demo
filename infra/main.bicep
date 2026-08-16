@@ -33,6 +33,15 @@ param foundryModelName string = 'gpt-5.4-mini'
 @description('Foundry model version to deploy.')
 param foundryModelVersion string = '2026-03-17'
 
+@description('Foundry embedding model deployment name (INC-8, ADR-008) — vectorises the travel-guide guide.')
+param foundryEmbeddingModelName string = 'text-embedding-3-small'
+
+@description('Foundry embedding model version.')
+param foundryEmbeddingModelVersion string = '1'
+
+@description('Object ID of the deployer running the guide ingestion (grants AI Search ingestion roles). Empty skips the grant.')
+param deployerPrincipalId string = ''
+
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
 
@@ -95,7 +104,41 @@ module foundry 'modules/foundry.bicep' = if (useFoundry) {
     accountName: 'aif-${resourceToken}'
     modelName: foundryModelName
     modelVersion: foundryModelVersion
+    embeddingModelName: foundryEmbeddingModelName
+    embeddingModelVersion: foundryEmbeddingModelVersion
     principalId: identity.outputs.principalId
+    ingestionPrincipalId: deployerPrincipalId
+  }
+}
+
+// Azure AI Search — travel-guide knowledge base (ADR-008, INC-8). Free tier;
+// the MCP reads keyless, the deployer seeds the index, and it is connected to
+// the Foundry project below so the index is visible inside the project.
+module aiSearch 'modules/aisearch.bicep' = {
+  scope: rg
+  name: 'aisearch'
+  params: {
+    location: location
+    tags: tags
+    name: 'srch-${resourceToken}'
+    principalId: identity.outputs.principalId
+    ingestionPrincipalId: deployerPrincipalId
+  }
+}
+
+// Attach AI Search to the Foundry project as a CognitiveSearch connection so the
+// travel-guide index shows inside the project at ai.azure.com (ADR-008).
+module foundrySearchConnection 'modules/foundry-search-connection.bicep' = if (useFoundry) {
+  scope: rg
+  name: 'foundry-search-connection'
+  params: {
+    location: location
+    accountName: foundry!.outputs.accountName
+    projectName: foundry!.outputs.projectName
+    searchEndpoint: aiSearch.outputs.endpoint
+    searchName: aiSearch.outputs.name
+    searchId: aiSearch.outputs.id
+    projectPrincipalId: foundry!.outputs.projectPrincipalId
   }
 }
 
@@ -148,6 +191,15 @@ module waypointData 'modules/container-app.bicep' = {
         // Selects the user-assigned identity for DefaultAzureCredential.
         name: 'AZURE_CLIENT_ID'
         value: identity.outputs.clientId
+      }
+      {
+        // INC-8: AI Search travel-guide index (keyless read via managed identity).
+        name: 'SEARCH_ENDPOINT'
+        value: aiSearch.outputs.endpoint
+      }
+      {
+        name: 'SEARCH_INDEX'
+        value: 'travel-guide'
       }
     ]
     secrets: []
@@ -296,3 +348,7 @@ output SERVICE_API_ENDPOINT_URL string = api.outputs.uri
 output SERVICE_WEB_ENDPOINT_URL string = web.outputs.uri
 output COSMOS_ENDPOINT string = cosmos.outputs.endpoint
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
+output SEARCH_ENDPOINT string = aiSearch.outputs.endpoint
+output SEARCH_INDEX string = 'travel-guide'
+output FOUNDRY_MODEL_URL string = useFoundry ? foundry!.outputs.openAiEndpoint : ''
+output FOUNDRY_EMBEDDING_DEPLOYMENT string = useFoundry ? foundry!.outputs.embeddingDeploymentName : ''

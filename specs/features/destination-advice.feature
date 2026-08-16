@@ -1,12 +1,47 @@
 Feature: Destination advice
-  As described in frd-destination-advice.md (FRD-003),
-  travellers receive ranked destination suggestions that can be refined and
-  passed to downstream holiday-planning capabilities.
+  As described in frd-destination-advice.md (FRD-003, reworked for INC-8),
+  travellers receive month-aware, guide-grounded, personalised destination
+  suggestions. Recommendations are drawn from a travel-guide knowledge base
+  (Azure AI Search) via the travel-guide.searchByMonth MCP tool and personalised
+  from the Cosmos profile via cosmos.getTravellerProfile — two real MCP calls the
+  agent reasons over. Both are visible in the audit trail. See ADR-008, ADR-009.
 
   Background:
     Given the Traveller is on the Waypoint welcome screen
 
   @destination-advice @happy @smoke
+  Scenario: A month produces month-aware, guide-grounded, personalised suggestions
+    When the Traveller asks "Where should I go in June?"
+    Then a destination list should contain between 3 and 5 ranked suggestions
+    And the suggestions should be grounded in the travel guide
+    And the suggestions should reflect the Traveller's saved preferences
+    And the suggestions should avoid the Traveller's recently visited destinations
+    And every destination should include descriptive tags
+
+  @destination-advice @happy
+  Scenario: The guide and the profile are both fetched and shown in the audit trail
+    When the Traveller asks "Where should I go in June?"
+    And the Traveller opens the audit trail
+    Then the audit trail should contain a successful travel-guide search entry
+    And the audit trail should contain a successful Cosmos entry of type "mcp"
+    And the audit trail should contain a successful skill entry named "destination-advisor"
+    And the travel-guide search entry should summarise the requested month and result
+
+  @destination-advice @edge
+  Scenario: Suggestions avoid places the Traveller has recently visited
+    When the Traveller asks "Where should I go in June?"
+    Then a destination list should contain between 3 and 5 ranked suggestions
+    And no suggestion should be one of the Traveller's recently visited destinations
+
+  @destination-advice @edge
+  Scenario: A month with no strong guide match falls back to preferences
+    Given the travel guide has no strong match for the request
+    When the Traveller asks "Where should I go in February?"
+    Then the agent should say the travel guide had no strong match
+    And the agent should still suggest destinations based on the Traveller's preferences
+    And the audit trail should contain a successful travel-guide search entry
+
+  @destination-advice @happy
   Scenario: Interests produce a ranked shortlist
     When the Traveller asks for destinations with "warm weather, hiking, and good seafood"
     Then a destination list should contain between 3 and 5 ranked suggestions
@@ -58,10 +93,3 @@ Feature: Destination advice
     Then the Traveller should see "I couldn't work that out — could you rephrase?"
     And the conversation should remain usable
     And the audit trail should contain an error entry for the destination advisor
-
-  @destination-advice @happy
-  Scenario: Destination advice is visible in the audit trail
-    When the Traveller asks for destinations with "warm weather, hiking, and good seafood"
-    And the Traveller opens the audit trail
-    Then the audit trail should contain a successful skill entry named "destination-advisor"
-    And the skill entry should summarise the Traveller's interests and ranked result
