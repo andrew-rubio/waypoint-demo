@@ -13,13 +13,19 @@ teaches the agent how to interview a traveller and present recommendations; the
 `destination-advisor` tool validates, de-duplicates, ranks and canonicalizes candidates
 into structured results the Web app renders as cards.
 
-> **Data-driven (INC-6 / INC-8):** recommendations are grounded in **real data** retrieved
+> **Data-driven (INC-6 / INC-8, live):** recommendations are grounded in **real data** retrieved
 > over real MCP calls — the traveller profile from **Azure Cosmos DB**
 > (`cosmos.getTravellerProfile`) and a **travel-guide knowledge base** in **Azure AI
 > Search** (`travel-guide.searchByMonth`) — both via the self-hosted `waypoint-data` MCP,
-> with the agent reasoning over both. *(These beats are live after the INC-6 and INC-8
-> deploys; the walking-skeleton demo still runs today on the deterministic offline
-> profile.)*
+> with the agent reasoning over both. A **month-aware** request ("where should I go in June?")
+> returns guide-grounded, personalised ideas that avoid recently-visited places. Asking to
+> **"tell me more about"** a place triggers a **Wikipedia-backed research** answer. *(An offline
+> deterministic profile + guide back tests and local runs.)*
+>
+> **Full journey:** destination advice → place research → weather & best time (Open-Meteo)
+> → flights & hotels in GBP (RouteStack, **asks for dates first** if none given) → simulated
+> booking → trip summary & budget (GBP / EUR). Every slow step streams a **live loading
+> status** ("Searching the travel guide…", "Looking up weather data…", "Researching more into…").
 
 ```mermaid
 flowchart LR
@@ -56,6 +62,19 @@ Then refine the result:
 
 Explain that the prior conversation is supplied to the tool so refinement
 updates the shortlist instead of starting over.
+
+### 1b. Walk The Full Journey (end-to-end UX)
+
+Show the complete traveller experience, calling out the live loading status between turns:
+
+1. **Discover** \u2014 `Where should I go in June?` \u2192 month-aware, guide-grounded shortlist (Azure AI Search) that reflects the profile and avoids past trips. *("Searching the travel guide for June recommendations\u2026")*
+2. **Research** \u2014 `Tell me more about Lisbon.` \u2192 a rich, Wikipedia-grounded description (facts + travel tips), no shortlist. *("Researching more into Lisbon\u2026")*
+3. **Time it** \u2014 `When is the best time to visit?` \u2192 Open-Meteo ERA5 normals, source-cited. *("Looking up weather data for Lisbon\u2026")*
+4. **Search** \u2014 `Find flights and a hotel there from London.` \u2192 the agent **asks for your dates first**; provide them and it searches RouteStack, normalised to GBP, with the aisle seat + vegetarian meal pre-selected.
+5. **Book** \u2014 `Book the first flight and the first hotel.` \u2192 a clearly-simulated confirmation with seat 23C and reward points, and the trip summary auto-appears above it.
+6. **Total it** \u2014 `Show the total in euros.` \u2192 budget total converted live (rate + timestamp in the audit).
+
+Open the **Audit panel** at any point: every step shows its decision, tool/MCP call and result \u2014 never the model's hidden reasoning.
 
 ### 2. Show The Product Contract
 
@@ -186,6 +205,7 @@ sequenceDiagram
     participant API as Express API
     participant Agent as Copilot SDK Agent
     participant Data as waypoint-data MCP (Cosmos + Travel Guide)
+    participant Wiki as Wikipedia
     participant Skill as Destination Skill
     participant Tool as Destination Tool
 
@@ -197,6 +217,7 @@ sequenceDiagram
     Data-->>Agent: Profile + month-appropriate guide passages
     Agent->>Tool: Rank candidates
     Tool-->>Agent: Validated, ranked DestinationAdviceResult
+    Note over Agent,Wiki: "tell me more about X" → wikipedia.summary (research), no shortlist
     Agent-->>API: Tokens and observable events
     API-->>Web: Redacted SSE stream
     Web-->>Browser: Reply, cards, and audit entries
@@ -207,17 +228,22 @@ sequenceDiagram
 | Prompt | Behavior to highlight |
 |---|---|
 | `I love warm weather, hiking, and good seafood.` | Structured ranked shortlist |
-| `Where should I go in June?` | **Month-aware, guide-grounded** suggestions (INC-8) |
+| `Where should I go in June?` | **Month-aware, guide-grounded** suggestions from Azure AI Search (INC-8); avoids past trips |
+| `Tell me more about Lisbon.` | **Wikipedia-grounded research** — a rich description (facts + travel tips), not a shortlist; `wikipedia.summary` in the audit |
 | `Where should I go for a warm coastal break?` | **Personalised** note from the Cosmos profile (INC-6) |
 | `Recommend somewhere.` | One clarification and no fabricated shortlist |
 | `Make it cheaper and more beach-focused.` | Context-aware refinement |
+| `Find flights and hotels to Lisbon from London.` | Agent **asks for your travel dates first** before searching (never invents dates) |
 | `Find flights and hotels to Lisbon from London for 2, 14–21 Oct.` | RouteStack search, GBP-normalised, aisle+veg pre-select |
-| `Book the first flight and the first hotel.` | Simulated booking — seat 23C + reward points earned |
+| `Book the first flight and the first hotel.` | Simulated booking — seat 23C + reward points earned; auto trip summary |
+| `Summarise the trip and total cost. Show it in euros.` | Trip summary + budget, GBP → EUR via live currency (INC-7) |
 | `Can you review my tax return?` | Travel-domain redirect |
 
 Foundry response latency varies. Allow the current turn to finish before sending
 a refinement, then open the Audit panel to show the observable execution path —
-including the `cosmos.getTravellerProfile` and `travel-guide.searchByMonth` MCP calls.
+including the `travel-guide.searchByMonth`, `cosmos.getTravellerProfile` and
+`wikipedia.summary` calls. A **live loading status** shows what the agent is doing
+between turns (searching the guide, looking up weather, researching a place).
 
 ## Key Design Message
 

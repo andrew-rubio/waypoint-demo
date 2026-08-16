@@ -1,10 +1,10 @@
 {
   "mode": "greenfield",
-  "phase": "increment-delivery",
-  "step": "tests",
-  "status": "in-progress",
+  "phase": "release",
+  "step": "delivered",
+  "status": "all-increments-delivered",
   "currentIncrement": "INC-8",
-  "lastUpdated": "2026-08-15T00:00:00Z",
+  "lastUpdated": "2026-08-16T00:00:00Z",
   "increments_progress": {
     "INC-7": {
       "frd": "FRD-007",
@@ -192,8 +192,8 @@
       "frd": "FRD-003 (reworked)",
       "name": "travel-guide-rag",
       "depends_on": ["INC-6"],
-      "status": "in-progress",
-      "step": "tests",
+      "status": "deployed-verified",
+      "step": "delivered",
       "started_at": "2026-08-15T00:00:00Z",
       "plan": "Vectorise src/assets travel-guide PDF into Azure AI Search (Free tier) via a Foundry text-embedding-3-small deployment (ADR-008). Add travel-guide.searchByMonth tool to the waypoint-data MCP (ADR-009). Destination turn calls cosmos.getTravellerProfile + travel-guide.searchByMonth (Shape A) and the agent reasons -> month-aware, preference-aware, guide-grounded shortlist avoiding recent past destinations. REPLACES hardcoded destination-advisor pool; reworks FRD-003 + its Gherkin/tests (needs re-approval). Same destination-list UI contract.",
       "tests": {
@@ -300,7 +300,7 @@
           "smoke": "Live: 'Tell me more about Kyoto, Japan' -> status 'Researching more into Kyoto, Japan…' (no 'about' leak) + wikipedia.summary audit + destination-advisor NOT called + rich 676-char description ('Kyoto is Japan's cultural heart… Don't miss Fushimi Inari's torii gates…'). 'Find flights/hotel to Lisbon from London' (no dates) -> missing-dates, NO routestack. '…14-21 October 2026 for 2' -> routestack search runs. Source Sans 3 live."
         }
       },
-      "humanGates": { "gherkin": true, "testCode": true, "implementation": true, "deployment": false }
+      "humanGates": { "gherkin": true, "testCode": true, "implementation": true, "deployment": true }
     },
     "UI-003": {
       "type": "ui-refinement",

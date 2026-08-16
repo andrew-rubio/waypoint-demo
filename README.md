@@ -2,7 +2,7 @@
 
 An interactive **holiday‑planning and booking agent** built on the **[GitHub Copilot SDK](https://www.npmjs.com/package/@github/copilot-sdk)**. Waypoint is a deliberately small, heavily‑commented reference app whose purpose is to show **how little code it takes** to embed a real Copilot‑powered agent in a web product — with a transparent, observable audit trail of everything the agent does.
 
-Chat with the agent to get destination ideas, weather‑aware timing, flights, hotels and a budget — all streamed live, with every decision, tool call and MCP call surfaced in an audit panel.
+Chat with the agent to get destination ideas, weather‑aware timing, flights, hotels and a budget — all streamed live, with every decision, tool call and MCP call surfaced in an audit panel. Destination advice is **grounded in a travel‑guide knowledge base** (Azure AI Search) and **personalised** from a traveller profile (Azure Cosmos DB); "tell me more about a place" triggers a **Wikipedia‑backed research** answer.
 
 > Built spec‑first with the **spec2cloud** pipeline (PRD → FRD → UI → tests → contracts → implementation → deploy). See [`AGENTS.md`](AGENTS.md) and [`specs/`](specs/).
 
@@ -36,9 +36,25 @@ Browser ──► Next.js (web) ──► Route Handler proxy ──► Express 
 
 - **Web** — Next.js 15 (App Router) + React 19, TypeScript, CSS Modules with design tokens (no Tailwind). Streams the reply via `fetch()` + `ReadableStream`. Same‑origin `/api/chat` is proxied to the API by a [Route Handler](src/web/app/api/chat/route.ts).
 - **API** — Express 5 on Node 22. `POST /api/chat` returns `text/event-stream` of `AgentEvent`s. Zod validation, pino structured logging, server‑side secret redaction.
-- **Agent** — one Copilot SDK session per request; a permission hook + MCP allowlist power the audit trail. MCP servers: weather (Open-Meteo), flights/hotels (RouteStack), currency, and the **Cosmos profile + travel-guide search** via the self-hosted **`waypoint-data`** MCP.
+- **Agent** — one Copilot SDK session per request; a permission hook + MCP allowlist power the audit trail. MCP / data calls: weather (Open-Meteo), flights/hotels (RouteStack), currency, **Wikipedia** (place research), and the **Cosmos profile + travel-guide search** via the self-hosted **`waypoint-data`** MCP. Retrieval that the SDK preview can't surface to a BYOK model is **direct-grounded** (the API calls the source, emits the audit lifecycle, and feeds results to the model — see ADR-006/009).
 - **Shared** — contract types in [`src/shared/types`](src/shared/types) are the single source of truth for both apps.
 - **Infra** — Azure Container Apps via `azd` + Bicep ([`infra/`](infra)); Application Insights + OpenTelemetry.
+
+---
+
+## What the agent can do
+
+| Capability | How it works | Audit calls |
+|---|---|---|
+| **Destination advice** | Month-aware, guide-grounded, personalised shortlist that avoids recently-visited places | `travel-guide.searchByMonth` + `cosmos.getTravellerProfile` + `destination-advisor` |
+| **Place research** ("tell me more about X") | A rich description grounded in a live Wikipedia summary — no shortlist | `wikipedia.summary` |
+| **Weather & best time** | ERA5 1991–2020 climate normals, plain-English, source-cited | `open-meteo.geocoding` + `open-meteo.climate` + `weather-window` |
+| **Flights & hotels** | RouteStack search normalised to GBP; **asks for dates first** if none are given | `routestack.flights` + `routestack.hotels` (+ `currency.convert`) |
+| **Simulated booking** | Clearly-mock confirmation — no payment; applies seat/meal + simulated reward points | `booking-simulator` |
+| **Trip summary & budget** | Itinerary + budget total, **GBP default / EUR on request** | `trip-summariser` + `budget-estimator` (+ `currency.convert`) |
+| **Personalisation** | Gold-Tier profile (reward points, preferences, past trips) from Cosmos | `cosmos.getTravellerProfile` + `personalise` |
+
+Every long-running step streams a **live loading status** (e.g. "Searching the travel guide for June recommendations…", "Looking up weather data for Kyoto…", "Researching more into Lisbon…"). Money defaults to **GBP**; booking is **simulated only**.
 
 ### Streaming event contract
 
@@ -123,7 +139,7 @@ azd up
 
 > **Important:** `azd provision` on its own resets the container apps to a placeholder image. Always follow provisioning with `azd deploy` — or just use `azd up` (provision + deploy).
 
-The API image installs `ca-certificates` (the Copilot native runtime needs a system CA store for TLS). Auth is **managed identity** — the Container App identity is granted **Cognitive Services OpenAI User** on the Foundry resource, plus **Cosmos DB Data Reader** and **Search Index Data Reader**; there is no key or secret to store. Cosmos DB (serverless) and Azure AI Search (Free tier) are provisioned by Bicep.
+The API image installs `ca-certificates` (the Copilot native runtime needs a system CA store for TLS). Auth is **managed identity** — the Container App identity is granted **Cognitive Services OpenAI User** on the Foundry resource, plus **Cosmos DB Data Reader** and **Search Index Data Reader**; there is no key or secret to store. Cosmos DB (serverless) and Azure AI Search (Free tier) are provisioned by Bicep, along with a Foundry **`text-embedding-3-small`** deployment (embeds the travel-guide) and a **Foundry project connection** to AI Search so the `travel-guide` index is visible inside the Foundry project (ADR-008). After provisioning, the guide index is seeded by [`scripts/ingest-guide.mjs`](scripts/ingest-guide.mjs).
 
 ---
 
@@ -139,6 +155,7 @@ The API image installs `ca-certificates` (the Copilot native runtime needs a sys
 | `FOUNDRY_WIRE_API` | api | `responses` (default) or `completions`. |
 | `API_BASE_URL` | web | Upstream API base for the `/api/chat` proxy. |
 | `WAYPOINT_DATA_MCP_URL` | api | Internal URL of the self-hosted `waypoint-data` MCP (Cosmos profile + travel-guide search). Cosmos + AI Search are reached **keyless via managed identity** — no secret. |
+| `SEARCH_ENDPOINT` / `SEARCH_INDEX` | mcp | Azure AI Search endpoint + index (`travel-guide`) for the guide RAG; absent → deterministic offline guide. |
 | `PORT` | api | API port (default `8080`). |
 | `APPLICATIONINSIGHTS_CONNECTION_STRING` | api | Telemetry (set in Azure). |
 | `COPILOT_GITHUB_TOKEN` | api | *(Superseded by ADR-005; kept commented for the demo.)* GitHub token for the original Copilot‑models path. |
