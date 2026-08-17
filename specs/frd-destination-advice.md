@@ -48,11 +48,11 @@ short rationale drawn from the guide. It is the entry point that later drives we
 
 ## Functional Requirements
 
-- **FR-003-1** The `destination-advice` skill turns the traveller's interests (and an optional target **month**) into a **ranked list** (3–5) of destinations, each with a one-line rationale. **[INC-8]** Candidates are grounded in the **travel-guide** knowledge base (`travel-guide.searchByMonth`) and personalised from the **Cosmos profile** (`cosmos.getTravellerProfile`); the agent reasons over both.
+- **FR-003-1** The `destination-advice` skill turns the traveller's interests (and an optional target **month**) into a **ranked list** (3–5) of destinations, each with a one-line rationale. **[INC-8]** Candidates are grounded in the **travel-guide** knowledge base (`travel-guide.searchByMonth`) and personalised from the **Cosmos profile** (`cosmos.getTravellerProfile`); the agent reasons over both. **When a month is named, the agent does not propose its own candidates — the guide supplies them; the `destination-advisor` tool only falls back to proposing candidates (the model's, or its deterministic pool) when the guide returns no results.**
 - **FR-003-2** When input is insufficient to recommend (e.g. no preferences at all), the agent asks **one** clarifying question instead of returning a list.
 - **FR-003-3** The skill supports **refinement**: a follow-up message adjusts the previous shortlist rather than restarting.
 - **FR-003-4** Each suggestion includes a canonical place name usable by downstream skills (geocoding in FRD-004, search in FRD-005).
-- **FR-003-5** **[INC-8]** The `travel-guide.searchByMonth` and `cosmos.getTravellerProfile` calls are emitted as audit events (type `mcp`); a guide-grounded rationale cites the travel guide.
+- **FR-003-5** **[INC-8]** The `travel-guide.searchByMonth` and `cosmos.getTravellerProfile` calls are emitted as audit events (type `mcp`); a guide-grounded rationale cites the travel guide. **[UI-REVISED 2026-08-17]** The "Suggested destinations" card shows a footnote **"Source: Waypoint Travel Guide eBook"**. A **"tell me more about X"** reply (web research, Wikipedia) shows a footnote **"Source: Web"**.
 - **FR-003-6** **[INC-8]** For a target month, suggestions reflect the guide's month-appropriate picks and **avoid destinations the traveller has recently visited** (past destinations from the Cosmos profile).
 
 ## Acceptance Criteria

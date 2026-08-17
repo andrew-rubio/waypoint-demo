@@ -19,6 +19,8 @@ export interface UiMessage {
   booking?: BookingConfirmation;
   personalisation?: PersonalisationResult;
   tripSummary?: TripSummary;
+  /** A "tell me more" reply grounded in web research (Wikipedia). */
+  research?: boolean;
 }
 
 /** Anything longer than this is shortened for the agent (edge case). */
@@ -211,6 +213,14 @@ function applyEvent(
       const next = [...prev];
       const last = next[next.length - 1];
       if (last?.role === 'assistant') next[next.length - 1] = { ...last, tripSummary };
+      return next;
+    });
+  } else if (event.type === 'tool_result' && event.name === 'wikipedia.summary' && event.ok) {
+    // A "tell me more" turn is grounded in web research; mark the reply so the UI shows the source.
+    setMessages((prev) => {
+      const next = [...prev];
+      const last = next[next.length - 1];
+      if (last?.role === 'assistant') next[next.length - 1] = { ...last, research: true };
       return next;
     });
   } else if (event.type === 'error') {

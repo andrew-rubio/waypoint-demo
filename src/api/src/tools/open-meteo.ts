@@ -12,6 +12,9 @@ import { MONTHS } from './weather-window.js';
 const GEOCODING_URL = 'https://geocoding-api.open-meteo.com/v1/search';
 const ARCHIVE_URL = 'https://archive-api.open-meteo.com/v1/archive';
 const REQUEST_TIMEOUT_MS = 20_000;
+// The 30-year daily archive is a heavy response; cap the wait so we fail over to a
+// climate estimate quickly rather than hanging the turn.
+const ARCHIVE_TIMEOUT_MS = 12_000;
 
 export interface GeocodedPlace {
   name: string; // canonical "City, Country"
@@ -46,12 +49,12 @@ const archiveResponseSchema = z.object({
   }),
 });
 
-async function getJson(url: string): Promise<unknown> {
-  // One retry, then give up (FRD-004 error handling).
+async function getJson(url: string, timeoutMs = REQUEST_TIMEOUT_MS, attempts = 2): Promise<unknown> {
+  // Retry up to `attempts`, then give up (FRD-004 error handling).
   let lastError: unknown;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
     try {
-      const response = await fetch(url, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+      const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
       if (!response.ok) throw new Error(`Open-Meteo responded ${response.status}`);
       return await response.json();
     } catch (error) {
@@ -105,11 +108,16 @@ export async function geocode(query: string): Promise<GeocodeOutcome> {
  * (FR-004-2); otherwise that month is omitted.
  */
 export async function climateNormals(latitude: number, longitude: number): Promise<MonthlyClimate[]> {
+  // Normals for a point never change — cache so repeat/adjacent queries are instant.
+  const cacheKey = `${latitude.toFixed(2)},${longitude.toFixed(2)}`;
+  const cached = climateCache.get(cacheKey);
+  if (cached) return cached;
+
   const url =
     `${ARCHIVE_URL}?latitude=${latitude}&longitude=${longitude}` +
     `&start_date=1991-01-01&end_date=2020-12-31` +
     `&daily=temperature_2m_max,temperature_2m_min,precipitation_sum&timezone=auto`;
-  const { daily } = archiveResponseSchema.parse(await getJson(url));
+  const { daily } = archiveResponseSchema.parse(await getJson(url, ARCHIVE_TIMEOUT_MS));
 
   const buckets = MONTHS.map(() => ({ maxSum: 0, minSum: 0, tempDays: 0, precipSum: 0, precipDays: 0, years: new Set<number>() }));
   for (let i = 0; i < daily.time.length; i += 1) {
@@ -143,8 +151,12 @@ export async function climateNormals(latitude: number, longitude: number): Promi
       precipMm: Math.round(bucket.precipSum / years),
     });
   }
+  climateCache.set(cacheKey, rows);
   return rows;
 }
+
+/** In-memory cache of climate normals per rounded lat/long (never change). */
+const climateCache = new Map<string, MonthlyClimate[]>();
 
 function daysInMonth(monthIndex: number): number {
   return [31, 28.25, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][monthIndex];

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentEvent, ChatMessage } from '../../../shared/types/chat-and-agent-runtime.js';
 import { LocalAgentDriver } from '../../src/agent/local-driver.js';
+import { assessWeather, estimateClimateFromLatitude } from '../../src/tools/weather-window.js';
 
 /**
  * FRD-004 weather & best-time-to-travel — red baseline for INC-4.
@@ -132,5 +133,27 @@ describe('weather-window skill', () => {
     const statuses = events.filter((e): e is Extract<AgentEvent, { type: 'status' }> => e.type === 'status').map((e) => e.message);
     expect(statuses.some((m) => /looking up weather data/i.test(m))).toBe(true);
     expect(statuses).toContain('');
+  });
+});
+
+describe('weather climate failsafe', () => {
+  it('estimates a plausible, seasonal climate from latitude for any point (Tokyo)', () => {
+    const rows = estimateClimateFromLatitude(35.69, 'Tokyo, Japan');
+    expect(rows).toHaveLength(12);
+    const nov = rows.find((r) => r.month === 'November')!;
+    expect(nov.tempMaxC).toBeGreaterThan(0);
+    expect(nov.tempMaxC).toBeLessThan(30);
+    // Northern-hemisphere seasonality: July warmer than January.
+    expect(rows.find((r) => r.month === 'July')!.tempMaxC).toBeGreaterThan(rows.find((r) => r.month === 'January')!.tempMaxC);
+  });
+
+  it('marks month-weather as estimated (not a false ERA5 claim) on the failsafe path', () => {
+    const climate = estimateClimateFromLatitude(35.69, 'Tokyo, Japan');
+    const result = assessWeather({ place: 'Tokyo', resolvedName: 'Tokyo, Japan', intent: 'month-weather', month: 'November', climate, estimated: true });
+    expect(result.kind).toBe('month-weather');
+    if (result.kind === 'month-weather') {
+      expect(result.estimated).toBe(true);
+      expect(result.baseline ?? '').not.toContain('1991');
+    }
   });
 });

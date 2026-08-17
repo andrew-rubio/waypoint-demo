@@ -40,6 +40,8 @@ export interface MonthWeatherResult {
   basis: WeatherBasis;
   /** Baseline period when the basis is a climate normal, e.g. "1991–2020". */
   baseline?: string;
+  /** True when figures are a climate estimate (live Open-Meteo data was unavailable). */
+  estimated?: boolean;
   source: 'open-meteo';
   message?: string;
 }
@@ -95,4 +97,6 @@ export interface WeatherRequest {
   resolvedName?: string;
   country?: string;
   climate?: MonthlyClimate[];
+  /** True when `climate` is an estimate used because live Open-Meteo data failed. */
+  estimated?: boolean;
 }

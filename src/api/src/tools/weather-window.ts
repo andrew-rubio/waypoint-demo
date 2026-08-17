@@ -22,6 +22,7 @@ const requestSchema = z.object({
   resolvedName: z.string().trim().min(1).optional(),
   country: z.string().trim().min(1).optional(),
   climate: z.array(climateRowSchema).optional(),
+  estimated: z.boolean().optional(),
 });
 
 /** SDK-facing JSON schema. The place + intent are all the agent supplies; the tool grounds the figures in real Open-Meteo data. */
@@ -196,7 +197,8 @@ export function assessWeather(raw: WeatherRequest): WeatherResult {
     tempMinC: row.tempMinC,
     precipMm: row.precipMm,
     basis: 'climate-normal',
-    baseline: BASELINE,
+    baseline: request.estimated ? 'a recent estimate' : BASELINE,
+    ...(request.estimated ? { estimated: true } : {}),
     source: 'open-meteo',
   };
 }
@@ -286,6 +288,31 @@ function extractMonth(message: string): string | undefined {
 export function offlineClimateFor(place: string): MonthlyClimate[] | undefined {
   const model = findPlace(place.toLowerCase());
   return model ? modelClimate(model) : undefined;
+}
+
+/**
+ * A reasonable climate estimate for any point from its latitude — the failsafe
+ * used when the live Open-Meteo archive is unavailable and the place is not in the
+ * offline model. Warmer near the equator, larger seasonal swings toward the poles,
+ * hemisphere-correct. Not a substitute for real normals, but plausible.
+ */
+export function estimateClimateFromLatitude(latitude: number, name = ''): MonthlyClimate[] {
+  const absLat = Math.min(75, Math.abs(latitude));
+  const place: PlaceModel = {
+    name,
+    country: '',
+    aliases: [],
+    latitude,
+    longitude: 0,
+    hemisphere: latitude < 0 ? 'S' : 'N',
+    annualMeanC: Math.round(27 - 0.36 * absLat),
+    seasonalAmpC: Math.round(1 + absLat * 0.28),
+    dielC: 8,
+    annualPrecipMm: 800,
+    wetPeakMonth: latitude < 0 ? 1 : 7,
+    precipAmp: 0.3,
+  };
+  return modelClimate(place);
 }
 
 /** Resolve a place to its canonical geocoding record for the audit trail (offline). */

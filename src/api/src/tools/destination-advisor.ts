@@ -50,7 +50,7 @@ export const destinationAdvisorParameters = {
     constraints: { type: 'array', items: { type: 'string' }, description: 'Hard constraints such as budget, region or dates.' },
     candidates: {
       type: 'array',
-      description: 'Three to five destinations you propose for these preferences. The tool validates, de-duplicates and ranks them.',
+      description: 'Three to five destinations you propose for these preferences. Omit for a month-specific request — the travel guide supplies month-appropriate options. The tool validates, de-duplicates and ranks them.',
       items: {
         type: 'object',
         additionalProperties: false,
@@ -227,9 +227,12 @@ export function adviseDestinations(raw: DestinationAdviceRequest): DestinationAd
     return { kind: 'shortlist', suggestions, guideMatched: true, month: request.month, message: `From the travel guide${month}.` };
   }
 
-  // INC-8: a month was requested but the guide had no strong match — fall back to preferences.
+  // INC-8: a month was requested but the guide had no strong match — only now does
+  // the tool fall back to candidates: the model's proposals if it offered any,
+  // otherwise its own deterministic pool.
   if (request.month) {
-    const suggestions = withoutPast(proposeFromPool(matched), past).slice(0, 3);
+    const proposed = request.candidates ? withoutPast(rankCandidates(request.candidates, matched), past) : [];
+    const suggestions = (proposed.length >= 3 ? proposed : withoutPast(proposeFromPool(matched), past)).slice(0, 5);
     return {
       kind: 'shortlist',
       suggestions,

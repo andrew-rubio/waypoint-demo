@@ -258,6 +258,74 @@ function nightsBetween(checkIn: string, checkOut: string): number {
   return nights > 0 ? nights : 1;
 }
 
+/**
+ * Select up to `count` hotels aiming for a one-per-tier 5/4/3-star spread. When a
+ * tier is missing (e.g. no 5-star), the slot is filled from the next-best rating,
+ * so "no 5-star" naturally becomes two 4-stars, and so on. Results are ordered
+ * highest-rated first, and the top pick is flagged as the best option.
+ */
+export function selectHotelSpread(hotels: HotelOption[], count = 3): HotelOption[] {
+  const sorted = [...hotels].sort((a, b) => b.rating - a.rating || a.nightlyRate.amountGBP - b.nightlyRate.amountGBP);
+  const picked: HotelOption[] = [];
+  const used = new Set<HotelOption>();
+  for (const tier of [5, 4, 3]) {
+    const h = sorted.find((x) => Math.round(x.rating) === tier && !used.has(x));
+    if (h) { picked.push(h); used.add(h); }
+  }
+  for (const h of sorted) {
+    if (picked.length >= count) break;
+    if (!used.has(h)) { picked.push(h); used.add(h); }
+  }
+  return picked
+    .slice(0, count)
+    .sort((a, b) => b.rating - a.rating || a.nightlyRate.amountGBP - b.nightlyRate.amountGBP)
+    .map((h, i) => {
+      const hotel: HotelOption = { ...h };
+      if (i === 0) hotel.best = true;
+      else delete hotel.best;
+      return hotel;
+    });
+}
+
+/** IATA-ish code for a place name (offline synthesis). */
+function iataFor(name: string): string {
+  const city = name.split(',')[0].trim();
+  return ORIGIN_IATA[city.toLowerCase()] ?? (city.replace(/[^a-z]/gi, '').slice(0, 3).toUpperCase() || 'XXX');
+}
+
+/**
+ * Deterministic flight fallback for a route the sandbox has no flight inventory
+ * for (a guide destination the RouteStack sandbox only returns hotels for). Keeps
+ * the trip bookable; prices are already GBP.
+ */
+export function syntheticFlights(request: TravelSearchRequest): FlightOption[] {
+  const from = iataFor(request.origin ?? 'London');
+  const to = iataFor(request.destination);
+  const seed = Math.abs(hash(request.destination.toLowerCase()));
+  const airlines = ['British Airways', 'Emirates', 'KLM'];
+  const base = 120 + (seed % 200);
+  const durationBase = 120 + (seed % 300);
+  return airlines.map((airline, i) => {
+    const amount = round2(base + i * 47);
+    const source: Money = { amount, currency: 'GBP', includesTaxesAndFees: true };
+    const depart = OFFLINE_DEPARTURES[i] ?? '09:00';
+    const durationMin = durationBase + i * 25;
+    const code = AIRLINE_CODES[airline] ?? airline.slice(0, 2).toUpperCase();
+    return {
+      airline,
+      from,
+      to,
+      durationMin,
+      stops: i === 2 ? 1 : 0,
+      pricePerTraveller: offlineConvertToGBP(source),
+      flightNumber: `${code}${1000 + (seed % 900) + i * 13}`,
+      departTime: depart,
+      arriveTime: addMinutes(depart, durationMin),
+      ...(i === 0 ? { best: true } : {}),
+    };
+  });
+}
+
 /** Basic date sanity — null when a date cannot be parsed. */
 function validateDates(checkIn: string, checkOut: string): 'past' | 'reversed' | null {
   const inMs = Date.parse(checkIn);
@@ -313,7 +381,7 @@ export function searchTravel(raw: TravelSearchRequest): TravelSearchResult {
 
   const fromIata = ORIGIN_IATA[request.origin.trim().toLowerCase()] ?? request.origin.trim().slice(0, 3).toUpperCase();
   const flights = inventory.flights.map((f, i) => toFlightOption(f, i, fromIata, inventory.iata, inventory.currency));
-  const hotels = inventory.hotels.map((h) => toHotelOption(h, inventory.place, inventory.currency));
+  const hotels = selectHotelSpread(inventory.hotels.map((h) => toHotelOption(h, inventory.place, inventory.currency)));
 
   return {
     kind: 'options',
@@ -399,8 +467,12 @@ export function mergeTravelResult(
   }
 
   const offlineOptions = offlineBase.kind === 'options' ? offlineBase : undefined;
-  const flights = live?.flights.length ? live.flights : (offlineOptions?.flights ?? []);
-  const hotels = live?.hotels.length ? live.hotels : (offlineOptions?.hotels ?? []);
+  let flights = live?.flights.length ? live.flights : (offlineOptions?.flights ?? []);
+  const hotels = selectHotelSpread(live?.hotels.length ? live.hotels : (offlineOptions?.hotels ?? []));
+
+  // Complete a partial result: the sandbox returned hotels but no flights for this
+  // route — synthesise a deterministic flight set so the trip stays bookable.
+  if (flights.length === 0 && hotels.length > 0) flights = syntheticFlights(request);
 
   // Nothing anywhere → keep the offline message (no-results / outside-coverage).
   if (flights.length === 0 && hotels.length === 0) return offlineBase;

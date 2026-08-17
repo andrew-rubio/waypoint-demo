@@ -77,16 +77,45 @@ export async function convertToGBP(money: Money): Promise<ConvertedMoney> {
   if (currency === 'GBP') {
     return { source: money, amountGBP: round2(money.amount), rate: 1, rateTimestamp: new Date().toISOString() };
   }
-  const url = `https://api.frankfurter.dev/v1/latest?base=${encodeURIComponent(currency)}&symbols=GBP`;
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`currency ${res.status}`);
-  const data = (await res.json()) as { rates?: { GBP?: number }; date?: string };
-  const rate = data.rates?.GBP;
-  if (typeof rate !== 'number') throw new Error('currency: no GBP rate returned');
-  return {
-    source: money,
-    amountGBP: round2(money.amount * rate),
-    rate,
-    rateTimestamp: data.date ? `${data.date}T00:00:00Z` : new Date().toISOString(),
-  };
+  const { rate, rateTimestamp } = await gbpRate(currency);
+  return { source: money, amountGBP: round2(money.amount * rate), rate, rateTimestamp };
+}
+
+/** A cached/deduped GBP rate for one source currency. */
+interface GbpRate {
+  rate: number;
+  rateTimestamp: string;
+}
+
+const RATE_TTL_MS = 10 * 60_000;
+const rateCache = new Map<string, { value: GbpRate; fetchedAt: number }>();
+const inflightRate = new Map<string, Promise<GbpRate>>();
+
+/**
+ * Fetch the GBP-per-`currency` rate once and share it. A travel search normalises
+ * every flight and hotel price at once, so without this a single query fired ~20
+ * concurrent identical Frankfurter calls; this collapses them to one and caches
+ * the result for RATE_TTL_MS (ECB rates only change daily).
+ */
+async function gbpRate(currency: string): Promise<GbpRate> {
+  const cached = rateCache.get(currency);
+  if (cached && Date.now() - cached.fetchedAt < RATE_TTL_MS) return cached.value;
+
+  let inflight = inflightRate.get(currency);
+  if (!inflight) {
+    inflight = (async () => {
+      const url = `https://api.frankfurter.dev/v1/latest?base=${encodeURIComponent(currency)}&symbols=GBP`;
+      const res = await fetch(url, { signal: AbortSignal.timeout(6_000) });
+      if (!res.ok) throw new Error(`currency ${res.status}`);
+      const data = (await res.json()) as { rates?: { GBP?: number }; date?: string };
+      const rate = data.rates?.GBP;
+      if (typeof rate !== 'number') throw new Error('currency: no GBP rate returned');
+      const value: GbpRate = { rate, rateTimestamp: data.date ? `${data.date}T00:00:00Z` : new Date().toISOString() };
+      rateCache.set(currency, { value, fetchedAt: Date.now() });
+      return value;
+    })();
+    inflightRate.set(currency, inflight);
+    inflight.finally(() => inflightRate.delete(currency));
+  }
+  return inflight;
 }

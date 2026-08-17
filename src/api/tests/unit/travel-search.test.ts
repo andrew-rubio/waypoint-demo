@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import type { AgentEvent, ChatMessage } from '../../../shared/types/chat-and-agent-runtime.js';
+import type { HotelOption } from '../../../shared/types/flight-hotel-search-booking.js';
 import { LocalAgentDriver } from '../../src/agent/local-driver.js';
+import { selectHotelSpread, syntheticFlights } from '../../src/tools/routestack.js';
 
 /**
  * FRD-005 flight & hotel search + simulated booking — red baseline for INC-5.
@@ -199,5 +201,33 @@ describe('booking-simulator skill', () => {
     expect(reply(events)).toMatch(/date/i);
     // No RouteStack search should run until dates are provided.
     expect(toolCallNames(events)).not.toContain('routestack.flights');
+  });
+});
+
+describe('hotel spread + flight fallback', () => {
+  const hotel = (name: string, rating: number, gbp: number): HotelOption =>
+    ({
+      name,
+      rating,
+      nightlyRate: { amountGBP: gbp, source: { amount: gbp, currency: 'GBP', includesTaxesAndFees: true }, rate: 1, rateTimestamp: '2026-01-01T00:00:00Z' },
+    }) as HotelOption;
+
+  it('presents a one-per-tier 5/4/3-star spread when available (highest first, one best)', () => {
+    const out = selectHotelSpread([hotel('A', 5, 300), hotel('B', 5, 320), hotel('C', 4, 180), hotel('D', 3, 120), hotel('E', 3, 110)]);
+    expect(out.map((h) => h.rating)).toEqual([5, 4, 3]);
+    expect(out.filter((h) => h.best).length).toBe(1);
+    expect(out[0].best).toBe(true);
+  });
+
+  it('fills from the next tier when a star band is missing (no 5-star -> two 4-stars)', () => {
+    const out = selectHotelSpread([hotel('A', 4, 180), hotel('B', 4, 160), hotel('C', 3, 120)]);
+    expect(out.map((h) => h.rating)).toEqual([4, 4, 3]);
+  });
+
+  it('synthesises three GBP flights so a hotels-only route stays bookable', () => {
+    const flights = syntheticFlights({ destination: 'Ottawa, Canada', origin: 'London', checkIn: '2026-02-10', checkOut: '2026-02-24', party: 2 });
+    expect(flights.length).toBe(3);
+    for (const f of flights) expect(f.pricePerTraveller.amountGBP).toBeGreaterThan(0);
+    expect(flights.filter((f) => f.best).length).toBe(1);
   });
 });

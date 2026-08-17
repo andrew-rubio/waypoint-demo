@@ -109,6 +109,11 @@ export default function ChatPage() {
                   {m.role === 'assistant' && !isStreamingBubble && m.personalisation?.available && (
                     <PersonalisationNote note={m.personalisation} />
                   )}
+                  {m.role === 'assistant' && !isStreamingBubble && m.research && (
+                    <p className={styles.sourceNote} data-testid="research-source">
+                      Source: Web
+                    </p>
+                  )}
                   {showDestinations && (
                     <DestinationList message={m} onExplore={(name) => setDraft(`Tell me more about ${name}`)} />
                   )}
@@ -202,6 +207,7 @@ function WeatherCard({ message }: { message: UiMessage }) {
   const weather = message.weatherAdvice;
   if (!weather) return null;
   const baseline = weather.kind === 'month-weather' ? weather.baseline ?? '1991–2020' : '1991–2020';
+  const estimated = weather.kind === 'month-weather' && weather.estimated;
   return (
     <section className={styles.weatherBubble} aria-label="Weather summary">
       <div className={styles.weatherCard} data-testid="weather-card">
@@ -215,7 +221,7 @@ function WeatherCard({ message }: { message: UiMessage }) {
           <WeatherWindow weather={weather} />
         )}
         <p className={styles.weatherSource} data-testid="weather-source">
-          Source: Open-Meteo (ERA5 {baseline} normals)
+          {estimated ? 'Estimated climate — live Open-Meteo data was momentarily unavailable' : `Source: Open-Meteo (ERA5 ${baseline} normals)`}
         </p>
       </div>
     </section>
@@ -284,6 +290,9 @@ function DestinationList({ message, onExplore }: { message: UiMessage; onExplore
             <DestinationItem key={destination.name} destination={destination} index={index} onExplore={onExplore} />
           ))}
         </div>
+        <p className={styles.sourceNote} data-testid="destination-source">
+          Source: Waypoint Travel Guide eBook
+        </p>
       </div>
     </section>
   );
@@ -400,6 +409,9 @@ function TravelOptions({ message, onSelect }: { message: UiMessage; onSelect: (p
           ))}
         </div>
       </div>
+      <p className={styles.sourceNote} data-testid="travel-source">
+        Source: RouteStack
+      </p>
     </section>
   );
 }
