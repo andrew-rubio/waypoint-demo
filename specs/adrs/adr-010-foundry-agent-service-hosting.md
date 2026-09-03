@@ -45,10 +45,11 @@ harness and the ADR-005 Foundry model deployment as the model.
   for the model deployment. The Copilot SDK, permission hook, MCP allowlist, and
   `AgentDriver` contract are **unchanged**.
 - Implement a thin **protocol adapter** so the hosted agent speaks the Foundry
-  **Invocations** (and/or Responses) protocol: a single invocations endpoint maps an
-  incoming agent request → `runAgent()` → streams events back in the protocol's envelope.
-  The existing `/api/chat` **SSE contract is retained** for the Web app; the invocations
-  endpoint is an **additional** surface, not a replacement.
+  **`responses`** protocol (OpenAI-compatible HTTPS + SSE — selected by the INC-9 spike as
+  the best fit for streaming chat; see `specs/tasks/inc-9-protocol-spike.md`): a
+  `responses` endpoint maps an incoming agent request → `runAgent()` → streams events back
+  in the OpenAI `responses` envelope. The existing `/api/chat` **SSE contract is retained**
+  for the Web app; the `responses` endpoint is an **additional** surface, not a replacement.
 - Provision via `azd`: reuse the **ADR-005 Foundry project + model deployment + managed
   identity**, add **Application Insights** linked to the project (ADR-011) and the
   agent-service RBAC roles. The Web Container App continues to front the experience and
@@ -72,9 +73,13 @@ harness and the ADR-005 Foundry model deployment as the model.
   code-mode runtime layout.
 - **Governance:** immutable agent version per `azd deploy`; RBAC + content safety at the
   Foundry project; **no secrets** (managed identity, per ADR-005).
-- **Open validation item (INC-9 spike):** the exact **Invocations/Responses protocol
-  schema + streaming envelope** must be confirmed against the current `azd ai agent`
-  extension before the adapter is finalised.
+- **Open validation item (post-spike):** the INC-9 spike selected the **`responses`**
+  protocol and container (BYO) deploy of the existing image. Three details remain to
+  confirm against a live `azd ai agent init` scaffold before the adapter is finalised: the
+  exact **`responses` wire contract for a BYO *Node* container** (route + JSON schema +
+  streaming event names + **readiness probe** path/port), how **tool-call events** best
+  surface for `tool_call_accuracy`, and **`conversationId`** reconciliation with our
+  in-memory session store. See `specs/tasks/inc-9-protocol-spike.md`.
 
 ## Alternatives considered
 
