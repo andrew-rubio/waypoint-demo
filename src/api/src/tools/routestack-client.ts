@@ -3,6 +3,7 @@ import type { FlightOption, HotelOption, TravelSearchRequest } from '../../../sh
 import type { Money } from '../../../shared/types/flight-hotel-search-booking.js';
 import type { LiveTravelResult } from './routestack.js';
 import { convertToGBP, offlineConvertToGBP } from './currency.js';
+import { geocode } from './open-meteo.js';
 import { logger } from '../logger.js';
 
 /**
@@ -25,7 +26,10 @@ const BASE_URL = process.env.ROUTESTACK_BASE_URL ?? 'https://mcp.routestack.ai';
 // turn (a stalled search previously blocked for ~48s with no timeout).
 const AUTH_TIMEOUT_MS = 6_000;
 const LOOKUP_TIMEOUT_MS = 8_000;
-const SEARCH_TIMEOUT_MS = 18_000;
+// The flight search is genuinely slow (~26s for busy routes), so it needs real
+// headroom or it aborts before RouteStack returns any offers.
+const FLIGHT_SEARCH_TIMEOUT_MS = 32_000;
+const HOTEL_SEARCH_TIMEOUT_MS = 15_000;
 
 // Cache the partner token across searches so we pay the auth round trip once per
 // token lifetime instead of on every request (it sits on the critical path
@@ -75,7 +79,7 @@ function tokenTtlMs(token: string): number {
   return DEFAULT_TTL;
 }
 
-async function post(path: string, token: string, body: unknown, timeoutMs = SEARCH_TIMEOUT_MS): Promise<any> {
+async function post(path: string, token: string, body: unknown, timeoutMs = HOTEL_SEARCH_TIMEOUT_MS): Promise<any> {
   const res = await fetch(`${BASE_URL}${path}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
@@ -179,7 +183,7 @@ async function searchLiveFlights(request: TravelSearchRequest, token: string): P
   const originCode = bestAirportCode(request.origin ?? 'London', originLoc);
   const destCode = bestAirportCode(request.destination, destLoc);
 
-  const raw = await post('/mcp/flight/search', token, {
+  const searchBody = {
     origin: originCode,
     destination: destCode,
     departureDate: request.checkIn,
@@ -190,14 +194,20 @@ async function searchLiveFlights(request: TravelSearchRequest, token: string): P
     cabinClass: 'Economy',
     tripType: 'RoundTrip',
     currency: 'GBP',
-  });
-  // The sandbox returns { success:false, code:'1051' } when no flights match; keep offline flights in that case.
-  if (raw?.success === false || !raw?.result) return [];
-  // Drop ground-transport entries (RouteStack lumps some coach/rail options into
-  // flight results), then keep a wider set so the airline-preference ranking has
-  // candidates to promote; the caller re-ranks and caps to three.
-  const items = firstArray(raw.result).filter((it) => !isGroundTransport(it)).slice(0, 8);
-  return Promise.all(items.map((item, index) => normaliseFlight(item, request, index === 0)));
+  };
+
+  // Direct-only first: `stops: 0` cuts RouteStack's search from ~22s to ~6s.
+  // Fall back to a full (connecting) search only when a route has no direct
+  // service, so those routes still return real offers.
+  let raw = await post('/mcp/flight/search', token, { ...searchBody, stops: 0 }, FLIGHT_SEARCH_TIMEOUT_MS);
+  let items = raw?.success === false || !raw?.result ? [] : firstArray(raw.result).filter((it) => !isGroundTransport(it));
+  if (items.length === 0) {
+    raw = await post('/mcp/flight/search', token, searchBody, FLIGHT_SEARCH_TIMEOUT_MS);
+    items = raw?.success === false || !raw?.result ? [] : firstArray(raw.result).filter((it) => !isGroundTransport(it));
+  }
+  // Keep a wider set so the airline-preference ranking has candidates to promote;
+  // the caller re-ranks and caps to three.
+  return Promise.all(items.slice(0, 8).map((item, index) => normaliseFlight(item, request, index === 0)));
 }
 
 /** True when an offer is a coach/rail/ferry option rather than a flight. */
@@ -207,17 +217,39 @@ function isGroundTransport(item: Record<string, any>): boolean {
   return /bus|coach|rail|ferry|shuttle|transfer|train/.test(airline);
 }
 
+/** Best-effort coordinates for a place via the Open-Meteo geocoder (city part only). */
+async function geocodeCoords(place: string): Promise<{ latitude: number; longitude: number } | undefined> {
+  try {
+    const outcome = await geocode(place.split(',')[0].trim());
+    if (outcome.kind === 'match' || outcome.kind === 'ambiguous') {
+      return { latitude: outcome.place.latitude, longitude: outcome.place.longitude };
+    }
+  } catch (err) {
+    logger.warn({ err: String(err) }, 'geocode for hotel coordinates failed');
+  }
+  return undefined;
+}
+
 /** Live hotels via the documented search-destinations → search-hotels flow. */
 async function searchLiveHotels(request: TravelSearchRequest, token: string): Promise<{ hotels: HotelOption[]; place?: string }> {
   const destination = await post('/mcp/hotel/search-destinations', token, { type: 'DESTINATION', query: request.destination }, LOOKUP_TIMEOUT_MS);
   const dest = firstArray(destination?.result)[0] as Record<string, any> | undefined;
   if (!dest) return { hotels: [] };
   const place = pickString(dest, ['fullName', 'name']);
-  // Coordinates are nested under `coordinates`; destinationId is `id`.
-  const coords = (dest.coordinates ?? {}) as Record<string, any>;
-  const lat = pickNumber(coords, ['lat', 'latitude']) ?? pickNumber(dest, ['lat', 'latitude']);
-  const long = pickNumber(coords, ['long', 'lng', 'longitude']) ?? pickNumber(dest, ['long', 'longitude']);
   const destinationId = pickString(dest, ['id', 'destinationId', 'referenceId']);
+  // RouteStack's destination lookup returns coordinates: null, but the hotel search
+  // requires lat/long. Geocode the candidate's clean `city` field (Open-Meteo) —
+  // more reliable than parsing the user's free text (e.g. "munich germany").
+  const coords = (dest.coordinates ?? {}) as Record<string, any>;
+  let lat = pickNumber(coords, ['lat', 'latitude']) ?? pickNumber(dest, ['lat', 'latitude']);
+  let long = pickNumber(coords, ['long', 'lng', 'longitude']) ?? pickNumber(dest, ['long', 'longitude']);
+  if (lat === undefined || long === undefined) {
+    const geo = await geocodeCoords(pickString(dest, ['city', 'name']) ?? request.destination);
+    lat = lat ?? geo?.latitude;
+    long = long ?? geo?.longitude;
+  }
+  // Without coordinates the search 400s (MISSING_REQUIRED_FIELDS), so bail to offline.
+  if (lat === undefined || long === undefined) return { hotels: [], place };
 
   const hotelsRaw = await post('/mcp/hotel/search-hotels', token, {
     destinationId,

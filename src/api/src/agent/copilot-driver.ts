@@ -732,6 +732,12 @@ async function groundTravel(
 
   const result = mergeTravelResult(request, base, live);
   if (result.kind !== 'options') {
+    // Make the RouteStack attempt observable even when it yields nothing, so the
+    // audit trail shows we queried it (rather than looking like it was skipped).
+    if (hasRouteStackCredentials() && (result.kind === 'outside-coverage' || result.kind === 'no-results')) {
+      push({ type: 'tool_call', name: 'routestack.flights', args: { to: cityLabel(request.destination), depart: request.checkIn, return: request.checkOut, party: request.party } });
+      push({ type: 'tool_result', name: 'routestack.flights', ok: true, result: { count: 0, source: 'routestack', note: 'no live inventory returned — using offline catalogue' } });
+    }
     push({ type: 'status', message: '' });
     return result;
   }
