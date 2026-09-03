@@ -83,3 +83,30 @@ the Python `hello-world` sample as the exact contract reference and validating l
 - **New decision needed (updates ADR-010):** Path A (Node BYO container) vs Path B (SDK shim).
   Spike recommends **A**. Awaiting confirmation before authoring the adapter + `azure.yaml`
   agent service.
+
+## Local validation (2026-09-03) — Path A adapter + container
+
+- **Adapter (server + curl):** `POST /responses` returns a valid OpenAI Response object
+  (non-stream) and the SSE lifecycle (stream); tool calls surface as `function_call` items.
+- **Container emulation (Docker):** built `src/api/Dockerfile` → `waypoint-agent:local`,
+  ran on `:8088`. `/readiness` OK; `POST /responses` produced the **full SSE lifecycle**
+  (`response.created` → `in_progress` → 24× `output_text.delta` → 6× `output_item.added/done`
+  tool items → `output_text.done` → `response.completed`) and a non-stream Response with 4
+  `function_call` items. **The container serves the Foundry `responses` contract correctly.**
+
+### ⚠ azd packaging constraint (affects deploy structure)
+`azd ai agent run`/`deploy` reject a hosted-agent whose `project:` is **outside the azd
+project directory**: `invalid service path ... relative path "..\src\api" must not contain '..'`.
+So the separate `foundry/azure.yaml` with `project: ../src/api` + `docker.context: ../..`
+**cannot build from source** via azd in our monorepo layout. Resolution options for the
+deploy step (INC-9 step 3):
+1. **Pre-built `image:`** — `docker build` the api image, push to the existing ACR
+   (`acrdnszpz4hqfi7g`), and set the agent service `image:` (no `project:`/`docker:` → no
+   `..` violation). Keeps the separate `foundry/` project; azd reuses the pre-built image.
+2. **Self-contained project** — relocate/copy the build context under `foundry/` (heavier).
+3. **Merge into root `azure.yaml` on the branch** — separation via git branch, but risks the
+   ACA infra provider; not preferred.
+**Recommendation: option 1** (pre-built `image:`), preserving the separate azd project and the
+proven Dockerfile. Local model auth for the real Copilot SDK path is deferred to deploy
+(managed identity has the `Cognitive Services OpenAI User` role; the local emulation used the
+deterministic local driver, which is sufficient to prove the protocol/container).
