@@ -4,6 +4,7 @@ import { validateChatRequest } from './validation/chat.js';
 import { redactSecrets } from './security/redact.js';
 import { createSessionStore } from './session/store.js';
 import { runAgent } from './agent/runtime.js';
+import { parseResponsesRequest, streamResponses, collectResponse } from './responses/openai-responses.js';
 import { logger } from './logger.js';
 
 /**
@@ -19,6 +20,11 @@ export function createApp(): Express {
 
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok' });
+  });
+
+  // Foundry hosted-agent readiness probe (INC-9, ADR-010).
+  app.get('/readiness', (_req, res) => {
+    res.json({ status: 'ready' });
   });
 
   app.post('/api/chat', async (req, res) => {
@@ -66,6 +72,53 @@ export function createApp(): Express {
     } catch (err) {
       logger.error({ err: String(err) }, 'agent run failed');
       send({ type: 'error', code: 'agent_unavailable', message: 'The assistant is unavailable right now.' });
+    } finally {
+      res.end();
+    }
+  });
+
+  // Foundry `responses` protocol surface (INC-9, ADR-010, Path A). Same agent
+  // runtime as /api/chat, mapped to the OpenAI Responses contract so the app can
+  // be hosted on Foundry Agent Service. History is keyed by the conversation id.
+  app.post('/responses', async (req, res) => {
+    const parsed = parseResponsesRequest(req.body);
+    if (!parsed.ok) {
+      res.status(400).json({ error: parsed.error, code: 'invalid_request' });
+      return;
+    }
+    const { input, stream, conversationId } = parsed.value;
+    const model = process.env.FOUNDRY_MODEL ?? 'waypoint';
+
+    store.append(conversationId, { role: 'user', content: input, ts: new Date().toISOString() });
+    // Redact every agent event at the boundary before it is mapped/streamed (FR-001-10).
+    const events = (async function* () {
+      let reply = '';
+      for await (const event of runAgent({ sessionId: conversationId, message: input, history: store.get(conversationId) })) {
+        if (event.type === 'token') reply += event.value;
+        yield redactSecrets(event);
+      }
+      if (reply) store.append(conversationId, { role: 'assistant', content: reply, ts: new Date().toISOString() });
+    })();
+
+    try {
+      if (!stream) {
+        const response = await collectResponse(events, { model });
+        res.status(200).json(response);
+        return;
+      }
+      res.status(200);
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.flushHeaders?.();
+      for await (const frame of streamResponses(events, { model })) {
+        res.write(`event: ${frame.event}\ndata: ${JSON.stringify(frame.data)}\n\n`);
+      }
+    } catch (err) {
+      logger.error({ err: String(err) }, 'responses run failed');
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'agent unavailable', code: 'agent_unavailable' });
+      }
     } finally {
       res.end();
     }
