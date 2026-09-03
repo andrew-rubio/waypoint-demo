@@ -4,9 +4,10 @@
 # comparison). This hosts the SAME Copilot SDK harness image as a Foundry hosted
 # agent over the `responses` protocol (Path A — Node BYO container).
 #
-# Container deploy: the agent service has NO `codeConfiguration:`, so `azd deploy`
-# builds the existing src/api Dockerfile and pushes it to the project's ACR.
-# The `codeConfiguration` runtimes are Python/.NET only — Node uses container deploy.
+# Container deploy via a PRE-BUILT image: azd rejects a hosted-agent `project:` path
+# outside the azd project dir, so instead of building from ../src/api we build the
+# src/api/Dockerfile ourselves, push to the project's ACR, and reference it as `image:`.
+# (codeConfiguration runtimes are Python/.NET only — Node uses container/image deploy.)
 
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
 requiredVersions:
@@ -41,11 +42,9 @@ services:
       A holiday-planning agent built on the GitHub Copilot SDK, hosted on Foundry
       Agent Service over the Responses protocol. Plans a trip, calls weather,
       flight/hotel and travel-guide tools, and streams an observable audit trail.
-    # Reuse the proven Dockerfile + repo-root build context (mirrors the ACA config).
-    project: ../src/api
-    docker:
-      path: ./Dockerfile
-      context: ../..
+    # Pre-built image (azd rejects a `project:` outside the azd dir for our monorepo).
+    # Built from src/api/Dockerfile and pushed to the project's ACR before deploy.
+    image: acrdnszpz4hqfi7g.azurecr.io/waypoint/waypoint-agent:inc9
     protocols:
       - protocol: responses
         version: 2.0.0
