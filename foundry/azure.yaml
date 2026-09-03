@@ -50,15 +50,14 @@ services:
         version: 2.0.0
     uses:
       - ai-project
-    # Bridge the hosted-agent env (FOUNDRY_PROJECT_ENDPOINT +
-    # AZURE_AI_MODEL_DEPLOYMENT_NAME are auto-injected) to the driver's BYOK vars
-    # (ADR-005). FOUNDRY_MODEL_URL is set per-env before deploy (see .env.example).
+    # Bridge to the driver's BYOK model config (ADR-005). FOUNDRY_*/AGENT_* container
+    # env names are RESERVED by the hosting platform, so the driver reads WAYPOINT_*
+    # aliases here. AZURE_AI_MODEL_DEPLOYMENT_NAME is also injected by the platform.
     env:
       AZURE_AI_MODEL_DEPLOYMENT_NAME: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
-      FOUNDRY_MODEL: ${AZURE_AI_MODEL_DEPLOYMENT_NAME}
-      FOUNDRY_MODEL_URL: ${FOUNDRY_MODEL_URL}
-      FOUNDRY_USE_MANAGED_IDENTITY: 'true'
-      FOUNDRY_WIRE_API: responses
+      WAYPOINT_MODEL_URL: ${FOUNDRY_MODEL_URL}
+      WAYPOINT_USE_MANAGED_IDENTITY: 'true'
+      WAYPOINT_WIRE_API: responses
     container:
       resources:
         cpu: '1'
