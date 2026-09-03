@@ -110,3 +110,28 @@ deploy step (INC-9 step 3):
 proven Dockerfile. Local model auth for the real Copilot SDK path is deferred to deploy
 (managed identity has the `Cognitive Services OpenAI User` role; the local emulation used the
 deterministic local driver, which is sufficient to prove the protocol/container).
+
+## Deployment (2026-09-03) — DEPLOYED ✅
+
+Deployed to the existing `waypoint` Foundry project via `azd deploy` (pre-built `image:`),
+agent **version 4 active**. Endpoint:
+`.../projects/waypoint/agents/waypoint-agent/endpoint/protocols/openai/responses?api-version=v1`.
+Smoke test (`azd ai agent invoke`) returned `status: completed` and used the **real
+`gpt-5.4-mini`** model (`copilot.chat` `ok:true`) via managed identity.
+
+### Deploy-time constraints hit + fixes (all recorded for the demo narrative)
+1. **`azd` project-path rule** — a hosted-agent `project:` cannot be outside the azd dir →
+   switched to pre-built ACR `image:` (option 1).
+2. **Reserved env namespace** — `FOUNDRY_*`/`AGENT_*` container env names are reserved by the
+   platform (400 `invalid_payload`) → driver now reads **`WAYPOINT_*`** aliases (+
+   `AZURE_AI_MODEL_DEPLOYMENT_NAME`); `main`/local keep `FOUNDRY_*`.
+3. **Image pull RBAC** — `[ImageError]` until the **Foundry _project's_ system-assigned
+   managed identity** (`8369dca9…`, distinct from the account MI and the user-assigned MI)
+   was granted **AcrPull** on the ACR. ARM auth policy was already `enabled`. (Skipping
+   `azd provision` meant this role wasn't auto-wired — a provision would have done it.)
+
+### Open follow-up
+- **Empty `output_text`** on the first hosted invoke: the model call succeeded (`copilot.chat
+  ok:true`) but no reply text streamed through. The real `CopilotAgentDriver` emits tokens
+  differently than the deterministic local driver used in the emulation; investigate via
+  `azd ai agent monitor` / App Insights traces (dovetails with INC-10 observability).
