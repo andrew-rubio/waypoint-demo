@@ -135,3 +135,65 @@ complete experience (personalised, priced, EUR-convertible) is live.
 - Each increment is independently deployable and leaves `main` green + deployed.
 - Human gates per increment: Gherkin approval, test-code approval, PR review, deploy verification.
 - No increment introduces auth, real payments, or persistence (out of scope per PRD).
+
+## Foundry agentic-factory increments (branch: `spec2cloud/foundry-hosted`)
+
+> Additive to the plan above. These increments turn Waypoint into an end-to-end
+> **agentic factory** demo for the C-level RFI — **plan → build → run → observe → govern** —
+> while **keeping the GitHub Copilot SDK as the harness** (ADR-001) and **hosting the app on
+> Microsoft Foundry Agent Service** so the native portal management plane is demonstrable.
+> `main` stays as the ACA-only comparison exhibit. To keep spec2cloud traceability these
+> will be formalised by new **FRD-008 (Agent Evaluation & Quality)** and **FRD-009
+> (Governance & Observability)**, drafted before their test/contract steps.
+
+```mermaid
+flowchart LR
+    M[main: INC-1..INC-8<br/>Copilot SDK on ACA] --> I9[INC-9<br/>Foundry Agent Service hosting]
+    I9 --> I10[INC-10<br/>GenAI OTel traces]
+    I10 --> I11[INC-11<br/>Offline evals + portal]
+    I11 --> I12[INC-12<br/>Continuous eval, monitoring & governance]
+```
+
+### INC-9 — Foundry Agent Service hosting (the harness, hosted)
+- **ADR:** ADR-010 · **Depends on:** INC-1…INC-8 (main), ADR-005 Foundry resource · **Complexity:** L
+- **Scope:** `azure.yaml` `host: azure.ai.agent` **container-deploy** service block wrapping the
+  existing `src/api` image; a thin **Invocations/Responses protocol adapter** over `runAgent()`
+  (the `/api/chat` SSE surface is retained for Web); `azd provision` (Foundry project + model
+  deployment + App Insights + RBAC) and `azd deploy` (immutable agent version); repoint the Web
+  Container App at the hosted agent. **Spike first** to confirm the protocol schema/envelope.
+- **Exit:** the agent is deployed as a Foundry version, invocable from the portal and
+  `azd ai agent invoke`; Web chat still streams; `main` unaffected.
+
+### INC-10 — GenAI OpenTelemetry trace emission
+- **ADR:** ADR-011 · **Depends on:** INC-9 · **Complexity:** M
+- **Scope:** map `AgentEvent` → GenAI-convention **agent / tool / model spans**; redaction at the
+  span boundary; App Insights linked to the Foundry project; verify the span tree renders in
+  Foundry **Observability**. No hidden chain-of-thought (FR-001-3 / FR-002-8).
+- **Exit:** a turn produces a conversation trace with tool spans in the portal; the in-app audit
+  panel and the portal traces agree.
+
+### INC-11 — Offline evaluations (golden dataset) in the Foundry portal
+- **FRD:** FRD-008 (new) · **Depends on:** INC-9 (INC-10 recommended) · **Complexity:** M
+- **Scope:** build a **golden dataset** from the existing Gherkin / e2e / `local-driver` scenarios;
+  run evals via `azd ai agent eval generate/run` (or the `observe` MCP tools) with **agent
+  evaluators** (`intent_resolution`, `task_adherence`, `tool_call_accuracy`), **quality**
+  (`relevance`, `coherence`, `fluency`), and **RAG** (`groundedness` / `retrieval` for the INC-8
+  travel-guide answers); judge = the Foundry model deployment. Results surface in the portal
+  **Evaluations** tab.
+- **Exit:** an eval run scores the deployed agent; scores + per-row failures are visible in the
+  Foundry portal.
+
+### INC-12 — Continuous evaluation, monitoring & governance showcase
+- **FRD:** FRD-009 (new) · **Depends on:** INC-10, INC-11 · **Complexity:** M
+- **Scope:** **continuous/online evaluation** on sampled production traces; monitoring dashboards;
+  governance surfaces — **content filters, RBAC / managed identity, immutable versions**, and a
+  **CI quality gate** that blocks a deploy on eval regression (azd + `cicd` sub-skill).
+- **Exit:** live turns are sampled and scored in the portal; a regression gate blocks a bad
+  deploy; the governance surfaces are demonstrable end-to-end.
+
+| Inc | ADR / FRD | Depends on | Complexity | New tech |
+|-----|-----------|-----------|-----------|----------|
+| INC-9 | ADR-010 | main, ADR-005 | L | Foundry Agent Service (hosted), `azd ai agent`, protocol adapter |
+| INC-10 | ADR-011 | INC-9 | M | GenAI OTel spans → App Insights ↔ Foundry project |
+| INC-11 | FRD-008 | INC-9 | M | Foundry Evaluations (`azd ai agent eval` / `observe`), golden dataset |
+| INC-12 | FRD-009 | INC-10, INC-11 | M | Continuous eval, monitoring, CI quality gate, governance |
