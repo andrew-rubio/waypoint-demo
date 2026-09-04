@@ -60,6 +60,11 @@ services:
       WAYPOINT_WIRE_API: responses
       OTEL_SERVICE_NAME: waypoint-agent
       WAYPOINT_APPINSIGHTS_CONNECTION_STRING: ${WAYPOINT_APPINSIGHTS_CONNECTION_STRING}
+      # Live RouteStack MCP creds — without these the flight/hotel search falls back
+      # to the deterministic offline catalogue (limited cities; no Vienna). Same values
+      # as the ACA `routestack-api-key` / `routestack-secret` Container App secrets.
+      ROUTESTACK_API_KEY: ${ROUTESTACK_API_KEY}
+      ROUTESTACK_SECRET: ${ROUTESTACK_SECRET}
       # Attribute GenAI traces to this agent in App Insights / Foundry (INC-10).
       OTEL_SERVICE_NAME: waypoint-agent
       # Explicit App Insights sink under a non-reserved name (APPLICATIONINSIGHTS_*
