@@ -44,6 +44,28 @@ describe('responses adapter — parse (INC-9, ADR-010)', () => {
     expect(r.ok && r.value.conversationId).toBe('conv_abc');
   });
 
+  it('reconstructs prior turns from a multi-message input array (stateless context)', () => {
+    const r = parseResponsesRequest({
+      input: [
+        { role: 'user', content: 'I want to visit Lisbon.' },
+        { role: 'assistant', content: 'Lisbon is a great coastal city.' },
+        { role: 'user', content: 'What is the weather there in December?' },
+      ],
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) {
+      expect(r.value.input).toBe('What is the weather there in December?');
+      expect(r.value.history).toHaveLength(2);
+      expect(r.value.history[0]).toMatchObject({ role: 'user', content: 'I want to visit Lisbon.' });
+      expect(r.value.history[1]).toMatchObject({ role: 'assistant', content: 'Lisbon is a great coastal city.' });
+    }
+  });
+
+  it('returns empty history for a single-message turn', () => {
+    const r = parseResponsesRequest({ input: 'Plan a trip' });
+    expect(r.ok && r.value.history).toEqual([]);
+  });
+
   it('rejects empty input', () => {
     expect(parseResponsesRequest({ input: '   ' }).ok).toBe(false);
     expect(parseResponsesRequest({}).ok).toBe(false);
