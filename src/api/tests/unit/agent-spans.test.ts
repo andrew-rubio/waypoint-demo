@@ -17,7 +17,7 @@ async function* from(events: AgentEvent[]): AsyncIterable<AgentEvent> {
 }
 async function drain(events: AgentEvent[]) {
   const out: AgentEvent[] = [];
-  for await (const e of traceAgentTurn(from(events), { conversationId: 'conv-1', turnId: 'turn-1', model: 'gpt-5.4-mini' })) {
+  for await (const e of traceAgentTurn(from(events), { conversationId: 'conv-1', turnId: 'turn-1', model: 'gpt-5.4-mini', userMessage: 'plan a trip' })) {
     out.push(e);
   }
   return out;
@@ -63,5 +63,23 @@ describe('traceAgentTurn', () => {
     const root = exporter.getFinishedSpans().find((s) => s.name === 'invoke_agent waypoint')!;
     expect(root.attributes['error.type']).toBe('stream_error');
     expect(root.status.code).toBe(2); // SpanStatusCode.ERROR
+  });
+
+  it('records the dialogue and every audit item as root span events', async () => {
+    await drain([
+      { type: 'decision', summary: 'get profile then advise' },
+      { type: 'tool_call', name: 'cosmos.getTravellerProfile', args: { q: 'profile' } },
+      { type: 'tool_result', name: 'cosmos.getTravellerProfile', ok: true, result: { tier: 'Gold' } },
+      { type: 'token', value: 'Try Palermo.' },
+      { type: 'done' },
+    ]);
+    const root = exporter.getFinishedSpans().find((s) => s.name === 'invoke_agent waypoint')!;
+    const events = Object.fromEntries(root.events.map((e) => [e.name, e.attributes ?? {}]));
+    expect(events['gen_ai.user.message']?.content).toBe('plan a trip');
+    expect(events['gen_ai.agent.decision']).toBeDefined();
+    expect(events['gen_ai.tool.call']?.['tool.type']).toBe('mcp');
+    expect(events['gen_ai.tool.result']?.['tool.ok']).toBe(true);
+    expect(events['gen_ai.assistant.message']?.content).toBe('Try Palermo.');
+    expect(root.attributes['waypoint.assistant_reply']).toBe('Try Palermo.');
   });
 });

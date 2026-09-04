@@ -75,7 +75,7 @@ export function createApp(): Express {
           yield redactSecrets(event);
         }
       })();
-      for await (const event of traceAgentTurn(redacted, { conversationId: sessionId, turnId: randomUUID(), model })) {
+      for await (const event of traceAgentTurn(redacted, { conversationId: sessionId, turnId: randomUUID(), model, userMessage: message })) {
         if (event.type === 'token') reply += event.value;
         res.write(`data: ${JSON.stringify(event)}\n\n`);
       }
@@ -113,7 +113,7 @@ export function createApp(): Express {
         }
         if (reply) store.append(conversationId, { role: 'assistant', content: reply, ts: new Date().toISOString() });
       })(),
-      { conversationId, turnId: randomUUID(), model },
+      { conversationId, turnId: randomUUID(), model, userMessage: input },
     );
 
     try {

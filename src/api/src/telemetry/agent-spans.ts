@@ -21,6 +21,8 @@ export interface TurnContext {
   conversationId: string;
   turnId: string;
   model: string;
+  /** The traveller's message this turn — recorded as the dialogue input. */
+  userMessage: string;
 }
 
 function truncate(value: string, max = 2000): string {
@@ -29,6 +31,21 @@ function truncate(value: string, max = 2000): string {
 
 function asText(value: unknown): string {
   return typeof value === 'string' ? value : JSON.stringify(value ?? null);
+}
+
+/** Classify a call the same way the front-end audit trail does (FRD-002). */
+function auditType(name: string): 'api' | 'skill' | 'mcp' {
+  if (name === 'copilot.chat' || name.startsWith('wikipedia')) return 'api';
+  const SKILLS = new Set([
+    'destination-advisor',
+    'weather-window',
+    'booking-simulator',
+    'trip-summariser',
+    'budget-estimator',
+    'personalise',
+  ]);
+  if (SKILLS.has(name)) return 'skill';
+  return 'mcp';
 }
 
 export async function* traceAgentTurn(
@@ -44,40 +61,51 @@ export async function* traceAgentTurn(
       'gen_ai.request.model': ctx.model,
       'gen_ai.conversation.id': ctx.conversationId,
       'waypoint.turn.id': ctx.turnId,
+      'waypoint.user_message': truncate(ctx.userMessage),
     },
   });
+  // The dialogue and every audit item are also recorded as ROOT span events —
+  // these reliably export with the request even where child spans don't (the
+  // hosted sandbox), so the full audit trail is visible in the trace.
+  root.addEvent('gen_ai.user.message', { content: truncate(ctx.userMessage) });
+
   const rootCtx = trace.setSpan(context.active(), root);
   const pending = new Map<string, Span>();
-  let replyLength = 0;
+  let replyText = '';
 
   try {
     for await (const event of events) {
       switch (event.type) {
         case 'decision':
-          root.addEvent('gen_ai.agent.decision', { 'gen_ai.agent.decision.summary': event.summary });
+          root.addEvent('gen_ai.agent.decision', { summary: event.summary });
           break;
         case 'token':
-          replyLength += event.value.length;
+          replyText += event.value;
           break;
         case 'tool_call': {
+          const kind = auditType(event.name);
           const isModel = event.name === 'copilot.chat';
+          const args = event.args ? truncate(asText(event.args)) : '';
+          root.addEvent('gen_ai.tool.call', { 'tool.name': event.name, 'tool.type': kind, 'tool.arguments': args });
           const span = tracer.startSpan(
             isModel ? `chat ${ctx.model}` : `execute_tool ${event.name}`,
             {
               attributes: isModel
-                ? { 'gen_ai.operation.name': 'chat', 'gen_ai.system': 'github.copilot', 'gen_ai.request.model': ctx.model }
-                : { 'gen_ai.operation.name': 'execute_tool', 'gen_ai.tool.name': event.name },
+                ? { 'gen_ai.operation.name': 'chat', 'gen_ai.system': 'github.copilot', 'gen_ai.request.model': ctx.model, 'waypoint.audit.type': kind }
+                : { 'gen_ai.operation.name': 'execute_tool', 'gen_ai.tool.name': event.name, 'waypoint.audit.type': kind },
             },
             rootCtx,
           );
-          if (event.args) span.setAttribute('gen_ai.tool.call.arguments', truncate(asText(event.args)));
+          if (args) span.setAttribute('gen_ai.tool.call.arguments', args);
           pending.set(event.name, span);
           break;
         }
         case 'tool_result': {
+          const result = event.result !== undefined ? truncate(asText(event.result)) : '';
+          root.addEvent('gen_ai.tool.result', { 'tool.name': event.name, 'tool.ok': event.ok, 'tool.result': result });
           const span = pending.get(event.name);
           if (span) {
-            if (event.result !== undefined) span.setAttribute('gen_ai.tool.call.result', truncate(asText(event.result)));
+            if (result) span.setAttribute('gen_ai.tool.call.result', result);
             span.setStatus({ code: event.ok ? SpanStatusCode.OK : SpanStatusCode.ERROR });
             span.end();
             pending.delete(event.name);
@@ -85,6 +113,7 @@ export async function* traceAgentTurn(
           break;
         }
         case 'error':
+          root.addEvent('gen_ai.error', { code: event.code, message: event.message });
           root.setAttribute('error.type', event.code);
           root.setStatus({ code: SpanStatusCode.ERROR, message: event.code });
           break;
@@ -93,7 +122,10 @@ export async function* traceAgentTurn(
       }
       yield event;
     }
-    root.setAttribute('gen_ai.response.output_text.length', replyLength);
+    // The assistant's reply (observable output — never model reasoning).
+    root.setAttribute('waypoint.assistant_reply', truncate(replyText));
+    root.setAttribute('gen_ai.response.output_text.length', replyText.length);
+    root.addEvent('gen_ai.assistant.message', { content: truncate(replyText) });
   } catch (err) {
     root.setStatus({ code: SpanStatusCode.ERROR, message: String(err) });
     throw err;
