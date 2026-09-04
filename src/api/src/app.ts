@@ -77,7 +77,7 @@ export function createApp(): Express {
       // Redact at the boundary (FR-001-10).
       const redacted = (async function* () {
         const source = viaFoundry
-          ? runViaFoundryAgent({ message, history: store.get(sessionId).slice(0, -1) })
+          ? runViaFoundryAgent({ message, sessionId, history: store.get(sessionId).slice(0, -1) })
           : runAgent({ sessionId, message, history: store.get(sessionId), fault });
         for await (const event of source) {
           yield redactSecrets(event);

@@ -4,15 +4,19 @@ import { logger } from '../logger.js';
 
 /**
  * Option C — route a turn through the **Foundry-hosted agent** instead of the
- * local Copilot SDK runtime, so the conversation actually runs on the Foundry
- * Agent Service platform and appears in the agent's Traces / Conversation view.
+ * local Copilot SDK runtime, so the conversation runs on the Foundry Agent
+ * Service platform and appears in the agent's Traces / Conversation view.
  *
- * We call the platform Responses endpoint (`.../agents/<agent>/endpoint/protocols/
- * openai/responses`) with a managed-identity token, then map the Responses SSE
- * lifecycle back onto our own `AgentEvent` stream so the web app is unchanged.
- * (`decision` events are not part of the Responses payload, so the web audit
- * panel shows tool calls/results but not decision lines in this mode; the full
- * trace lives on the Foundry side.)
+ * Each web session is threaded onto a per-session Foundry **conversation**
+ * (`conv_…`): the platform then records all turns as one conversation AND supplies
+ * multi-turn history to the (stateless) agent, so we only send the new message.
+ * If conversation creation is unavailable we fall back to sending the full input
+ * array (still contextful, but each turn shows as a separate session).
+ *
+ * The Responses SSE lifecycle is mapped back onto our own `AgentEvent` stream so
+ * the web app is unchanged. (`decision` events are not part of the Responses
+ * payload, so the web audit panel shows tool calls/results but not decision lines
+ * in this mode; the full trace lives on the Foundry side.)
  */
 
 const AGENT_AUDIENCE = 'https://ai.azure.com/.default';
@@ -28,8 +32,41 @@ export function foundryAgentUrl(): string | undefined {
   return process.env.FOUNDRY_AGENT_RESPONSES_URL;
 }
 
+/** Derive the conversations endpoint from the responses endpoint. */
+function conversationsUrl(responsesUrl: string): string {
+  return responsesUrl.replace('/responses', '/conversations');
+}
+
+/** web session id → Foundry conversation id, so each chat threads into one conversation. */
+const conversationBySession = new Map<string, string>();
+
+/** Get or create the Foundry conversation for this session. Returns undefined on failure. */
+async function ensureConversation(sessionId: string, bearer: string): Promise<string | undefined> {
+  const existing = conversationBySession.get(sessionId);
+  if (existing) return existing;
+  try {
+    const res = await fetch(conversationsUrl(foundryAgentUrl()!), {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', authorization: `Bearer ${bearer}` },
+      body: JSON.stringify({ metadata: { waypointSession: sessionId } }),
+    });
+    if (!res.ok) {
+      logger.warn({ status: res.status }, 'could not create Foundry conversation; falling back to stateless input');
+      return undefined;
+    }
+    const conv = (await res.json()) as { id?: string };
+    if (conv.id) conversationBySession.set(sessionId, conv.id);
+    return conv.id;
+  } catch (err) {
+    logger.warn({ err: String(err) }, 'Foundry conversation create failed; falling back to stateless input');
+    return undefined;
+  }
+}
+
 interface ProxyInput {
   message: string;
+  sessionId: string;
+  /** Prior turns — only used as a fallback when no conversation could be created. */
   history: ChatMessage[];
 }
 
@@ -83,24 +120,28 @@ function* mapResponsesEvent(evt: {
   }
 }
 
-export async function* runViaFoundryAgent({ message, history }: ProxyInput): AsyncIterable<AgentEvent> {
+export async function* runViaFoundryAgent({ message, sessionId, history }: ProxyInput): AsyncIterable<AgentEvent> {
   const url = foundryAgentUrl();
   if (!url) throw new Error('FOUNDRY_AGENT_RESPONSES_URL not set');
 
-  let token: string;
+  let bearer: string;
   try {
-    token = (await getCredential().getToken(AGENT_AUDIENCE)).token;
+    bearer = (await getCredential().getToken(AGENT_AUDIENCE)).token;
   } catch (err) {
     logger.error({ err: String(err) }, 'failed to acquire Foundry agent token');
     yield { type: 'error', code: 'agent_unavailable', message: 'The assistant is unavailable right now.' };
     return;
   }
 
-  // Send prior turns + the new message so context is preserved (stateless).
-  const input = [
-    ...history.map((m) => ({ role: m.role, content: m.content })),
-    { role: 'user', content: message },
-  ];
+  // Thread onto a per-session conversation (platform manages history). If that
+  // fails, fall back to sending the full conversation as the input array.
+  const conversation = await ensureConversation(sessionId, bearer);
+  const payload: Record<string, unknown> = conversation
+    ? { input: message, stream: true, conversation }
+    : {
+        input: [...history.map((m) => ({ role: m.role, content: m.content })), { role: 'user', content: message }],
+        stream: true,
+      };
 
   let res: Response;
   try {
@@ -108,10 +149,10 @@ export async function* runViaFoundryAgent({ message, history }: ProxyInput): Asy
       method: 'POST',
       headers: {
         'content-type': 'application/json',
-        authorization: `Bearer ${token}`,
+        authorization: `Bearer ${bearer}`,
         accept: 'text/event-stream',
       },
-      body: JSON.stringify({ input, stream: true }),
+      body: JSON.stringify(payload),
     });
   } catch (err) {
     logger.error({ err: String(err) }, 'Foundry agent request failed');
