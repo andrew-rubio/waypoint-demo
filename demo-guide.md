@@ -126,7 +126,7 @@ AppDependencies
 | project turnTime, user, assistant
 ```
 
-**Step 3 — the full audit trail for that conversation (dialogue + every tool call):**
+**Step 3 — the full audit trail for that conversation (dialogue + every tool call, with content):**
 
 ```kusto
 let convId = "conv_PASTE_ID_HERE";
@@ -141,15 +141,24 @@ AppTraces
 | where Message startswith 'gen_ai'
 | extend D = parse_json(Properties)
 | extend tool = tostring(D['tool.name']), type = tostring(D['tool.type']), ok = tostring(D['tool.ok'])
-| summarize TimeGenerated = min(TimeGenerated) by event = Message, tool, type, ok   // collapse duplicate spans
+| extend detail = case(
+        Message in ('gen_ai.user.message', 'gen_ai.assistant.message'), tostring(D['content']),   // what the user / agent said
+        Message == 'gen_ai.agent.decision', tostring(D['summary']),                                 // why the agent acted
+        Message == 'gen_ai.tool.call',       tostring(D['tool.arguments']),                          // tool inputs
+        Message == 'gen_ai.tool.result',     tostring(D['tool.result']),                             // tool output
+        '')
+| summarize TimeGenerated = min(TimeGenerated) by step = Message, tool, type, ok, detail   // collapse duplicate spans
 | order by TimeGenerated asc
+| project TimeGenerated, step, tool, type, ok, detail
 ```
 
-This returns the observable orchestration for the thread — `gen_ai.user.message` /
-`gen_ai.assistant.message` (dialogue), `gen_ai.agent.decision`, and every
-`gen_ai.tool.call` / `gen_ai.tool.result` (wikipedia, copilot.chat, travel-search / RouteStack,
-Open-Meteo, Cosmos, …) — never the model's hidden reasoning. It's the **same audit trail** as
-the web panel, in the platform's management plane.
+This returns the observable orchestration for the thread **with the message content on every
+step** — `gen_ai.user.message` / `gen_ai.assistant.message` show what the traveller and the
+agent said; `gen_ai.agent.decision` shows the agent's stated reason; `gen_ai.tool.call` shows
+the tool inputs and `gen_ai.tool.result` the tool output (wikipedia, copilot.chat, travel-search /
+RouteStack, Open-Meteo, Cosmos, …) — never the model's hidden reasoning. It's the **same audit
+trail** as the web panel, in the platform's management plane. (Add
+`| extend detail = substring(detail, 0, 200)` if you want shorter cells for a table view.)
 
 > **Presenting it cleanly:** pin Step 1–3 as tiles on an **Azure Dashboard**, or save them in
 > an App Insights **Workbook** with `conversation` as a parameter, so a click drills from the
