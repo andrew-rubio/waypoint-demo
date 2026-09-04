@@ -153,3 +153,14 @@ The `inc9` image is the branch api code (telemetry + `/responses`); the driver r
 `FOUNDRY_MODEL_URL` (already set on ACA) so the model still works. Verified: ACA `/api/chat`
 streams a full real-model turn (copilot.chat + destination-advisor + travel-guide + cosmos +
 personalise). Traces attribute to role **`waypoint-agent`**.
+
+**Root cause of the initial "no ACA traces" (2026-09-04):** the first
+`az containerapp update --set-env-vars "APPLICATIONINSIGHTS_CONNECTION_STRING=$CS"` ran in a
+shell where `$CS` was **empty**, so the env var was set to `""`. The startup log then read
+`Telemetry disabled (no APPLICATIONINSIGHTS_CONNECTION_STRING)` (the code guards on a falsy
+string) and nothing was exported. Fix: re-set the var from the freshly-fetched 252-char
+connection string; new revision `0000014` logs `Azure Monitor OpenTelemetry initialised`, and
+a subsequent `/api/chat` turn (sessionId + message body) emits `invoke_agent` + gen_ai events
+to the workspace `App*` tables. **Lesson:** always confirm the env value length on the
+revision (`env[?name=='APPLICATIONINSIGHTS_CONNECTION_STRING'].value` → 252), not just that
+the name is present.
