@@ -179,3 +179,14 @@ Core INC-9 (harness hosted on Foundry, `responses` protocol, tools, real driver 
   fresh token with the new role). If reply text appears, INC-9 is fully green. If it still
   fails after a genuine cold start + propagation, fall back to fix #1 (project-endpoint model
   access).
+
+### RESOLVED ✅ (2026-09-04)
+Cold-start retest returned a **full model reply** (`gpt-5.4-mini` recommended Palermo / Split /
+San Sebastián for a Lisbon-like holiday), 16.7s / 6.2s first byte — a genuine cold start with a
+fresh token. **Fix = grant `Cognitive Services OpenAI User` on the `aif-…` account to the
+agent's `instance_identity` (`f95192f1…`), then cold-start** so the container mints a token
+carrying the new role (the warm container had cached the pre-grant token).
+
+**INC-9 is fully green:** the GitHub Copilot SDK harness runs as a Foundry hosted agent
+(`waypoint-agent` v4), serves the `responses` protocol, calls tools/MCP, and generates real
+model text end-to-end. Fix #1 (project-endpoint model access) was **not** needed.
