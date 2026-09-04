@@ -75,3 +75,24 @@ through the azd-env → `azure.yaml` → container pipeline. To resolve:
 
 **INC-10 code is complete and correct; end-to-end trace visibility is blocked on the above
 infrastructure item.**
+
+### Root cause CONFIRMED (2026-09-04) — sandbox egress blocked
+Sent a test event to `appi`'s ingestion endpoint (`https://swedencentral-0.in.applicationinsights.azure.com/v2/track`)
+**from the dev machine** using the same connection string → response
+**`{itemsReceived:1, itemsAccepted:1, errors:[]}`**. So:
+- ✅ `appi` ingestion is healthy, the **connection string is valid**, and a normal network reaches it.
+- ❌ The **Foundry hosted-agent sandbox cannot egress** to `*.in.applicationinsights.azure.com`,
+  so the agent's exports (clean init + successful `forceFlush`, zero errors) never arrive.
+
+This is a **platform egress restriction**, not an app/config bug. Options to get traces flowing:
+1. **Allow sandbox egress** to the App Insights ingestion + live endpoints
+   (`*.in.applicationinsights.azure.com`, `*.livediagnostics.monitor.azure.com`) — via the
+   Foundry project's network/egress config, if exposed.
+2. **Use the platform-native tracing path** — Foundry's own agent tracing (portal Observability)
+   may route through the gateway rather than direct container egress; rely on that for the demo
+   and keep our OTel spans for local/ACA where egress is open.
+3. **Private Link / Azure Monitor Private Link Scope (AMPLS)** so the ingestion endpoint is
+   reachable over the platform's allowed network.
+
+The Waypoint app code (span mapping + flush) is correct and works wherever egress to App Insights
+is permitted (e.g. the ACA deployment on `main`).
