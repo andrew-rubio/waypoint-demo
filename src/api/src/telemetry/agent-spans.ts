@@ -1,5 +1,6 @@
 import { SpanStatusCode, trace, context, type Span } from '@opentelemetry/api';
 import type { AgentEvent } from '../../../shared/types/chat-and-agent-runtime.js';
+import { flushTracing } from './tracing.js';
 
 /**
  * Map the agent's observable event stream onto GenAI OpenTelemetry spans
@@ -99,5 +100,7 @@ export async function* traceAgentTurn(
   } finally {
     for (const span of pending.values()) span.end();
     root.end();
+    // Export now — the hosted container may pause between requests (batch timer won't fire).
+    await flushTracing();
   }
 }

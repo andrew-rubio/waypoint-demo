@@ -1,3 +1,4 @@
+import { trace } from '@opentelemetry/api';
 import { logger } from '../logger.js';
 
 let initialised = false;
@@ -25,5 +26,26 @@ export async function initTracing(): Promise<void> {
     logger.info('Azure Monitor OpenTelemetry initialised');
   } catch (err) {
     logger.warn({ err: String(err) }, 'Failed to initialise telemetry; continuing without it');
+  }
+}
+
+/**
+ * Force-export buffered spans. Hosted-agent containers pause CPU between requests,
+ * so the async batch exporter never fires on its timer — flush synchronously at the
+ * end of each turn while the request is still active.
+ */
+export async function flushTracing(): Promise<void> {
+  if (!initialised) return;
+  const provider = trace.getTracerProvider() as unknown as {
+    getDelegate?: () => unknown;
+    forceFlush?: () => Promise<void>;
+  };
+  const target = (typeof provider.getDelegate === 'function' ? provider.getDelegate() : provider) as {
+    forceFlush?: () => Promise<void>;
+  };
+  try {
+    await target.forceFlush?.();
+  } catch (err) {
+    logger.warn({ err: String(err) }, 'telemetry flush failed');
   }
 }
