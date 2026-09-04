@@ -60,19 +60,24 @@ Browser ──► Next.js (web) ──► Route Handler proxy ──► Express 
   (`gen_ai.agent.decision`, `gen_ai.tool.call`, `gen_ai.tool.result`) tagged with its
   type (mcp / skill / api / model) — to the App Insights linked to the Foundry project.
 - **Same traces from ACA:** the Container Apps `api` emits the *same* traces (role
-  `waypoint-agent`) to that App Insights, so a live chat on the web app shows up as a
-  trace + conversation audit in the **Foundry portal → agent → Observability**. Read them
-  in the backing Log Analytics workspace via the `App*` tables (`AppRequests` /
-  `AppDependencies` / `AppTraces`), not the classic `dependencies`/`customEvents` names.
+  `waypoint-agent`) to that App Insights, so a live chat on the web app is fully recorded as
+  a threaded conversation + audit trail. Read it in the backing Log Analytics workspace via
+  the `App*` tables (`AppRequests` / `AppDependencies` / `AppTraces`), not the classic
+  `dependencies`/`customEvents` names.
 - **Route the front-end through the hosted agent (option C):** set
   `FOUNDRY_AGENT_RESPONSES_URL` (the agent's platform Responses endpoint) on the ACA `api`
   and `/api/chat` **proxies each turn to the Foundry-hosted agent** instead of running the
   local runtime ([`src/api/src/agent/foundry-agent-proxy.ts`](src/api/src/agent/foundry-agent-proxy.ts),
   managed-identity token for audience `https://ai.azure.com`, needs the **Azure AI User**
-  role). The turn then runs on the platform, so browser conversations populate the agent's
-  **Traces → Conversation view**. Unset the variable to run the local Copilot SDK runtime
-  (which self-traces to App Insights). The web app is unchanged either way — the proxy maps
-  the Responses SSE back to the `AgentEvent` stream.
+  role). Each web session maps to a Foundry **conversation** (`conv_…`) so turns thread and
+  the platform manages history. Unset the variable to run the local Copilot SDK runtime. The
+  web app is unchanged either way — the proxy maps the Responses SSE back to the `AgentEvent`
+  stream.
+- **Where to view it:** the reliable, complete record is the project's **Application
+  Insights** — query by `gen_ai.conversation.id` (conversation list → turns → tool trail; see
+  [demo-guide.md](demo-guide.md) §1c for the KQL). The Foundry portal's per-agent **Traces**
+  tab is fed by the platform's own agent-server telemetry, which the hosted **sandbox drops
+  when it freezes between requests**, so it's best-effort in preview.
 - **Evaluate & govern:** offline golden-dataset evaluations ([FRD-008](specs/frd-agent-evaluation-and-quality.md)) and governance — RBAC/managed identity, content safety, immutable versions, CI quality gate ([FRD-009](specs/frd-governance-and-observability.md)).
 
 ---
