@@ -4,6 +4,7 @@ import { validateChatRequest } from './validation/chat.js';
 import { redactSecrets } from './security/redact.js';
 import { createSessionStore } from './session/store.js';
 import { runAgent } from './agent/runtime.js';
+import { runViaFoundryAgent, foundryAgentUrl } from './agent/foundry-agent-proxy.js';
 import { parseResponsesRequest, streamResponses, collectResponse } from './responses/openai-responses.js';
 import { traceAgentTurn } from './telemetry/agent-spans.js';
 import { logger } from './logger.js';
@@ -69,13 +70,24 @@ export function createApp(): Express {
     const model = resolveModelName();
     let reply = '';
     try {
-      // Redact at the boundary (FR-001-10), then trace the turn (INC-10, ADR-011).
+      // Option C: when configured, route the turn through the Foundry-hosted agent
+      // so it runs on the platform and appears in the agent's Conversation view.
+      // Otherwise run the local Copilot SDK runtime and trace the turn ourselves.
+      const viaFoundry = !!foundryAgentUrl();
+      // Redact at the boundary (FR-001-10).
       const redacted = (async function* () {
-        for await (const event of runAgent({ sessionId, message, history: store.get(sessionId), fault })) {
+        const source = viaFoundry
+          ? runViaFoundryAgent({ message, history: store.get(sessionId) })
+          : runAgent({ sessionId, message, history: store.get(sessionId), fault });
+        for await (const event of source) {
           yield redactSecrets(event);
         }
       })();
-      for await (const event of traceAgentTurn(redacted, { conversationId: sessionId, turnId: randomUUID(), model, userMessage: message })) {
+      // The hosted agent emits its own traces; only self-trace the local path (INC-10, ADR-011).
+      const stream = viaFoundry
+        ? redacted
+        : traceAgentTurn(redacted, { conversationId: sessionId, turnId: randomUUID(), model, userMessage: message });
+      for await (const event of stream) {
         if (event.type === 'token') reply += event.value;
         res.write(`data: ${JSON.stringify(event)}\n\n`);
       }
