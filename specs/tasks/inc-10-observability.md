@@ -118,3 +118,22 @@ follow-up — the pipeline itself is proven.
 **Query reads:** use `az monitor log-analytics query --workspace 09be3e3a-c867-4412-a410-25b8eeb2d4f6`
 with `AppRequests`/`AppDependencies` (NOT the classic `az monitor app-insights query` tables), or
 the Foundry portal Observability tab (same workspace).
+
+### Richer traces shipped (2026-09-04, commit `d947b58`)
+The trace now carries the **whole audit trail** (the same `AgentEvent` stream the web audit panel
+uses): the **dialogue** (`waypoint.user_message` / `waypoint.assistant_reply` attributes +
+`gen_ai.user.message` / `gen_ai.assistant.message` events) and **every audit item** as root span
+events — `gen_ai.agent.decision`, `gen_ai.tool.call`, `gen_ai.tool.result` — each tagged with the
+audit **type** (`mcp` / `skill` / `api` / model) exactly like the front-end reducer. Recorded as
+**root span events** (not just child spans) so they reliably export from the hosted sandbox; child
+`execute_tool`/`chat` spans remain as a bonus waterfall. 116/116 tests. Deployed; telemetry
+confirmed initialising. Span events land in **`AppTraces`** linked by `OperationId`.
+
+**Verify (after ingestion — ~15 min in this env):**
+```kql
+// the dialogue on the root request
+AppRequests | where Name=='invoke_agent' | project TimeGenerated,
+  tostring(Properties['waypoint.user_message']), tostring(Properties['waypoint.assistant_reply'])
+// every audit item as trace events
+AppTraces | where Message startswith 'gen_ai' | summarize count() by Message
+```
