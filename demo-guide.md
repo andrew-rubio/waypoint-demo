@@ -92,12 +92,18 @@ Insights linked to the Foundry project. So after chatting on the web app:
    trail from the web panel, now in Foundry's management plane.
 
 > Read the traces in the workspace `App*` tables (`AppRequests` / `AppDependencies` /
-> `AppTraces`), or the portal Observability / Transaction view. Talk track: this is the
+> `AppTraces`), or the portal Observability / Transaction view. The trace tree lands in
+> `AppDependencies` (`invoke_agent waypoint` root + `chat gpt-5.4-mini` + `execute_tool <name>`
+> per tool) and the dialogue/audit items in `AppTraces` (`gen_ai.user.message`,
+> `gen_ai.agent.decision`, `gen_ai.tool.call`/`result`, `gen_ai.assistant.message`).
+> **First-data ingestion for this workspace-based App Insights lags ~10–12 min** — chat a few
+> minutes before the demo so the trace is already there. Talk track: this is the
 > **run → observe → govern** half of an *agentic factory* — planning/building via spec2cloud,
 > running on Foundry Agent Service, observing via GenAI traces, and governing via evaluations
 > ([FRD-008](specs/frd-agent-evaluation-and-quality.md)) and RBAC/content-safety/version gates
 > ([FRD-009](specs/frd-governance-and-observability.md)). See
 > [ADR-010](specs/adrs/adr-010-foundry-agent-service-hosting.md) / [ADR-011](specs/adrs/adr-011-otel-genai-traces.md).
+
 ### 2. Show The Product Contract
 
 Open `specs/frd-destination-advice.md`.
