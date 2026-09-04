@@ -87,6 +87,12 @@ Insights linked to the Foundry project. So after chatting on the web app:
 > on the ACA `api` (option C) so `/api/chat` **proxies each turn to the Foundry-hosted
 > agent** — the conversation then runs on the platform and appears as a real agent thread.
 > This is already enabled on the deployed `ca-api`.
+>
+> **Threading:** each web session maps to a Foundry **conversation** (`conv_…`), created once
+> per session and reused for every turn, so the platform records the whole chat as **one
+> threaded conversation** (turns share `gen_ai.conversation.id`) and supplies multi-turn
+> history to the agent. Ingestion into App Insights lags ~10–15 min, so chat a few minutes
+> before showing the tab.
 
 1. Have a conversation on the deployed web app (e.g. the June food-and-beaches journey above).
 2. Open the **Foundry portal → your project → agent `waypoint-agent` → Observability** (it
