@@ -163,3 +163,19 @@ Root cause is **model auth**, not the adapter. Confirmed from container logs + i
 
 Core INC-9 (harness hosted on Foundry, `responses` protocol, tools, real driver selected) is
 **done**; this is a model-auth refinement.
+
+### Resolution progress (2026-09-04)
+- 30-min propagation retest of the project/account MI grants: **still empty** → those are not
+  the container identity.
+- `azd ai agent show waypoint-agent` exposes the running container identity under
+  **`instance_identity.principal_id = f95192f1-bd6f-410d-83c4-d0078cb809b7`** (there is also a
+  `blueprint` identity `ea91a1fc…`, which **cannot** take role assignments —
+  `PrincipalTypeNotSupported`).
+- Granted **Cognitive Services OpenAI User** on the account to **`f95192f1`** (the instance
+  identity) ✅. Immediate retest still empty, but served **warm in 0.43s** → the running
+  container holds a **cached Entra token**; the new role won't apply until the token refreshes
+  **or the container cold-starts** (idle timeout ~15 min), plus data-plane propagation.
+- **Next:** let the container idle out (~15 min, no invokes), then re-invoke (cold start →
+  fresh token with the new role). If reply text appears, INC-9 is fully green. If it still
+  fails after a genuine cold start + propagation, fall back to fix #1 (project-endpoint model
+  access).
