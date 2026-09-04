@@ -58,6 +58,8 @@ services:
       WAYPOINT_MODEL_URL: ${FOUNDRY_MODEL_URL}
       WAYPOINT_USE_MANAGED_IDENTITY: 'true'
       WAYPOINT_WIRE_API: responses
+      # Attribute GenAI traces to this agent in App Insights / Foundry (INC-10).
+      OTEL_SERVICE_NAME: waypoint-agent
     container:
       resources:
         cpu: '1'

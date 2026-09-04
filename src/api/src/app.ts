@@ -1,11 +1,22 @@
 import express, { type Express } from 'express';
-import type { AgentEvent } from '../../shared/types/chat-and-agent-runtime.js';
+import { randomUUID } from 'node:crypto';
 import { validateChatRequest } from './validation/chat.js';
 import { redactSecrets } from './security/redact.js';
 import { createSessionStore } from './session/store.js';
 import { runAgent } from './agent/runtime.js';
 import { parseResponsesRequest, streamResponses, collectResponse } from './responses/openai-responses.js';
+import { traceAgentTurn } from './telemetry/agent-spans.js';
 import { logger } from './logger.js';
+
+/** The model deployment name, used for telemetry + the responses payload. */
+function resolveModelName(): string {
+  return (
+    process.env.FOUNDRY_MODEL ??
+    process.env.WAYPOINT_MODEL ??
+    process.env.AZURE_AI_MODEL_DEPLOYMENT_NAME ??
+    'waypoint'
+  );
+}
 
 /**
  * Build the Waypoint API. `POST /api/chat` streams the agent's reply as
@@ -53,25 +64,27 @@ export function createApp(): Express {
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders?.();
 
-    // Every event is redacted before it leaves the process (FR-001-10).
-    const send = (event: AgentEvent): void => {
-      res.write(`data: ${JSON.stringify(redactSecrets(event))}\n\n`);
-    };
-
     // 3) Record the user's turn, then stream the agent's reply.
     store.append(sessionId, { role: 'user', content: message, ts: new Date().toISOString() });
+    const model = resolveModelName();
     let reply = '';
     try {
-      for await (const event of runAgent({ sessionId, message, history: store.get(sessionId), fault })) {
+      // Redact at the boundary (FR-001-10), then trace the turn (INC-10, ADR-011).
+      const redacted = (async function* () {
+        for await (const event of runAgent({ sessionId, message, history: store.get(sessionId), fault })) {
+          yield redactSecrets(event);
+        }
+      })();
+      for await (const event of traceAgentTurn(redacted, { conversationId: sessionId, turnId: randomUUID(), model })) {
         if (event.type === 'token') reply += event.value;
-        send(event);
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
       }
       if (reply) {
         store.append(sessionId, { role: 'assistant', content: reply, ts: new Date().toISOString() });
       }
     } catch (err) {
       logger.error({ err: String(err) }, 'agent run failed');
-      send({ type: 'error', code: 'agent_unavailable', message: 'The assistant is unavailable right now.' });
+      res.write(`data: ${JSON.stringify({ type: 'error', code: 'agent_unavailable', message: 'The assistant is unavailable right now.' })}\n\n`);
     } finally {
       res.end();
     }
@@ -87,18 +100,21 @@ export function createApp(): Express {
       return;
     }
     const { input, stream, conversationId } = parsed.value;
-    const model = process.env.FOUNDRY_MODEL ?? 'waypoint';
+    const model = resolveModelName();
 
     store.append(conversationId, { role: 'user', content: input, ts: new Date().toISOString() });
-    // Redact every agent event at the boundary before it is mapped/streamed (FR-001-10).
-    const events = (async function* () {
-      let reply = '';
-      for await (const event of runAgent({ sessionId: conversationId, message: input, history: store.get(conversationId) })) {
-        if (event.type === 'token') reply += event.value;
-        yield redactSecrets(event);
-      }
-      if (reply) store.append(conversationId, { role: 'assistant', content: reply, ts: new Date().toISOString() });
-    })();
+    // Redact at the boundary (FR-001-10), then trace the turn (INC-10, ADR-011).
+    const events = traceAgentTurn(
+      (async function* () {
+        let reply = '';
+        for await (const event of runAgent({ sessionId: conversationId, message: input, history: store.get(conversationId) })) {
+          if (event.type === 'token') reply += event.value;
+          yield redactSecrets(event);
+        }
+        if (reply) store.append(conversationId, { role: 'assistant', content: reply, ts: new Date().toISOString() });
+      })(),
+      { conversationId, turnId: randomUUID(), model },
+    );
 
     try {
       if (!stream) {
