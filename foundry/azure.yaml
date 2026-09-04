@@ -44,7 +44,7 @@ services:
       flight/hotel and travel-guide tools, and streams an observable audit trail.
     # Pre-built image (azd rejects a `project:` outside the azd dir for our monorepo).
     # Built from src/api/Dockerfile and pushed to the project's ACR before deploy.
-    image: acrdnszpz4hqfi7g.azurecr.io/waypoint/waypoint-agent:inc9
+    image: acrdnszpz4hqfi7g.azurecr.io/waypoint/waypoint-agent:inc11
     protocols:
       - protocol: responses
         version: 2.0.0
@@ -58,6 +58,8 @@ services:
       WAYPOINT_MODEL_URL: ${FOUNDRY_MODEL_URL}
       WAYPOINT_USE_MANAGED_IDENTITY: 'true'
       WAYPOINT_WIRE_API: responses
+      OTEL_SERVICE_NAME: waypoint-agent
+      WAYPOINT_APPINSIGHTS_CONNECTION_STRING: ${WAYPOINT_APPINSIGHTS_CONNECTION_STRING}
       # Attribute GenAI traces to this agent in App Insights / Foundry (INC-10).
       OTEL_SERVICE_NAME: waypoint-agent
       # Explicit App Insights sink under a non-reserved name (APPLICATIONINSIGHTS_*

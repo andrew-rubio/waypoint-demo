@@ -77,7 +77,7 @@ export function createApp(): Express {
       // Redact at the boundary (FR-001-10).
       const redacted = (async function* () {
         const source = viaFoundry
-          ? runViaFoundryAgent({ message, history: store.get(sessionId) })
+          ? runViaFoundryAgent({ message, history: store.get(sessionId).slice(0, -1) })
           : runAgent({ sessionId, message, history: store.get(sessionId), fault });
         for await (const event of source) {
           yield redactSecrets(event);
@@ -111,15 +111,17 @@ export function createApp(): Express {
       res.status(400).json({ error: parsed.error, code: 'invalid_request' });
       return;
     }
-    const { input, stream, conversationId } = parsed.value;
+    const { input, stream, conversationId, history } = parsed.value;
     const model = resolveModelName();
 
     store.append(conversationId, { role: 'user', content: input, ts: new Date().toISOString() });
-    // Redact at the boundary (FR-001-10), then trace the turn (INC-10, ADR-011).
+    // History comes from the request's input array (stateless) so context survives
+    // across turns regardless of which hosted instance serves the request.
+    const priorTurns = history.length ? history : store.get(conversationId).slice(0, -1);
     const events = traceAgentTurn(
       (async function* () {
         let reply = '';
-        for await (const event of runAgent({ sessionId: conversationId, message: input, history: store.get(conversationId) })) {
+        for await (const event of runAgent({ sessionId: conversationId, message: input, history: priorTurns })) {
           if (event.type === 'token') reply += event.value;
           yield redactSecrets(event);
         }

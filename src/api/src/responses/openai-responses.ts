@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { AgentEvent } from '../../../shared/types/chat-and-agent-runtime.js';
+import type { AgentEvent, ChatMessage } from '../../../shared/types/chat-and-agent-runtime.js';
 
 /**
  * Foundry `responses` protocol adapter (INC-9, ADR-010, Path A).
@@ -28,6 +28,8 @@ export interface ResponsesRequest {
   stream: boolean;
   /** Conversation id → in-memory session key (FR-001-6). */
   conversationId: string;
+  /** Prior turns parsed from the `input` message array (context is stateless). */
+  history: ChatMessage[];
 }
 
 export interface ResponsesContext {
@@ -35,22 +37,36 @@ export interface ResponsesContext {
   model: string;
 }
 
-/** Coerce the OpenAI `input` (string or message array) to a single user string. */
-function inputToText(input: unknown): string | undefined {
-  if (typeof input === 'string') return input;
-  if (Array.isArray(input)) {
-    // Take the last item's text — supports [{ role, content }] and content parts.
-    for (let i = input.length - 1; i >= 0; i--) {
-      const item = input[i] as { content?: unknown } | undefined;
-      const content = item?.content;
-      if (typeof content === 'string') return content;
-      if (Array.isArray(content)) {
-        const part = content.find((p) => typeof (p as { text?: unknown })?.text === 'string');
-        if (part) return (part as { text: string }).text;
-      }
-    }
+/** Pull plain text from an OpenAI content field (string or content parts). */
+function extractText(content: unknown): string | undefined {
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    const part = content.find((p) => typeof (p as { text?: unknown })?.text === 'string');
+    if (part) return (part as { text: string }).text;
   }
   return undefined;
+}
+
+/**
+ * Parse the OpenAI `input` (string or message array) into prior history + the
+ * new user message. When a caller sends the full conversation as an array (as our
+ * ACA proxy does), we treat all-but-last as history so the agent keeps context
+ * without relying on any per-instance in-memory store.
+ */
+function parseInputMessages(input: unknown): { history: ChatMessage[]; last?: string } {
+  if (typeof input === 'string') return { history: [], last: input };
+  if (Array.isArray(input)) {
+    const msgs: ChatMessage[] = [];
+    for (const item of input) {
+      const text = extractText((item as { content?: unknown })?.content);
+      if (!text) continue;
+      const role = (item as { role?: unknown })?.role === 'assistant' ? 'assistant' : 'user';
+      msgs.push({ role, content: text, ts: new Date().toISOString() });
+    }
+    if (!msgs.length) return { history: [] };
+    return { history: msgs.slice(0, -1), last: msgs[msgs.length - 1].content };
+  }
+  return { history: [] };
 }
 
 /**
@@ -62,7 +78,8 @@ export function parseResponsesRequest(
   body: unknown,
 ): { ok: true; value: ResponsesRequest } | { ok: false; error: string } {
   const b = (body ?? {}) as Record<string, unknown>;
-  const text = inputToText(b.input)?.trim();
+  const { history, last } = parseInputMessages(b.input);
+  const text = last?.trim();
   if (!text) return { ok: false, error: 'input must contain non-empty text' };
   if (text.length > 8000) return { ok: false, error: 'input is too long' };
 
@@ -72,7 +89,7 @@ export function parseResponsesRequest(
     (typeof b.previous_response_id === 'string' ? b.previous_response_id : undefined) ??
     `conv_${randomUUID()}`;
 
-  return { ok: true, value: { input: text, stream: b.stream === true, conversationId } };
+  return { ok: true, value: { input: text, stream: b.stream === true, conversationId, history } };
 }
 
 /** The output items assembled while consuming the agent stream. */
