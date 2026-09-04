@@ -96,3 +96,25 @@ This is a **platform egress restriction**, not an app/config bug. Options to get
 
 The Waypoint app code (span mapping + flush) is correct and works wherever egress to App Insights
 is permitted (e.g. the ACA deployment on `main`).
+
+### ✅ CORRECTION (2026-09-04) — traces DO reach App Insights; egress is NOT blocked
+The "egress blocked" conclusion above was **wrong** — caused by querying the **classic** table
+names. `appi` is **workspace-based** (`ingestionMode: LogAnalytics`), so data lands in the Log
+Analytics **`App*`** tables, not `dependencies`/`customEvents`.
+
+Querying the backing workspace (`log-dnszpz4hqfi7g`, customerId `09be3e3a-…`):
+```kql
+union AppRequests, AppDependencies | where TimeGenerated > ago(60m) | where Name has_any ('invoke_agent','execute_tool','chat ')
+```
+→ **`invoke_agent`** present in **`AppRequests`** (11.4s, Success, OperationId `5c3d33c4…`). So the
+hosted agent's GenAI trace **does** reach App Insights end-to-end. **INC-10 observability works.**
+
+**Remaining refinement:** only the **root** `invoke_agent` span exports; the **child**
+`execute_tool <tool>` / `chat <model>` spans don't yet appear (the join to `AppDependencies` by
+OperationId is empty). Likely a child-span export/flush detail (e.g. children ended mid-turn while
+the container CPU is paused, or the exporter batch only carried the root at `forceFlush`). Small
+follow-up — the pipeline itself is proven.
+
+**Query reads:** use `az monitor log-analytics query --workspace 09be3e3a-c867-4412-a410-25b8eeb2d4f6`
+with `AppRequests`/`AppDependencies` (NOT the classic `az monitor app-insights query` tables), or
+the Foundry portal Observability tab (same workspace).
