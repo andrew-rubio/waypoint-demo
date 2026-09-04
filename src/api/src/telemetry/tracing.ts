@@ -1,4 +1,3 @@
-import { trace } from '@opentelemetry/api';
 import { logger } from '../logger.js';
 
 let initialised = false;
@@ -36,7 +35,9 @@ export async function initTracing(): Promise<void> {
     const { resourceFromAttributes } = await import('@opentelemetry/resources');
 
     const serviceName = process.env.OTEL_SERVICE_NAME ?? 'waypoint-agent';
-    const exporter = new AzureMonitorTraceExporter({ connectionString });
+    // Offline storage is disabled: this is a stateless container and we force-flush
+    // each turn, so we don't want spans queued to /tmp for background retry.
+    const exporter = new AzureMonitorTraceExporter({ connectionString, disableOfflineStorage: true });
     const tracerProvider = new NodeTracerProvider({
       resource: resourceFromAttributes({ 'service.name': serviceName }),
       spanProcessors: [new BatchSpanProcessor(exporter)],
@@ -44,15 +45,7 @@ export async function initTracing(): Promise<void> {
     tracerProvider.register();
     provider = tracerProvider;
     initialised = true;
-
-    // One-shot diagnostic: confirm a manually-created span actually records.
-    const diagSpan = trace.getTracer('waypoint-diag').startSpan('telemetry.diag');
-    logger.info(
-      { recording: diagSpan.isRecording(), service: serviceName },
-      'OpenTelemetry tracing initialised (Azure Monitor exporter)',
-    );
-    diagSpan.end();
-    await flushTracing();
+    logger.info({ service: serviceName }, 'OpenTelemetry tracing initialised (Azure Monitor exporter)');
   } catch (err) {
     logger.warn({ err: String(err) }, 'Failed to initialise telemetry; continuing without it');
   }

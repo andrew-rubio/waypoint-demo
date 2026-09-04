@@ -154,13 +154,25 @@ The `inc9` image is the branch api code (telemetry + `/responses`); the driver r
 streams a full real-model turn (copilot.chat + destination-advisor + travel-guide + cosmos +
 personalise). Traces attribute to role **`waypoint-agent`**.
 
-**Root cause of the initial "no ACA traces" (2026-09-04):** the first
-`az containerapp update --set-env-vars "APPLICATIONINSIGHTS_CONNECTION_STRING=$CS"` ran in a
-shell where `$CS` was **empty**, so the env var was set to `""`. The startup log then read
-`Telemetry disabled (no APPLICATIONINSIGHTS_CONNECTION_STRING)` (the code guards on a falsy
-string) and nothing was exported. Fix: re-set the var from the freshly-fetched 252-char
-connection string; new revision `0000014` logs `Azure Monitor OpenTelemetry initialised`, and
-a subsequent `/api/chat` turn (sessionId + message body) emits `invoke_agent` + gen_ai events
-to the workspace `App*` tables. **Lesson:** always confirm the env value length on the
-revision (`env[?name=='APPLICATIONINSIGHTS_CONNECTION_STRING'].value` → 252), not just that
-the name is present.
+### RESOLVED (2026-09-04) — two real bugs behind the "no traces" symptom
+1. **Empty connection string** — the first `az containerapp update` set
+   `APPLICATIONINSIGHTS_CONNECTION_STRING=""` (shell `$CS` was blank). Startup logged
+   `Telemetry disabled`. Fixed by re-setting the fetched 252-char string; confirm the
+   *value length* on the revision, not just the name.
+2. **`useAzureMonitor` did not register the global tracer provider** — with
+   `@azure/monitor-opentelemetry@1.19`, `trace.getTracer(...).startSpan(...)` returned a
+   **non-recording** span (`isRecording:false`, provider still `ProxyTracerProvider`), so
+   our manual GenAI spans were never recorded — even though the distro's auto-instrumented
+   Azure SDK spans (credential/HTTP) *did* export. Auto spans use the distro's private
+   provider; our code uses the global API, which was never set.
+
+**Fix:** build and `register()` our **own** `NodeTracerProvider` (resource
+`service.name=waypoint-agent`) with a `BatchSpanProcessor(AzureMonitorTraceExporter)` and
+`disableOfflineStorage:true` (stateless container; we force-flush each turn). After this,
+`isRecording:true` and the full trace tree ingests to the workspace `App*` tables:
+`invoke_agent waypoint` (root) + `chat gpt-5.4-mini` + `execute_tool <name>` per tool
+(AppDependencies), and the dialogue/audit items (`gen_ai.user.message`,
+`gen_ai.agent.decision`, `gen_ai.tool.call`/`result`, `gen_ai.assistant.message`) in
+AppTraces. **Note:** first-data ingestion for this workspace-based App Insights lags
+~10–12 min — don't conclude "no export" until you've waited. Deployed as image
+`waypoint/waypoint-agent:inc10`.
