@@ -51,3 +51,27 @@ Foundry hosted-agent containers are **suspended between requests**, so the OTel
 but never exported. **Fix:** `forceFlush()` the tracer provider at the end of each turn (in
 `traceAgentTurn`'s `finally`), or use a synchronous exporter, so spans are sent before the
 response returns. Requires a small code change + rebuild + redeploy.
+
+### `forceFlush` shipped, but spans still absent — infra wall (2026-09-04)
+- Added `flushTracing()` (forceFlush) called per turn (commit `757966f`). **115/115 tests pass.**
+- Local Docker builds produced an **identical digest** even with `--no-cache` (Docker
+  Desktop/WSL2 stale build-context). Worked around it with **`az acr build`** (remote build
+  from local source) → deployed the flush image.
+- New container **initialises telemetry** (`Azure Monitor OpenTelemetry initialised`) and
+  `forceFlush` runs with **no export/flush error** in logs.
+- **But App Insights `appi-dnszpz4hqfi7g` has received ZERO data in the last 24h** (all tables)
+  — nothing from the agent, the ACA app, or anything else. So exports aren't reaching it.
+
+### Conclusion / next steps (infra, not app code)
+Telemetry is correct and confirmed *initialising + flushing* in-container; the failure is in the
+**data path to App Insights**. Most likely: **sandbox egress to the App Insights ingestion
+endpoint is blocked** (hardened subscription — cf. keyless Cosmos/Foundry), so the exporter's
+background POST fails while `forceFlush` still resolves; or the connection string is corrupted
+through the azd-env → `azure.yaml` → container pipeline. To resolve:
+1. Confirm the connection string arrives intact in the container (print a redacted prefix).
+2. Test egress from the sandbox to the ingestion endpoint (`*.in.applicationinsights.azure.com`
+   / `*.livediagnostics.monitor.azure.com`).
+3. Verify `appi` ingestion is healthy (send a test event from a known-good client).
+
+**INC-10 code is complete and correct; end-to-end trace visibility is blocked on the above
+infrastructure item.**
