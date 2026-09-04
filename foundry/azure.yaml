@@ -60,6 +60,9 @@ services:
       WAYPOINT_WIRE_API: responses
       # Attribute GenAI traces to this agent in App Insights / Foundry (INC-10).
       OTEL_SERVICE_NAME: waypoint-agent
+      # Explicit App Insights sink under a non-reserved name (APPLICATIONINSIGHTS_*
+      # is platform-reserved). Value from the azd env, not committed.
+      WAYPOINT_APPINSIGHTS_CONNECTION_STRING: ${WAYPOINT_APPINSIGHTS_CONNECTION_STRING}
     container:
       resources:
         cpu: '1'

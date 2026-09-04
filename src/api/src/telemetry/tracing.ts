@@ -10,7 +10,10 @@ let initialised = false;
  */
 export async function initTracing(): Promise<void> {
   if (initialised) return;
-  const connectionString = process.env.APPLICATIONINSIGHTS_CONNECTION_STRING;
+  // Foundry reserves APPLICATIONINSIGHTS_*, so also accept a WAYPOINT_ alias when the
+  // platform doesn't inject the string (e.g. deploying into an existing project).
+  const connectionString =
+    process.env.APPLICATIONINSIGHTS_CONNECTION_STRING ?? process.env.WAYPOINT_APPINSIGHTS_CONNECTION_STRING;
   if (!connectionString) {
     logger.info('Telemetry disabled (no APPLICATIONINSIGHTS_CONNECTION_STRING)');
     return;
