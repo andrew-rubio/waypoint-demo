@@ -81,6 +81,13 @@ The same agent is **hosted on Microsoft Foundry Agent Service**, and both the ho
 and the deployed **ACA web app** emit **GenAI OpenTelemetry traces** to the Application
 Insights linked to the Foundry project. So after chatting on the web app:
 
+> **Two runtime modes.** By default the ACA `api` runs the agent locally and self-traces to
+> App Insights (visible under **Observability**, but *not* the per-agent Conversation view).
+> To populate the agent's **Traces → Conversation view**, set `FOUNDRY_AGENT_RESPONSES_URL`
+> on the ACA `api` (option C) so `/api/chat` **proxies each turn to the Foundry-hosted
+> agent** — the conversation then runs on the platform and appears as a real agent thread.
+> This is already enabled on the deployed `ca-api`.
+
 1. Have a conversation on the deployed web app (e.g. the June food-and-beaches journey above).
 2. Open the **Foundry portal → your project → agent `waypoint-agent` → Observability** (it
    reads the linked App Insights / Log Analytics workspace `log-dnszpz4hqfi7g`).

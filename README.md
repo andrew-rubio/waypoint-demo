@@ -64,6 +64,15 @@ Browser ──► Next.js (web) ──► Route Handler proxy ──► Express 
   trace + conversation audit in the **Foundry portal → agent → Observability**. Read them
   in the backing Log Analytics workspace via the `App*` tables (`AppRequests` /
   `AppDependencies` / `AppTraces`), not the classic `dependencies`/`customEvents` names.
+- **Route the front-end through the hosted agent (option C):** set
+  `FOUNDRY_AGENT_RESPONSES_URL` (the agent's platform Responses endpoint) on the ACA `api`
+  and `/api/chat` **proxies each turn to the Foundry-hosted agent** instead of running the
+  local runtime ([`src/api/src/agent/foundry-agent-proxy.ts`](src/api/src/agent/foundry-agent-proxy.ts),
+  managed-identity token for audience `https://ai.azure.com`, needs the **Azure AI User**
+  role). The turn then runs on the platform, so browser conversations populate the agent's
+  **Traces → Conversation view**. Unset the variable to run the local Copilot SDK runtime
+  (which self-traces to App Insights). The web app is unchanged either way — the proxy maps
+  the Responses SSE back to the `AgentEvent` stream.
 - **Evaluate & govern:** offline golden-dataset evaluations ([FRD-008](specs/frd-agent-evaluation-and-quality.md)) and governance — RBAC/managed identity, content safety, immutable versions, CI quality gate ([FRD-009](specs/frd-governance-and-observability.md)).
 
 ---
