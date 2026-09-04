@@ -34,3 +34,20 @@
 **Recommendation:** option 1. `APPLICATIONINSIGHTS_CONNECTION_STRING` is a reserved
 platform-injected name, so do NOT set it directly in `azure.yaml` (use option 2's alias if
 going that route).
+
+## Progress (2026-09-04)
+- Portal App Insights link + redeploy did **not** inject the connection string into the
+  container, and setting `APPLICATIONINSIGHTS_CONNECTION_STRING` in `azure.yaml` is **rejected**
+  (reserved, 400). → Went with option 2: driver now also reads
+  **`WAYPOINT_APPINSIGHTS_CONNECTION_STRING`** (commit `ad1d4ad`); value set in the azd env
+  (not committed), referenced from `azure.yaml`. Deployed **v6**.
+- **Telemetry confirmed initialising** in the hosted container (log:
+  `Azure Monitor OpenTelemetry initialised`), connection string = `appi-dnszpz4hqfi7g`.
+- **But spans still don't appear in App Insights** after ~7 min (well past ingestion lag).
+
+### Leading hypothesis + fix
+Foundry hosted-agent containers are **suspended between requests**, so the OTel
+**BatchSpanProcessor** (async ~5s export timer) is frozen before it flushes — spans are created
+but never exported. **Fix:** `forceFlush()` the tracer provider at the end of each turn (in
+`traceAgentTurn`'s `finally`), or use a synchronous exporter, so spans are sent before the
+response returns. Requires a small code change + rebuild + redeploy.
