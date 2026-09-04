@@ -135,3 +135,31 @@ Smoke test (`azd ai agent invoke`) returned `status: completed` and used the **r
   ok:true`) but no reply text streamed through. The real `CopilotAgentDriver` emits tokens
   differently than the deterministic local driver used in the emulation; investigate via
   `azd ai agent monitor` / App Insights traces (dovetails with INC-10 observability).
+
+### Empty-reply diagnosis (2026-09-04)
+Root cause is **model auth**, not the adapter. Confirmed from container logs + invokes:
+- Container starts on 8088 and selects the **real** driver (`Using Copilot SDK agent driver
+  (BYOK → Microsoft Foundry)`, `gpt-5.4-mini`). Tools work in-sandbox (a `wikipedia.summary`
+  turn returned real data, `ok:true`) — so network egress + skills/MCP are fine.
+- The Copilot SDK model call to the BYOK endpoint (`aif-...openai.azure.com/openai/v1/`,
+  audience `cognitiveservices.azure.com`) returns **no `assistant.message_delta`** and throws
+  no error → the driver's `reply` is empty → `'Response generated.'` fallback + empty
+  `output_text`. Signature of a fast **401** the SDK swallows.
+- Account role check: only `a5eaefb0` (the main ACA app's **user-assigned** MI) and a user
+  hold **Cognitive Services OpenAI User** on the account — that's why `main` works. The
+  hosted container runs as a **different** identity.
+- Granted **Cognitive Services OpenAI User** to the project MI (`8369dca9`) and account MI
+  (`3050e023`) — **still empty**. So the hosted container uses a **dedicated
+  platform-created agent identity** (per Foundry docs), OR data-plane RBAC hasn't propagated.
+
+**Two candidate fixes (next session):**
+1. **Foundry-intended path (recommended):** point model access at the platform-injected
+   **`FOUNDRY_PROJECT_ENDPOINT`** OpenAI-compatible surface, which the agent identity can
+   reach **by default** — instead of the account's `openai.azure.com` BYOK endpoint. Needs a
+   driver/config change + rebuild + redeploy.
+2. **Grant the agent identity:** find the dedicated agent identity's principal (via the agent
+   resource / a trace) and grant it **Cognitive Services OpenAI User** on the account; or wait
+   out data-plane propagation and re-test the existing grants.
+
+Core INC-9 (harness hosted on Foundry, `responses` protocol, tools, real driver selected) is
+**done**; this is a model-auth refinement.
