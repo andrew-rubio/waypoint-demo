@@ -63,6 +63,22 @@ async function ensureConversation(sessionId: string, bearer: string): Promise<st
   }
 }
 
+/**
+ * Ensure the session's Foundry conversation exists and return its id, so the
+ * caller can tag its own telemetry with the same `gen_ai.conversation.id`.
+ */
+export async function ensureConversationId(sessionId: string): Promise<string | undefined> {
+  const url = foundryAgentUrl();
+  if (!url) return undefined;
+  try {
+    const bearer = (await getCredential().getToken(AGENT_AUDIENCE)).token;
+    return await ensureConversation(sessionId, bearer);
+  } catch (err) {
+    logger.warn({ err: String(err) }, 'ensureConversationId failed');
+    return undefined;
+  }
+}
+
 interface ProxyInput {
   message: string;
   sessionId: string;

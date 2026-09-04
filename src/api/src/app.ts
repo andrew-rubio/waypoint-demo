@@ -4,7 +4,7 @@ import { validateChatRequest } from './validation/chat.js';
 import { redactSecrets } from './security/redact.js';
 import { createSessionStore } from './session/store.js';
 import { runAgent } from './agent/runtime.js';
-import { runViaFoundryAgent, foundryAgentUrl } from './agent/foundry-agent-proxy.js';
+import { runViaFoundryAgent, foundryAgentUrl, ensureConversationId } from './agent/foundry-agent-proxy.js';
 import { parseResponsesRequest, streamResponses, collectResponse } from './responses/openai-responses.js';
 import { traceAgentTurn } from './telemetry/agent-spans.js';
 import { logger } from './logger.js';
@@ -72,8 +72,12 @@ export function createApp(): Express {
     try {
       // Option C: when configured, route the turn through the Foundry-hosted agent
       // so it runs on the platform and appears in the agent's Conversation view.
-      // Otherwise run the local Copilot SDK runtime and trace the turn ourselves.
+      // Otherwise run the local Copilot SDK runtime.
       const viaFoundry = !!foundryAgentUrl();
+      // Ensure the Foundry conversation exists first, so our own audit trace can be
+      // tagged with the same conversation id (reliable rich detail — ca-api isn't
+      // frozen like the hosted sandbox, whose OTel exports only land intermittently).
+      const conversationId = viaFoundry ? (await ensureConversationId(sessionId)) ?? sessionId : sessionId;
       // Redact at the boundary (FR-001-10).
       const redacted = (async function* () {
         const source = viaFoundry
@@ -83,10 +87,8 @@ export function createApp(): Express {
           yield redactSecrets(event);
         }
       })();
-      // The hosted agent emits its own traces; only self-trace the local path (INC-10, ADR-011).
-      const stream = viaFoundry
-        ? redacted
-        : traceAgentTurn(redacted, { conversationId: sessionId, turnId: randomUUID(), model, userMessage: message });
+      // Always self-trace (INC-10, ADR-011), correlating proxied turns to the Foundry conversation.
+      const stream = traceAgentTurn(redacted, { conversationId, turnId: randomUUID(), model, userMessage: message });
       for await (const event of stream) {
         if (event.type === 'token') reply += event.value;
         res.write(`data: ${JSON.stringify(event)}\n\n`);
