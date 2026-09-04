@@ -137,3 +137,19 @@ AppRequests | where Name=='invoke_agent' | project TimeGenerated,
 // every audit item as trace events
 AppTraces | where Message startswith 'gen_ai' | summarize count() by Message
 ```
+
+### Reliable demo path — ACA emits to the Foundry-linked App Insights (2026-09-04)
+Foundry hosted-agent trace delivery proved **unreliable** here (only 1 of ~10 turns landed —
+the sandbox appears to freeze the container before the export POST completes). Fix for the
+demo: the **ACA `api`** (not frozen) emits the *same* traces to the *same* App Insights the
+Foundry project is linked to, so a live web-app chat shows in the Foundry portal Observability.
+Wiring (runtime, on `ca-api-dnszpz4hqfi7g`):
+```
+az containerapp update -n ca-api-dnszpz4hqfi7g -g rg-waypoint \
+  --image acrdnszpz4hqfi7g.azurecr.io/waypoint/waypoint-agent:inc9 \
+  --set-env-vars "APPLICATIONINSIGHTS_CONNECTION_STRING=<appi cs>" "OTEL_SERVICE_NAME=waypoint-agent"
+```
+The `inc9` image is the branch api code (telemetry + `/responses`); the driver reads
+`FOUNDRY_MODEL_URL` (already set on ACA) so the model still works. Verified: ACA `/api/chat`
+streams a full real-model turn (copilot.chat + destination-advisor + travel-guide + cosmos +
+personalise). Traces attribute to role **`waypoint-agent`**.

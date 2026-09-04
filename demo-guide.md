@@ -75,7 +75,29 @@ Show the complete traveller experience, calling out the live loading status betw
 6. **Total it** \u2014 `Show the total in euros.` \u2192 budget total converted live (rate + timestamp in the audit).
 
 Open the **Audit panel** at any point: every step shows its decision, tool/MCP call and result \u2014 never the model's hidden reasoning.
+### 1c. Observability in the Foundry portal (agentic factory)
 
+The same agent is **hosted on Microsoft Foundry Agent Service**, and both the hosted agent
+and the deployed **ACA web app** emit **GenAI OpenTelemetry traces** to the Application
+Insights linked to the Foundry project. So after chatting on the web app:
+
+1. Have a conversation on the deployed web app (e.g. the June food-and-beaches journey above).
+2. Open the **Foundry portal → your project → agent `waypoint-agent` → Observability** (it
+   reads the linked App Insights / Log Analytics workspace `log-dnszpz4hqfi7g`).
+3. Show the **`invoke_agent`** trace for the turn — it carries the **dialogue** (the
+   traveller's message + the assistant's reply) and **every audit item as trace events**:
+   `gen_ai.agent.decision`, `gen_ai.tool.call` / `gen_ai.tool.result`, each tagged with its
+   type — **mcp** (Open-Meteo, RouteStack, travel-guide), **data** (Cosmos), **skill**
+   (destination-advisor, weather-window, …), and the **model** chat. It's the *same* audit
+   trail from the web panel, now in Foundry's management plane.
+
+> Read the traces in the workspace `App*` tables (`AppRequests` / `AppDependencies` /
+> `AppTraces`), or the portal Observability / Transaction view. Talk track: this is the
+> **run → observe → govern** half of an *agentic factory* — planning/building via spec2cloud,
+> running on Foundry Agent Service, observing via GenAI traces, and governing via evaluations
+> ([FRD-008](specs/frd-agent-evaluation-and-quality.md)) and RBAC/content-safety/version gates
+> ([FRD-009](specs/frd-governance-and-observability.md)). See
+> [ADR-010](specs/adrs/adr-010-foundry-agent-service-hosting.md) / [ADR-011](specs/adrs/adr-011-otel-genai-traces.md).
 ### 2. Show The Product Contract
 
 Open `specs/frd-destination-advice.md`.

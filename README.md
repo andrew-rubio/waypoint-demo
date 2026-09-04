@@ -42,6 +42,32 @@ Browser ──► Next.js (web) ──► Route Handler proxy ──► Express 
 
 ---
 
+## Hosted on Microsoft Foundry Agent Service (+ observability)
+
+> Branch `spec2cloud/foundry-hosted`. The **same Copilot SDK harness** also runs as a
+> **Foundry hosted agent**, so the Foundry portal becomes the management plane — the
+> *run / observe / govern* half of an agentic factory. See [ADR-010](specs/adrs/adr-010-foundry-agent-service-hosting.md), [ADR-011](specs/adrs/adr-011-otel-genai-traces.md).
+
+- **`responses` protocol (INC-9):** the API exposes an OpenAI-compatible `POST /responses`
+  ([`src/api/src/responses/openai-responses.ts`](src/api/src/responses/openai-responses.ts))
+  that maps the `AgentEvent` stream to the Responses SSE lifecycle. `/api/chat` (SSE) is
+  kept for the web app. Deployed to Foundry as an immutable agent version via `azd` from
+  the separate [`foundry/azure.yaml`](foundry/azure.yaml) project (container deploy; the
+  driver reads `WAYPOINT_*` model env aliases because `FOUNDRY_*` is platform-reserved).
+- **GenAI traces (INC-10):** [`src/api/src/telemetry`](src/api/src/telemetry) emits
+  OpenTelemetry **GenAI** spans + events that mirror the audit trail — the **dialogue**
+  (`waypoint.user_message` / `waypoint.assistant_reply`) and **every audit item**
+  (`gen_ai.agent.decision`, `gen_ai.tool.call`, `gen_ai.tool.result`) tagged with its
+  type (mcp / skill / api / model) — to the App Insights linked to the Foundry project.
+- **Same traces from ACA:** the Container Apps `api` emits the *same* traces (role
+  `waypoint-agent`) to that App Insights, so a live chat on the web app shows up as a
+  trace + conversation audit in the **Foundry portal → agent → Observability**. Read them
+  in the backing Log Analytics workspace via the `App*` tables (`AppRequests` /
+  `AppDependencies` / `AppTraces`), not the classic `dependencies`/`customEvents` names.
+- **Evaluate & govern:** offline golden-dataset evaluations ([FRD-008](specs/frd-agent-evaluation-and-quality.md)) and governance — RBAC/managed identity, content safety, immutable versions, CI quality gate ([FRD-009](specs/frd-governance-and-observability.md)).
+
+---
+
 ## What the agent can do
 
 | Capability | How it works | Audit calls |

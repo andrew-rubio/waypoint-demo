@@ -12,6 +12,12 @@ events back to the UI. This FRD establishes the end-to-end "message in → strea
 reply out" loop with an empty tool set; later FRDs register skills and MCP servers into
 this runtime.
 
+> **Foundry hosting (INC-9, ADR-010):** the same runtime is additionally hosted on
+> **Microsoft Foundry Agent Service** via an OpenAI-compatible **`responses`** surface
+> (`POST /responses`) that maps the `AgentEvent` stream to the Responses SSE lifecycle;
+> `/api/chat` is retained for the web app. **Observability (INC-10, ADR-011):** each turn
+> also emits GenAI OpenTelemetry traces (see FRD-002).
+
 ## Personas
 
 - **Traveller** — sends messages, reads streamed replies.
