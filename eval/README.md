@@ -68,17 +68,21 @@ the account's managed identity and the running user).
 
 ## Notes
 
-- Each smoke query runs as an **independent single turn**, so scenarios that are
-  inherently follow-ups (e.g. "show that in euros", "book the first flight") have
-  no prior context and score lower on the rubric — that is expected, not a
-  regression. Multi-turn threading is a future enhancement.
+- The hosted agent is **stateless per request**, so inherent follow-ups can't be
+  evaluated cold (a bare "book the first flight" has no prior search, and a Foundry
+  conversation only threads text, not the structured trip state). The smoke slice
+  rewrites those three turns (`book…`, `summarise…`, `show that in euros`) into
+  **self-contained turns** that build the trip and do the follow-up in one request,
+  with dates computed ~3 months out so they stay in the future for CI.
 - The rubric prompt judges **shape and intent** (e.g. "exactly one clarifying
   question", "a grounded weather figure", "a currency conversion"), not real-time
   factual values the judge model cannot verify.
-- The judge deployment (`gpt-5.4-mini`) needs enough capacity for the burst of
-  judge calls (7 evaluators × N rows). Too little and rows fail with HTTP 429 and
-  score 0 — which looks like a quality drop but is throttling. The deployment is
-  set to 100 GlobalStandard units for this reason.
+- The judge deployment (`gpt-5.4-mini`) needs capacity for the burst of judge
+  calls (7 evaluators × N rows, fired concurrently by the eval service). Too little
+  and rows fail with HTTP 429 and score 0 — which looks like a quality drop but is
+  throttling. The deployment is set to **500 GlobalStandard units**. `task_adherence`
+  is the heaviest built-in (it ingests the full tool trace) and stays 429-prone even
+  so, which is why it is **reported but not gated**.
 - Endpoint, model, and dataset paths are overridable via `--endpoint`, `--model`,
   `--input`, `--name` (see `python eval/evaluate.py --help`) or env vars
   `FOUNDRY_PROJECT_ENDPOINT`, `FOUNDRY_EVAL_MODEL`, `WAYPOINT_EVAL_INPUT`.
@@ -90,13 +94,20 @@ touches `src/`, `specs/features/`, or `eval/`, and **fails the build if quality
 regresses** below the thresholds in [`gate.json`](gate.json):
 
 ```json
-{ "relevance": 0.9, "intent_resolution": 0.75, "task_adherence": 0.8 }
+{
+  "relevance": 0.83,
+  "intent_resolution": 0.75,
+  "weather_grounding": 0.83,
+  "guide_grounding": 0.83,
+  "one_clarifying_question": 0.75
+}
 ```
 
 `evaluate.py --gate eval/gate.json` computes each evaluator's pass rate and exits
 non-zero if any gated criterion is below its floor. Only listed evaluators block;
-others (e.g. `gherkin_rubric`) are reported but informational — the rubric stays
-ungated until multi-turn threading lands, since single-turn follow-ups depress it.
+others (`gherkin_rubric`, `task_adherence`) are reported but informational — the
+rubric is deliberately strict, and `task_adherence` is 429-prone. Thresholds carry
+~1 row of slack (12-row smoke set) to absorb normal judge variance.
 
 Make the `eval-gate` job a **required status check** (branch protection on `main`)
 so a regressing change cannot merge, and therefore cannot reach deploy.

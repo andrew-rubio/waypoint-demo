@@ -49,6 +49,36 @@ for (const sel of selectors) {
   picked.push({ ...row, smoke_reason: sel.why });
 }
 
+// Follow-up turns can't be evaluated cold: the hosted agent is stateless per
+// request, so a bare "book the first flight" has no prior search to act on and a
+// Foundry conversation only threads text, not the structured trip state. Instead
+// we rewrite these into self-contained turns that build the trip and then do the
+// follow-up in one request. Dates are computed ~3 months out so they stay in the
+// future whenever the dataset is regenerated (durable for CI).
+const d1 = new Date();
+d1.setMonth(d1.getMonth() + 3);
+const d2 = new Date(d1);
+d2.setDate(d2.getDate() + 4);
+const fmt = (d) => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+const trip = `Find flights and hotels for Lisbon departing London on ${fmt(d1)} returning ${fmt(d2)}`;
+const rewrites = {
+  'book the first flight': `${trip}, then book the first flight and the first hotel.`,
+  'summarise the trip and total cost': `${trip}, then summarise the trip and total cost.`,
+  'show that in euros': `${trip}, summarise the trip and total cost, then show that total in euros.`,
+};
+for (const r of picked) {
+  for (const [frag, rewritten] of Object.entries(rewrites)) {
+    if (r.query.toLowerCase().includes(frag.toLowerCase())) {
+      r.query = rewritten;
+      r.self_contained = true;
+      break;
+    }
+  }
+}
+
 writeFileSync(outFile, picked.map((r) => JSON.stringify(r)).join('\n') + '\n', 'utf8');
 console.log(`Wrote ${picked.length} smoke rows -> .foundry/datasets/waypoint-agent-smoke-v1.jsonl`);
-for (const r of picked) console.log(`  [${feature(r)}] ${r.query}  (${r.smoke_reason})`);
+for (const r of picked) {
+  const tag = r.self_contained ? ' [self-contained follow-up]' : '';
+  console.log(`  [${feature(r)}] ${r.query.slice(0, 70)}  (${r.smoke_reason})${tag}`);
+}
