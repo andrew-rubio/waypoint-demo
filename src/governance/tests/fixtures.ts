@@ -106,6 +106,7 @@ export function sampleProposition(): PropositionDeclaration {
     accountableOwner: 'Demo Proposition Owner (placeholder)',
     sourceRequirementRef: 'specs/prd.md',
     prdRequirementIds: ['PRD-1'],
+    approvedTools: ['routestack', 'open-meteo', 'currency', 'cosmos', 'travel-guide'],
     characteristics: {
       usesLLM: true,
       handlesPersonalData: true,

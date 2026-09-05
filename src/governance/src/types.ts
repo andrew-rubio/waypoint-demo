@@ -38,6 +38,8 @@ export const PropositionDeclaration = z.object({
   accountableOwner: z.string().min(1),
   sourceRequirementRef: z.string().min(1),
   prdRequirementIds: z.array(z.string()).default([]),
+  /** MCP servers/tools governance has approved for this proposition (allowlist). */
+  approvedTools: z.array(z.string()).default([]),
   characteristics: PropositionCharacteristics,
   /** Fields the agent-assist flagged as ambiguous/high-impact and awaiting human confirmation. */
   unresolved: z.array(z.string()).default([]),
