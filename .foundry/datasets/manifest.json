@@ -1,0 +1,17 @@
+{
+  "agent": "waypoint-agent",
+  "datasets": [
+    {
+      "name": "waypoint-agent-eval-seed",
+      "version": "v1",
+      "stage": "seed",
+      "file": ".foundry/datasets/waypoint-agent-eval-seed-v1.jsonl",
+      "source": "specs/features/*.feature (approved Gherkin behaviour specs)",
+      "generator": "eval/generate-dataset.mjs",
+      "generatorCommand": "npm run eval:dataset",
+      "schema": "query, expected_behavior, context, expected_tools[], preconditions[], source",
+      "note": "Golden dataset for FRD-008 agent evaluation. Rows are derived 1:1 from approved Gherkin scenarios (When->query, Then->expected_behavior, tool asserts->expected_tools). Regenerate whenever the feature files change; do not hand-edit the JSONL.",
+      "datasetUri": null
+    }
+  ]
+}

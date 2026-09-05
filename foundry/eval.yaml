@@ -1,0 +1,17 @@
+name: waypoint-smoke
+agent:
+    name: waypoint-agent
+    kind: hosted
+dataset:
+    local_uri: C:\Users\andrewrubio\VS Code Projects\waypoint-demo\.foundry\datasets\waypoint-agent-smoke-v1.jsonl
+evaluators:
+    - builtin.intent_resolution
+    - builtin.task_adherence
+    - builtin.tool_call_accuracy
+    - builtin.relevance
+    - name: waypoint-smoke
+      version: "1"
+      local_uri: evaluators\waypoint-smoke\rubric_dimensions.json
+options:
+    eval_model: gpt-5.4-mini
+max_samples: 15

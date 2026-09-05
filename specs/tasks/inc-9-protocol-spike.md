@@ -1,0 +1,192 @@
+# INC-9 spike — Foundry hosted-agent protocol & adapter
+
+> Research spike for **INC-9** (ADR-010). Read-only: no `azd provision`/`deploy` (those
+> need auth + create cloud resources). Grounded in the `microsoft-foundry` skill
+> (`invoke`, `invocations-ws`, `create-hosted`, `azd-ai-cli`, `local-run`) on 2026-09-03
+> and the current API (`src/api`).
+
+## Objective
+
+Confirm which Foundry hosted-agent **protocol** Waypoint should expose, the **deploy
+mode**, and the shape of the **adapter** over `runAgent()` — before writing code.
+
+## Findings
+
+### 1. Protocol → `responses` (OpenAI-compatible)
+| Protocol | Fit for Waypoint |
+|----------|------------------|
+| **`responses`** | ✅ **Chosen.** "Best for: chat"; HTTPS + OpenAI-compatible JSON with `stream: true` (SSE) — maps directly onto our existing SSE. Platform-managed history via `conversationId`. Native `azd ai agent invoke`, `sessions`, `monitor`, and **eval** tooling. |
+| `invocations` | Raw bytes, developer-defined, single req/resp. Works, but loses the native chat/eval affordances. |
+| `invocations_ws` | WebSocket duplex for **voice/real-time** — overkill; more infra, no chat/eval benefit. |
+
+### 2. Deploy mode → container (BYO), reuse existing image
+- `azure.yaml` service block `host: azure.ai.agent`, `kind: hosted`, `protocols: [{ protocol: responses, version: 1.0.0 }]`, container deploy of the existing [src/api/Dockerfile](../../src/api/Dockerfile) (Node 22, tsx). Bump `container.resources` from the scaffold default `0.25 cpu / 0.5Gi`.
+- Model deployment via `services.ai-project.deployments[]`; agent references it through `environmentVariables` (our `FOUNDRY_MODEL_URL` / `FOUNDRY_MODEL` map onto `AZURE_AI_MODEL_DEPLOYMENT_NAME` + project endpoint).
+
+### 3. Adapter shape (additive; keeps `/api/chat` for Web)
+- Add an **OpenAI-compatible `responses` HTTP route** + a **readiness endpoint** alongside the existing [POST /api/chat](../../src/api/src/app.ts) SSE handler.
+- Map request `input`/`messages` → `runAgent({ message, history, sessionId })`, keying history off the platform `conversationId`.
+- Map the `AgentEvent` stream → the `responses` streaming envelope: `token` → output-text delta; `tool_call`/`tool_result` → function/tool-call items (so `tool_call_accuracy` eval can read them); `done` → completed; `error` → error. Reuse `redactSecrets` at the boundary (FR-001-10).
+
+### 4. Auth & secrets
+- The **container does not receive the `Authorization` header** (APIM/Agents service strip it after validation) — do not depend on it. Model auth stays **managed identity** (ADR-005); no secrets in the image; all env from the azd environment.
+
+### 5. Observability / eval
+- Traces via **ADR-011** (GenAI OTel spans) → App Insights linked to the project.
+- Native `azd ai agent eval generate/run`, `monitor`, and `sessions` become available once deployed (FRD-008 / FRD-009).
+
+## Remaining validation (needs an azd scaffold or auth — do at INC-9 kickoff)
+1. **Exact `responses` wire contract for a BYO *Node* container** — the route path, request/response JSON schema, streaming event names, and the **readiness probe path/port** the host expects. (The `azure-ai-agentserver-*` host auto-provides these for Python; a Node BYO container implements them.) Confirm by `azd ai agent init` of a `responses` sample and inspecting, or from current docs.
+2. **Tool-call surfacing** — best representation of `tool_call`/`tool_result` in the `responses` envelope so `tool_call_accuracy` scores correctly (function-call items vs annotations).
+3. **`conversationId` reconciliation** — platform-managed conversation vs our in-memory session store; pick one as source of truth (lean on platform `conversationId`).
+
+## Live findings — sample catalog + `responses` contract (2026-09-03)
+
+Ran `azd ai agent sample list` (azd 1.33.0 + `microsoft.foundry` ext) and inspected the
+official **`responses/hello-world`** sample.
+
+### A. Sample catalog is Python/C# only — **no Node/TypeScript**
+- Catalog languages: **33 Python, 11 C#, 0 Node/TS**.
+- The host SDKs that implement the protocol (`azure-ai-agentserver-responses` /
+  `-invocations`) — which provide the **HTTP endpoints, SSE lifecycle, health probes, and
+  automatic GenAI OTel tracing** — ship for **Python and C# only**. There is **no Node host
+  SDK or sample**. `azd ai agent run` *does* detect a Node project, but a Node agent must
+  **hand-implement** the protocol contract.
+
+### B. Confirmed `responses` wire contract (language-agnostic HTTP)
+- Route: **`POST /responses`** on port **8088**; health probe served by the host.
+- Request: OpenAI Responses shape — `{ "input": "...", "stream": true|false }`.
+- Response: OpenAI Responses **SSE lifecycle** — `response.created` → `response.in_progress`
+  → content delta events → `response.completed`.
+- Env (auto-injected in hosted containers): `FOUNDRY_PROJECT_ENDPOINT`,
+  `AZURE_AI_MODEL_DEPLOYMENT_NAME`, `APPLICATIONINSIGHTS_CONNECTION_STRING`.
+- `azure.yaml`: a `services.ai-project` (host `azure.ai.project`) with `deployments[]`
+  (sample uses **`gpt-5.4-mini`** — the same model as ADR-005) + a `services.<agent>`
+  (host `azure.ai.agent`, `kind: hosted`, `protocols: [{ responses, version 2.0.0 }]`,
+  `uses: [ai-project]`); `infra.provider: microsoft.foundry`. Deploy mode = **Code (ZIP)**
+  or **Container (Docker image via ACR)**; images must be **linux/amd64**.
+
+### C. Decision fork (changes ADR-010's "reuse the Node image as-is" assumption)
+| Path | What | Pros | Cons |
+|------|------|------|------|
+| **A — Node BYO container** | Add `POST /responses` + health route to the existing Express image; hand-map `AgentEvent` → OpenAI Responses SSE events. | Copilot SDK harness *is* the hosted agent; **one container**; TS-monorepo intact; ADR-011 already commits us to manual OTel. | No first-party SDK for the SSE lifecycle/health — **hand-implement + validate**; slightly higher protocol risk. |
+| **B — Python/C# SDK shim → Node** | A thin `azure-ai-agentserver-responses` agent that proxies each turn to the Node Copilot-SDK service. | SDK-correct protocol + health + **auto OTel**; lowest protocol risk. | **Two runtimes/containers** + an internal streaming hop; tool spans still emitted from Node; more moving parts (against the demo north star). |
+
+**Spike recommendation: Path A.** It preserves the ADR-001/ADR-010 thesis (the Copilot SDK
+harness is the hosted agent, one container), the `responses` surface is small and now
+documented, and we already own manual OTel via ADR-011. Mitigate the protocol risk by using
+the Python `hello-world` sample as the exact contract reference and validating locally with
+`azd ai agent invoke --local` + `curl POST /responses` before any deploy.
+
+## Outcome
+- Protocol = **`responses`** (`POST /responses`, OpenAI SSE lifecycle, port 8088).
+- **New decision needed (updates ADR-010):** Path A (Node BYO container) vs Path B (SDK shim).
+  Spike recommends **A**. Awaiting confirmation before authoring the adapter + `azure.yaml`
+  agent service.
+
+## Local validation (2026-09-03) — Path A adapter + container
+
+- **Adapter (server + curl):** `POST /responses` returns a valid OpenAI Response object
+  (non-stream) and the SSE lifecycle (stream); tool calls surface as `function_call` items.
+- **Container emulation (Docker):** built `src/api/Dockerfile` → `waypoint-agent:local`,
+  ran on `:8088`. `/readiness` OK; `POST /responses` produced the **full SSE lifecycle**
+  (`response.created` → `in_progress` → 24× `output_text.delta` → 6× `output_item.added/done`
+  tool items → `output_text.done` → `response.completed`) and a non-stream Response with 4
+  `function_call` items. **The container serves the Foundry `responses` contract correctly.**
+
+### ⚠ azd packaging constraint (affects deploy structure)
+`azd ai agent run`/`deploy` reject a hosted-agent whose `project:` is **outside the azd
+project directory**: `invalid service path ... relative path "..\src\api" must not contain '..'`.
+So the separate `foundry/azure.yaml` with `project: ../src/api` + `docker.context: ../..`
+**cannot build from source** via azd in our monorepo layout. Resolution options for the
+deploy step (INC-9 step 3):
+1. **Pre-built `image:`** — `docker build` the api image, push to the existing ACR
+   (`acrdnszpz4hqfi7g`), and set the agent service `image:` (no `project:`/`docker:` → no
+   `..` violation). Keeps the separate `foundry/` project; azd reuses the pre-built image.
+2. **Self-contained project** — relocate/copy the build context under `foundry/` (heavier).
+3. **Merge into root `azure.yaml` on the branch** — separation via git branch, but risks the
+   ACA infra provider; not preferred.
+**Recommendation: option 1** (pre-built `image:`), preserving the separate azd project and the
+proven Dockerfile. Local model auth for the real Copilot SDK path is deferred to deploy
+(managed identity has the `Cognitive Services OpenAI User` role; the local emulation used the
+deterministic local driver, which is sufficient to prove the protocol/container).
+
+## Deployment (2026-09-03) — DEPLOYED ✅
+
+Deployed to the existing `waypoint` Foundry project via `azd deploy` (pre-built `image:`),
+agent **version 4 active**. Endpoint:
+`.../projects/waypoint/agents/waypoint-agent/endpoint/protocols/openai/responses?api-version=v1`.
+Smoke test (`azd ai agent invoke`) returned `status: completed` and used the **real
+`gpt-5.4-mini`** model (`copilot.chat` `ok:true`) via managed identity.
+
+### Deploy-time constraints hit + fixes (all recorded for the demo narrative)
+1. **`azd` project-path rule** — a hosted-agent `project:` cannot be outside the azd dir →
+   switched to pre-built ACR `image:` (option 1).
+2. **Reserved env namespace** — `FOUNDRY_*`/`AGENT_*` container env names are reserved by the
+   platform (400 `invalid_payload`) → driver now reads **`WAYPOINT_*`** aliases (+
+   `AZURE_AI_MODEL_DEPLOYMENT_NAME`); `main`/local keep `FOUNDRY_*`.
+3. **Image pull RBAC** — `[ImageError]` until the **Foundry _project's_ system-assigned
+   managed identity** (`8369dca9…`, distinct from the account MI and the user-assigned MI)
+   was granted **AcrPull** on the ACR. ARM auth policy was already `enabled`. (Skipping
+   `azd provision` meant this role wasn't auto-wired — a provision would have done it.)
+
+### Open follow-up
+- **Empty `output_text`** on the first hosted invoke: the model call succeeded (`copilot.chat
+  ok:true`) but no reply text streamed through. The real `CopilotAgentDriver` emits tokens
+  differently than the deterministic local driver used in the emulation; investigate via
+  `azd ai agent monitor` / App Insights traces (dovetails with INC-10 observability).
+
+### Empty-reply diagnosis (2026-09-04)
+Root cause is **model auth**, not the adapter. Confirmed from container logs + invokes:
+- Container starts on 8088 and selects the **real** driver (`Using Copilot SDK agent driver
+  (BYOK → Microsoft Foundry)`, `gpt-5.4-mini`). Tools work in-sandbox (a `wikipedia.summary`
+  turn returned real data, `ok:true`) — so network egress + skills/MCP are fine.
+- The Copilot SDK model call to the BYOK endpoint (`aif-...openai.azure.com/openai/v1/`,
+  audience `cognitiveservices.azure.com`) returns **no `assistant.message_delta`** and throws
+  no error → the driver's `reply` is empty → `'Response generated.'` fallback + empty
+  `output_text`. Signature of a fast **401** the SDK swallows.
+- Account role check: only `a5eaefb0` (the main ACA app's **user-assigned** MI) and a user
+  hold **Cognitive Services OpenAI User** on the account — that's why `main` works. The
+  hosted container runs as a **different** identity.
+- Granted **Cognitive Services OpenAI User** to the project MI (`8369dca9`) and account MI
+  (`3050e023`) — **still empty**. So the hosted container uses a **dedicated
+  platform-created agent identity** (per Foundry docs), OR data-plane RBAC hasn't propagated.
+
+**Two candidate fixes (next session):**
+1. **Foundry-intended path (recommended):** point model access at the platform-injected
+   **`FOUNDRY_PROJECT_ENDPOINT`** OpenAI-compatible surface, which the agent identity can
+   reach **by default** — instead of the account's `openai.azure.com` BYOK endpoint. Needs a
+   driver/config change + rebuild + redeploy.
+2. **Grant the agent identity:** find the dedicated agent identity's principal (via the agent
+   resource / a trace) and grant it **Cognitive Services OpenAI User** on the account; or wait
+   out data-plane propagation and re-test the existing grants.
+
+Core INC-9 (harness hosted on Foundry, `responses` protocol, tools, real driver selected) is
+**done**; this is a model-auth refinement.
+
+### Resolution progress (2026-09-04)
+- 30-min propagation retest of the project/account MI grants: **still empty** → those are not
+  the container identity.
+- `azd ai agent show waypoint-agent` exposes the running container identity under
+  **`instance_identity.principal_id = f95192f1-bd6f-410d-83c4-d0078cb809b7`** (there is also a
+  `blueprint` identity `ea91a1fc…`, which **cannot** take role assignments —
+  `PrincipalTypeNotSupported`).
+- Granted **Cognitive Services OpenAI User** on the account to **`f95192f1`** (the instance
+  identity) ✅. Immediate retest still empty, but served **warm in 0.43s** → the running
+  container holds a **cached Entra token**; the new role won't apply until the token refreshes
+  **or the container cold-starts** (idle timeout ~15 min), plus data-plane propagation.
+- **Next:** let the container idle out (~15 min, no invokes), then re-invoke (cold start →
+  fresh token with the new role). If reply text appears, INC-9 is fully green. If it still
+  fails after a genuine cold start + propagation, fall back to fix #1 (project-endpoint model
+  access).
+
+### RESOLVED ✅ (2026-09-04)
+Cold-start retest returned a **full model reply** (`gpt-5.4-mini` recommended Palermo / Split /
+San Sebastián for a Lisbon-like holiday), 16.7s / 6.2s first byte — a genuine cold start with a
+fresh token. **Fix = grant `Cognitive Services OpenAI User` on the `aif-…` account to the
+agent's `instance_identity` (`f95192f1…`), then cold-start** so the container mints a token
+carrying the new role (the warm container had cached the pre-grant token).
+
+**INC-9 is fully green:** the GitHub Copilot SDK harness runs as a Foundry hosted agent
+(`waypoint-agent` v4), serves the `responses` protocol, calls tools/MCP, and generates real
+model text end-to-end. Fix #1 (project-endpoint model access) was **not** needed.

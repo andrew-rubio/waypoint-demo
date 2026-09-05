@@ -39,12 +39,16 @@ function selectDriver(): AgentDriver {
 
 /** Read BYOK → Foundry settings; baseUrl + model + one auth method (key or managed identity) required. */
 function readFoundryConfig(): FoundryProviderConfig | undefined {
-  const baseUrl = process.env.FOUNDRY_MODEL_URL;
-  const apiKey = process.env.FOUNDRY_API_KEY;
-  const model = process.env.FOUNDRY_MODEL;
-  const useManagedIdentity = process.env.FOUNDRY_USE_MANAGED_IDENTITY === 'true';
+  // Foundry Agent Service reserves all FOUNDRY_*/AGENT_* container env names, so when hosted
+  // the same settings arrive under WAYPOINT_* aliases (+ AZURE_AI_MODEL_DEPLOYMENT_NAME).
+  const baseUrl = process.env.FOUNDRY_MODEL_URL ?? process.env.WAYPOINT_MODEL_URL;
+  const apiKey = process.env.FOUNDRY_API_KEY ?? process.env.WAYPOINT_API_KEY;
+  const model = process.env.FOUNDRY_MODEL ?? process.env.WAYPOINT_MODEL ?? process.env.AZURE_AI_MODEL_DEPLOYMENT_NAME;
+  const useManagedIdentity =
+    process.env.FOUNDRY_USE_MANAGED_IDENTITY === 'true' || process.env.WAYPOINT_USE_MANAGED_IDENTITY === 'true';
   if (!baseUrl || !model || (!apiKey && !useManagedIdentity)) return undefined;
-  const wireApi = process.env.FOUNDRY_WIRE_API === 'completions' ? 'completions' : 'responses';
+  const wire = process.env.FOUNDRY_WIRE_API ?? process.env.WAYPOINT_WIRE_API;
+  const wireApi = wire === 'completions' ? 'completions' : 'responses';
   return { baseUrl, apiKey, model, wireApi, useManagedIdentity };
 }
 

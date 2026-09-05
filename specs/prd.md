@@ -62,6 +62,38 @@ for scale.
 
 ---
 
+## Extension: Foundry Agent Service hosting & the agentic factory
+
+> Added for the C-level RFI (branch `spec2cloud/foundry-hosted`). Scope: show a *true
+> organisational agentic factory* — how agents are **planned, built, run, observed, and
+> governed** at scale — while **keeping the GitHub Copilot SDK as the agent harness**.
+
+Waypoint is additionally **hosted on Microsoft Foundry Agent Service** so the Foundry
+portal becomes the management plane over the same Copilot SDK agent:
+
+- **Run (INC-9, ADR-010):** the Express + Copilot SDK harness is packaged as a Foundry
+  **hosted agent** speaking the OpenAI-compatible **`responses`** protocol (`POST
+  /responses`), deployed as an immutable agent version via `azd`. The existing `/api/chat`
+  SSE surface is retained for the web app. The model stays a **Foundry deployment** via
+  managed identity (ADR-005).
+- **Observe (INC-10, ADR-011):** every turn emits **GenAI OpenTelemetry** traces that
+  mirror the audit trail — the **dialogue** (user message + assistant reply) and **every
+  audit item** (decision, MCP/tool call, Cosmos/data call, skill, model chat), each tagged
+  with its audit type — to **Application Insights** linked to the Foundry project, visible
+  in the portal **Observability** tab. The ACA deployment emits the *same* traces to the
+  same App Insights, so a live chat on the web app appears as a trace + conversation audit
+  in the Foundry portal.
+- **Evaluate (FRD-008):** offline, golden-dataset evaluations (agent, quality, and RAG
+  evaluators) run against the deployed agent, with results in the portal Evaluations tab.
+- **Govern (FRD-009):** RBAC via managed identity (no keys), content-safety filters,
+  immutable agent versions, and a CI quality gate that blocks a regressing deploy.
+
+This is the **plan → build → run → observe → govern** loop: spec2cloud (PRD → FRD →
+Gherkin → increments → ADRs) is the *plan/build* engine; Foundry Agent Service +
+observability + evaluation + governance are the *run/observe/govern* plane.
+
+---
+
 ## User Personas
 
 ### Traveller (primary demo user)

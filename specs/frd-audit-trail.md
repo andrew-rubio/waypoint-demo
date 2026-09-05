@@ -12,6 +12,13 @@ demo: it makes observable orchestration and every external round-trip visible. I
 by SDK events, the permission handler, and application instrumentation established in
 FRD-001. It never requests or displays hidden model reasoning/chain-of-thought.
 
+> **Traces (INC-10, ADR-011):** the same audit-event stream is mirrored to **GenAI
+> OpenTelemetry** traces — the dialogue plus every audit item (decision, MCP/tool, Cosmos/
+> data, skill, model), each tagged with its audit type — exported to the Application Insights
+> linked to the Foundry project and visible in the **Foundry portal Observability** tab. The
+> deployed ACA web app emits the same traces, so a live chat appears as a trace + conversation
+> audit in the portal.
+
 ## Personas
 
 - **Demo Presenter** — toggles the panel and narrates the agent's activity.

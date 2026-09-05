@@ -10,6 +10,8 @@
     "test:unit:watch": "vitest --config src/api/vitest.config.ts",
     "test:bdd": "cross-env NODE_OPTIONS=\"--import tsx\" cucumber-js",
     "test:e2e": "playwright test --config e2e/playwright.config.ts",
+    "eval:dataset": "node eval/generate-dataset.mjs",
+    "eval:run-agent": "node eval/run-agent.mjs",
     "build": "npm -ws --if-present run build",
     "lint": "tsc -p tsconfig.base.json --noEmit"
   },

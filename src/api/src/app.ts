@@ -1,10 +1,23 @@
 import express, { type Express } from 'express';
-import type { AgentEvent } from '../../shared/types/chat-and-agent-runtime.js';
+import { randomUUID } from 'node:crypto';
 import { validateChatRequest } from './validation/chat.js';
 import { redactSecrets } from './security/redact.js';
 import { createSessionStore } from './session/store.js';
 import { runAgent } from './agent/runtime.js';
+import { runViaFoundryAgent, foundryAgentUrl, ensureConversationId } from './agent/foundry-agent-proxy.js';
+import { parseResponsesRequest, streamResponses, collectResponse } from './responses/openai-responses.js';
+import { traceAgentTurn } from './telemetry/agent-spans.js';
 import { logger } from './logger.js';
+
+/** The model deployment name, used for telemetry + the responses payload. */
+function resolveModelName(): string {
+  return (
+    process.env.FOUNDRY_MODEL ??
+    process.env.WAYPOINT_MODEL ??
+    process.env.AZURE_AI_MODEL_DEPLOYMENT_NAME ??
+    'waypoint'
+  );
+}
 
 /**
  * Build the Waypoint API. `POST /api/chat` streams the agent's reply as
@@ -19,6 +32,11 @@ export function createApp(): Express {
 
   app.get('/health', (_req, res) => {
     res.json({ status: 'ok' });
+  });
+
+  // Foundry hosted-agent readiness probe (INC-9, ADR-010).
+  app.get('/readiness', (_req, res) => {
+    res.json({ status: 'ready' });
   });
 
   app.post('/api/chat', async (req, res) => {
@@ -47,25 +65,92 @@ export function createApp(): Express {
     res.setHeader('Connection', 'keep-alive');
     res.flushHeaders?.();
 
-    // Every event is redacted before it leaves the process (FR-001-10).
-    const send = (event: AgentEvent): void => {
-      res.write(`data: ${JSON.stringify(redactSecrets(event))}\n\n`);
-    };
-
     // 3) Record the user's turn, then stream the agent's reply.
     store.append(sessionId, { role: 'user', content: message, ts: new Date().toISOString() });
+    const model = resolveModelName();
     let reply = '';
     try {
-      for await (const event of runAgent({ sessionId, message, history: store.get(sessionId), fault })) {
+      // Option C: when configured, route the turn through the Foundry-hosted agent
+      // so it runs on the platform and appears in the agent's Conversation view.
+      // Otherwise run the local Copilot SDK runtime.
+      const viaFoundry = !!foundryAgentUrl();
+      // Ensure the Foundry conversation exists first, so our own audit trace can be
+      // tagged with the same conversation id (reliable rich detail — ca-api isn't
+      // frozen like the hosted sandbox, whose OTel exports only land intermittently).
+      const conversationId = viaFoundry ? (await ensureConversationId(sessionId)) ?? sessionId : sessionId;
+      // Redact at the boundary (FR-001-10).
+      const redacted = (async function* () {
+        const source = viaFoundry
+          ? runViaFoundryAgent({ message, sessionId, history: store.get(sessionId).slice(0, -1) })
+          : runAgent({ sessionId, message, history: store.get(sessionId), fault });
+        for await (const event of source) {
+          yield redactSecrets(event);
+        }
+      })();
+      // Always self-trace (INC-10, ADR-011), correlating proxied turns to the Foundry conversation.
+      const stream = traceAgentTurn(redacted, { conversationId, turnId: randomUUID(), model, userMessage: message });
+      for await (const event of stream) {
         if (event.type === 'token') reply += event.value;
-        send(event);
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
       }
       if (reply) {
         store.append(sessionId, { role: 'assistant', content: reply, ts: new Date().toISOString() });
       }
     } catch (err) {
       logger.error({ err: String(err) }, 'agent run failed');
-      send({ type: 'error', code: 'agent_unavailable', message: 'The assistant is unavailable right now.' });
+      res.write(`data: ${JSON.stringify({ type: 'error', code: 'agent_unavailable', message: 'The assistant is unavailable right now.' })}\n\n`);
+    } finally {
+      res.end();
+    }
+  });
+
+  // Foundry `responses` protocol surface (INC-9, ADR-010, Path A). Same agent
+  // runtime as /api/chat, mapped to the OpenAI Responses contract so the app can
+  // be hosted on Foundry Agent Service. History is keyed by the conversation id.
+  app.post('/responses', async (req, res) => {
+    const parsed = parseResponsesRequest(req.body);
+    if (!parsed.ok) {
+      res.status(400).json({ error: parsed.error, code: 'invalid_request' });
+      return;
+    }
+    const { input, stream, conversationId, history } = parsed.value;
+    const model = resolveModelName();
+
+    store.append(conversationId, { role: 'user', content: input, ts: new Date().toISOString() });
+    // History comes from the request's input array (stateless) so context survives
+    // across turns regardless of which hosted instance serves the request.
+    const priorTurns = history.length ? history : store.get(conversationId).slice(0, -1);
+    const events = traceAgentTurn(
+      (async function* () {
+        let reply = '';
+        for await (const event of runAgent({ sessionId: conversationId, message: input, history: priorTurns })) {
+          if (event.type === 'token') reply += event.value;
+          yield redactSecrets(event);
+        }
+        if (reply) store.append(conversationId, { role: 'assistant', content: reply, ts: new Date().toISOString() });
+      })(),
+      { conversationId, turnId: randomUUID(), model, userMessage: input },
+    );
+
+    try {
+      if (!stream) {
+        const response = await collectResponse(events, { model });
+        res.status(200).json(response);
+        return;
+      }
+      res.status(200);
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.flushHeaders?.();
+      for await (const frame of streamResponses(events, { model })) {
+        res.write(`event: ${frame.event}\ndata: ${JSON.stringify(frame.data)}\n\n`);
+      }
+    } catch (err) {
+      logger.error({ err: String(err) }, 'responses run failed');
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'agent unavailable', code: 'agent_unavailable' });
+      }
     } finally {
       res.end();
     }

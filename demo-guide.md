@@ -75,6 +75,102 @@ Show the complete traveller experience, calling out the live loading status betw
 6. **Total it** \u2014 `Show the total in euros.` \u2192 budget total converted live (rate + timestamp in the audit).
 
 Open the **Audit panel** at any point: every step shows its decision, tool/MCP call and result \u2014 never the model's hidden reasoning.
+### 1c. Observability — the agent's conversations & audit trail (agentic factory)
+
+The agent is **hosted on Microsoft Foundry Agent Service**; the deployed **ACA web app**
+routes every turn through it (option C) and emits a full **GenAI OpenTelemetry** audit trail
+to the Application Insights linked to the Foundry project. Each web session maps to a Foundry
+**conversation** (`conv_…`) so turns are threaded (they share `gen_ai.conversation.id`).
+
+> **Where to show it — Application Insights (reliable).** The **Foundry portal → agent →
+> Traces** tab is fed by the platform's *own* agent-server telemetry, which the hosted
+> **sandbox drops** when it freezes CPU between requests — so that tab is best-effort in
+> preview. The **complete, reliable** record is our own GenAI trace in the project's App
+> Insights (`appi-dnszpz4hqfi7g`, workspace `log-dnszpz4hqfi7g`). Present it from **Azure
+> portal → `appi-dnszpz4hqfi7g` → Logs** (or Log Analytics → the workspace → Logs).
+> Ingestion lags ~10–15 min, so **chat a few minutes before** the recording.
+
+**Step 1 — list the conversations (the "conversation view"):**
+
+```kusto
+AppDependencies
+| where TimeGenerated > ago(24h)
+| where Name == 'invoke_agent waypoint'
+| extend P = parse_json(Properties)
+| extend conversation = tostring(P['gen_ai.conversation.id']),
+         user  = tostring(P['waypoint.user_message']),
+         reply = tostring(P['waypoint.assistant_reply'])
+| where isnotempty(conversation)
+| summarize firstSeen = min(TimeGenerated) by conversation, user, reply   // collapse duplicate spans
+| summarize turns = count(), started = min(firstSeen), lastActivity = max(firstSeen),
+            arg_min(firstSeen, user) by conversation
+| project conversation, turns, opening = user, started, lastActivity
+| order by lastActivity desc
+```
+
+Copy the `conversation` id of the chat you just had.
+
+**Step 2 — open the thread (the dialogue, turn by turn):**
+
+```kusto
+let convId = "conv_PASTE_ID_HERE";
+AppDependencies
+| where TimeGenerated > ago(24h)
+| where Name == 'invoke_agent waypoint'
+| extend P = parse_json(Properties)
+| where tostring(P['gen_ai.conversation.id']) == convId
+| extend user = tostring(P['waypoint.user_message']),
+         assistant = tostring(P['waypoint.assistant_reply'])
+| summarize turnTime = min(TimeGenerated) by user, assistant   // collapse duplicate spans
+| order by turnTime asc
+| project turnTime, user, assistant
+```
+
+**Step 3 — the full audit trail for that conversation (dialogue + every tool call, with content):**
+
+```kusto
+let convId = "conv_PASTE_ID_HERE";
+let ops = AppDependencies
+    | where TimeGenerated > ago(24h)
+    | where Name == 'invoke_agent waypoint'
+    | extend P = parse_json(Properties)
+    | where tostring(P['gen_ai.conversation.id']) == convId
+    | distinct OperationId;
+AppTraces
+| where OperationId in (ops)
+| where Message startswith 'gen_ai'
+| extend D = parse_json(Properties)
+| extend tool = tostring(D['tool.name']), type = tostring(D['tool.type']), ok = tostring(D['tool.ok'])
+| extend detail = case(
+        Message in ('gen_ai.user.message', 'gen_ai.assistant.message'), tostring(D['content']),   // what the user / agent said
+        Message == 'gen_ai.agent.decision', tostring(D['summary']),                                 // why the agent acted
+        Message == 'gen_ai.tool.call',       tostring(D['tool.arguments']),                          // tool inputs
+        Message == 'gen_ai.tool.result',     tostring(D['tool.result']),                             // tool output
+        '')
+| summarize TimeGenerated = min(TimeGenerated) by step = Message, tool, type, ok, detail   // collapse duplicate spans
+| order by TimeGenerated asc
+| project TimeGenerated, step, tool, type, ok, detail
+```
+
+This returns the observable orchestration for the thread **with the message content on every
+step** — `gen_ai.user.message` / `gen_ai.assistant.message` show what the traveller and the
+agent said; `gen_ai.agent.decision` shows the agent's stated reason; `gen_ai.tool.call` shows
+the tool inputs and `gen_ai.tool.result` the tool output (wikipedia, copilot.chat, travel-search /
+RouteStack, Open-Meteo, Cosmos, …) — never the model's hidden reasoning. It's the **same audit
+trail** as the web panel, in the platform's management plane. (Add
+`| extend detail = substring(detail, 0, 200)` if you want shorter cells for a table view.)
+
+> **Presenting it cleanly:** pin Step 1–3 as tiles on an **Azure Dashboard**, or save them in
+> an App Insights **Workbook** with `conversation` as a parameter, so a click drills from the
+> conversation list into its turns and audit trail. The web app's **Audit panel** is the
+> always-live, zero-lag version of the same story.
+>
+> Talk track: this is the **run → observe → govern** half of an *agentic factory* —
+> planning/building via spec2cloud, running on Foundry Agent Service, observing via GenAI
+> traces, and governing via evaluations
+> ([FRD-008](specs/frd-agent-evaluation-and-quality.md)) and RBAC/content-safety/version gates
+> ([FRD-009](specs/frd-governance-and-observability.md)). See
+> [ADR-010](specs/adrs/adr-010-foundry-agent-service-hosting.md) / [ADR-011](specs/adrs/adr-011-otel-genai-traces.md).
 
 ### 2. Show The Product Contract
 

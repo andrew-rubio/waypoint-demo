@@ -1,0 +1,7 @@
+{
+  "relevance": 0.83,
+  "intent_resolution": 0.75,
+  "weather_grounding": 0.83,
+  "guide_grounding": 0.83,
+  "one_clarifying_question": 0.75
+}

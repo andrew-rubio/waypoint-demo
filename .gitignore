@@ -10,3 +10,11 @@ playwright-report/
 .env
 .env.*
 !.env.example
+
+# Evaluation runner (Python venv + local run outputs)
+eval/.venv/
+eval/.out/
+eval/__pycache__/
+__pycache__/
+.foundry/datasets/_*.jsonl
+.foundry/datasets/*-responses.jsonl
