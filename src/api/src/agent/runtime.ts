@@ -38,8 +38,7 @@ function selectDriver(): AgentDriver {
 }
 
 /** Read BYOK → Foundry settings; baseUrl + model + one auth method (key or managed identity) required. */
-function readFoundryConfig(): FoundryProviderConfig | undefined {
-  // Foundry Agent Service reserves all FOUNDRY_*/AGENT_* container env names, so when hosted
+function readFoundryConfig(): FoundryProviderConfig | undefined {  // Foundry Agent Service reserves all FOUNDRY_*/AGENT_* container env names, so when hosted
   // the same settings arrive under WAYPOINT_* aliases (+ AZURE_AI_MODEL_DEPLOYMENT_NAME).
   const baseUrl = process.env.FOUNDRY_MODEL_URL ?? process.env.WAYPOINT_MODEL_URL;
   const apiKey = process.env.FOUNDRY_API_KEY ?? process.env.WAYPOINT_API_KEY;
@@ -50,6 +49,14 @@ function readFoundryConfig(): FoundryProviderConfig | undefined {
   const wire = process.env.FOUNDRY_WIRE_API ?? process.env.WAYPOINT_WIRE_API;
   const wireApi = wire === 'completions' ? 'completions' : 'responses';
   return { baseUrl, apiKey, model, wireApi, useManagedIdentity };
+}
+
+export type ActiveDriverKind = 'foundry-model-sdk' | 'local-deterministic';
+
+/** The driver that WOULD serve a turn now — derived from the real selection logic, not a lone env flag. */
+export function activeDriverKind(): ActiveDriverKind {
+  if (process.env.NODE_ENV !== 'test' && readFoundryConfig()) return 'foundry-model-sdk';
+  return 'local-deterministic';
 }
 
 /** One traveller turn → a stream of AgentEvents. Optional `fault` (test/demo only). */

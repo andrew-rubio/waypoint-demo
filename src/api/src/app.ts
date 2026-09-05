@@ -7,6 +7,7 @@ import { runAgent } from './agent/runtime.js';
 import { runViaFoundryAgent, foundryAgentUrl, ensureConversationId } from './agent/foundry-agent-proxy.js';
 import { parseResponsesRequest, streamResponses, collectResponse } from './responses/openai-responses.js';
 import { traceAgentTurn } from './telemetry/agent-spans.js';
+import { getRuntimeInfo, setLastCorrelationId } from './runtime-info.js';
 import { logger } from './logger.js';
 
 /** The model deployment name, used for telemetry + the responses payload. */
@@ -37,6 +38,12 @@ export function createApp(): Express {
   // Foundry hosted-agent readiness probe (INC-9, ADR-010).
   app.get('/readiness', (_req, res) => {
     res.json({ status: 'ready' });
+  });
+
+  // Non-sensitive runtime metadata — one link in the D1 runtime-proof corroboration
+  // chain (FRD-010). Application-controlled assertion; not the sole proof of hosting.
+  app.get('/runtime-info', (_req, res) => {
+    res.json(getRuntimeInfo());
   });
 
   app.post('/api/chat', async (req, res) => {
@@ -78,6 +85,7 @@ export function createApp(): Express {
       // tagged with the same conversation id (reliable rich detail — ca-api isn't
       // frozen like the hosted sandbox, whose OTel exports only land intermittently).
       const conversationId = viaFoundry ? (await ensureConversationId(sessionId)) ?? sessionId : sessionId;
+      setLastCorrelationId(conversationId);
       // Redact at the boundary (FR-001-10).
       const redacted = (async function* () {
         const source = viaFoundry
