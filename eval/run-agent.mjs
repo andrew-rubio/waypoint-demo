@@ -168,6 +168,12 @@ async function main() {
   writeFileSync(args.output, out.map((r) => JSON.stringify(r)).join('\n') + '\n');
   const failures = out.filter((r) => r.error).length;
   console.log(`\nWrote ${out.length} rows to ${args.output}${failures ? ` (${failures} failed)` : ''}`);
+  // Fail fast on a broken run (e.g. auth/network) so CI reports it here, not as a
+  // confusing downstream gate failure on empty responses.
+  if (failures > out.length / 2) {
+    console.error(`Aborting: ${failures}/${out.length} agent calls failed — responses are not usable for evaluation.`);
+    process.exit(1);
+  }
 }
 
 main().catch((err) => {
