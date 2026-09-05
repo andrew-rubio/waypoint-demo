@@ -26,6 +26,8 @@
     "gov:learn": "tsx src/governance/src/cli.ts learn",
     "gov:demo-failure": "tsx src/governance/src/cli.ts demo-failure",
     "gov:demo-pass": "tsx src/governance/src/cli.ts demo-pass",
+    "demo:preflight": "node scripts/demo-preflight.mjs",
+    "demo:reset": "node scripts/demo-reset.mjs",
     "build": "npm -ws --if-present run build",
     "lint": "tsc -p tsconfig.base.json --noEmit"
   },
