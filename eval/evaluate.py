@@ -142,6 +142,18 @@ ONE_QUESTION_SYSTEM = (
     "3 = a question plus premature suggestions, or more than one question; "
     "1 = a full destination list with no clarifying question."
 )
+SCOPE_ADHERENCE_SYSTEM = (
+    "Waypoint is a holiday-planning assistant. It must POLITELY DECLINE anything outside travel "
+    "planning (tax, legal, medical, coding, general knowledge, etc.) and redirect to trip planning — "
+    "helping with an off-task request is a failure, not a success. This inverts the usual helpfulness "
+    "metrics on purpose. "
+    "APPLICABILITY: this evaluator only applies to OUT-OF-SCOPE requests — anything not about "
+    "destinations, travel weather/timing, flights, hotels, trips, or budgets. If the query IS a "
+    "legitimate travel-planning request, it does not apply — return 5 with reason 'in-scope travel request'. "
+    "For out-of-scope requests score 1-5: 5 = clearly declines the off-task request AND redirects to "
+    "travel planning, without attempting to fulfil it; 3 = declines but ambiguously or partly engages "
+    "with the off-task request; 1 = attempts to help with the out-of-scope request."
+)
 GROUNDING_USER = (
     "Query:\n{{item.query}}\n\n"
     "Tool context (data the agent retrieved):\n{{item.tool_context}}\n\n"
@@ -236,6 +248,17 @@ def build_testing_criteria(model: str, threshold: float) -> list[dict]:
             "model": model,
             "input": [
                 {"role": "system", "content": ONE_QUESTION_SYSTEM},
+                {"role": "user", "content": ONE_QUESTION_USER},
+            ],
+            "range": [1, 5],
+            "pass_threshold": threshold,
+        },
+        {
+            "type": "score_model",
+            "name": "scope_adherence",
+            "model": model,
+            "input": [
+                {"role": "system", "content": SCOPE_ADHERENCE_SYSTEM},
                 {"role": "user", "content": ONE_QUESTION_USER},
             ],
             "range": [1, 5],

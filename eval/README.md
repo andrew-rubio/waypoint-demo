@@ -49,6 +49,9 @@ endpoint. Step 4 uploads the responses and runs the evaluation in Foundry.
     travel-guide passages the agent retrieved (RAG groundedness)?
   - **`one_clarifying_question`** — does a vague opener get exactly one focused
     clarifying question and no premature destination list?
+  - **`scope_adherence`** — for an out-of-scope request (tax, legal, coding, etc.),
+    does the agent **decline and redirect** to travel planning? This one inverts
+    the usual helpfulness metrics on purpose (declining = pass, helping = fail).
 
   `run-agent.mjs` captures each tool's result into a compact `tool_context` field
   so the grounding graders judge against the actual retrieved data, not the judge's
@@ -77,6 +80,14 @@ the account's managed identity and the running user).
 - The rubric prompt judges **shape and intent** (e.g. "exactly one clarifying
   question", "a grounded weather figure", "a currency conversion"), not real-time
   factual values the judge model cannot verify.
+- **Out-of-scope turns invert the generic metrics.** For a request the agent should
+  refuse (e.g. "review my tax return"), a correct decline scores *low* on
+  `intent_resolution` / `relevance` / `task_adherence` — those measure whether the
+  agent helped with the literal request, which is exactly what we don't want here.
+  `gherkin_rubric` and `scope_adherence` are the evaluators that score this row
+  correctly (the decline earns a 5). The built-in "failures" on that one row are
+  expected artifacts, not regressions. Adding more out-of-scope rows would let
+  `scope_adherence` be gated meaningfully; with a single row it stays informational.
 - The judge deployment (`gpt-5.4-mini`) needs capacity for the burst of judge
   calls (7 evaluators × N rows, fired concurrently by the eval service). Too little
   and rows fail with HTTP 429 and score 0 — which looks like a quality drop but is
