@@ -1,0 +1,5 @@
+# Foundry evaluation runner — step 2 of the pipeline.
+# Requires the responses JSONL produced by eval/run-agent.mjs.
+azure-ai-projects>=2.0.0b2
+azure-identity>=1.19.0
+openai>=1.54.0
