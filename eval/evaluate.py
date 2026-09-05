@@ -116,6 +116,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", default=os.environ.get("FOUNDRY_EVAL_MODEL", DEFAULT_MODEL))
     parser.add_argument("--name", default=f"waypoint-smoke-{TIMESTAMP}")
     parser.add_argument("--threshold", type=float, default=3.0)
+    parser.add_argument(
+        "--gate",
+        default=None,
+        help="Path to a JSON map of {evaluator: min_pass_rate}. Exit non-zero if any criterion is below its threshold.",
+    )
     return parser.parse_args()
 
 
@@ -237,9 +242,53 @@ def main() -> None:
                 json.dump(output_items, handle, indent=2, default=str)
             logger.info("Results saved to %s", out_file)
             print_summary(output_items, run.report_url)
+            check_gate(output_items, args.gate)
         else:
             logger.error("Evaluation failed with status: %s", run.status)
             raise SystemExit(1)
+
+
+def check_gate(output_items: list[dict], gate_path: str | None) -> None:
+    """Enforce per-evaluator minimum pass rates; exit non-zero on any breach.
+
+    Only evaluators listed in the gate file are enforced; others are reported by
+    ``print_summary`` but do not block. Used by CI to fail a regressing build.
+    """
+    if not gate_path:
+        return
+    with open(gate_path, encoding="utf-8") as handle:
+        thresholds: dict[str, float] = json.load(handle)
+
+    counts: dict[str, dict[str, int]] = {}
+    for item in output_items:
+        for res in item.get("results", []) or []:
+            bucket = counts.setdefault(res.get("name", "?"), {"pass": 0, "total": 0})
+            bucket["total"] += 1
+            if res.get("passed") is True:
+                bucket["pass"] += 1
+
+    print("\nQuality gate")
+    print("  " + "-" * 54)
+    failures: list[str] = []
+    for crit in sorted(thresholds):
+        min_rate = float(thresholds[crit])
+        bucket = counts.get(crit)
+        if not bucket or bucket["total"] == 0:
+            print(f"  {crit:<22} NO DATA        required >= {min_rate:.0%}  FAIL")
+            failures.append(crit)
+            continue
+        rate = bucket["pass"] / bucket["total"]
+        ok = rate >= min_rate
+        status = "PASS" if ok else "FAIL"
+        print(f"  {crit:<22} {rate:>4.0%} ({bucket['pass']}/{bucket['total']:<2})  required >= {min_rate:.0%}  {status}")
+        if not ok:
+            failures.append(crit)
+    print("  " + "-" * 54)
+
+    if failures:
+        logger.error("Quality gate FAILED: %s", ", ".join(failures))
+        raise SystemExit(1)
+    print("  Quality gate PASSED\n")
 
 
 def print_summary(output_items: list[dict], report_url: str | None) -> None:

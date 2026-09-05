@@ -1,0 +1,81 @@
+name: Agent quality gate
+
+# Runs the Foundry evaluation (built from the approved Gherkin suite) against the
+# deployed waypoint-agent and fails the build if quality regresses below the
+# thresholds in eval/gate.json. Make this a required status check (branch
+# protection on main) so a regressing change cannot merge — and therefore cannot
+# reach the deploy step.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'specs/features/**'
+      - 'eval/**'
+      - '.github/workflows/agent-eval.yml'
+
+permissions:
+  id-token: write # OIDC federated login to Azure
+  contents: read
+
+concurrency:
+  group: agent-eval-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  eval-gate:
+    runs-on: ubuntu-latest
+    env:
+      # Public (non-secret) Foundry coordinates for the deployed agent + judge.
+      FOUNDRY_AGENT_RESPONSES_URL: https://aif-dnszpz4hqfi7g.services.ai.azure.com/api/projects/waypoint/agents/waypoint-agent/endpoint/protocols/openai/responses?api-version=v1
+      FOUNDRY_PROJECT_ENDPOINT: https://aif-dnszpz4hqfi7g.services.ai.azure.com/api/projects/waypoint
+      FOUNDRY_EVAL_MODEL: gpt-5.4-mini
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # OIDC login — the federated service principal needs, on the Foundry account
+      # aif-dnszpz4hqfi7g: Cognitive Services OpenAI User, Azure AI Developer,
+      # Azure AI Safety Evaluator (see eval/README.md § CI setup).
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Install Python eval dependencies
+        run: python -m pip install -r eval/requirements.txt
+
+      - name: Build golden dataset from the approved specs
+        run: |
+          npm run eval:dataset
+          node eval/smoke-slice.mjs
+
+      - name: Replay the smoke slice against the deployed agent
+        run: npm run eval:run-agent
+
+      - name: Score in Foundry and enforce the quality gate
+        run: python eval/evaluate.py --gate eval/gate.json --name "ci-${{ github.run_number }}"
+
+      - name: Upload eval results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eval-results
+          path: |
+            eval/.out/**
+            .foundry/datasets/waypoint-agent-smoke-responses.jsonl
+          if-no-files-found: ignore

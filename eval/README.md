@@ -66,3 +66,46 @@ the account's managed identity and the running user).
 - Endpoint, model, and dataset paths are overridable via `--endpoint`, `--model`,
   `--input`, `--name` (see `python eval/evaluate.py --help`) or env vars
   `FOUNDRY_PROJECT_ENDPOINT`, `FOUNDRY_EVAL_MODEL`, `WAYPOINT_EVAL_INPUT`.
+
+## CI quality gate
+
+`.github/workflows/agent-eval.yml` runs the whole pipeline on every PR that
+touches `src/`, `specs/features/`, or `eval/`, and **fails the build if quality
+regresses** below the thresholds in [`gate.json`](gate.json):
+
+```json
+{ "relevance": 0.9, "intent_resolution": 0.75, "task_adherence": 0.8 }
+```
+
+`evaluate.py --gate eval/gate.json` computes each evaluator's pass rate and exits
+non-zero if any gated criterion is below its floor. Only listed evaluators block;
+others (e.g. `gherkin_rubric`) are reported but informational — the rubric stays
+ungated until multi-turn threading lands, since single-turn follow-ups depress it.
+
+Make the `eval-gate` job a **required status check** (branch protection on `main`)
+so a regressing change cannot merge, and therefore cannot reach deploy.
+
+### One-time CI setup
+
+The workflow logs in with GitHub OIDC (no stored secrets). Create an Entra app
+with a federated credential for this repo and grant it the eval roles:
+
+```powershell
+$app = az ad app create --display-name "waypoint-agent-eval-ci" --query appId -o tsv
+az ad sp create --id $app
+# Federated credential for PRs + manual dispatch on this repo
+az ad app federated-credential create --id $app --parameters '{
+  "name":"waypoint-ci","issuer":"https://token.actions.githubusercontent.com",
+  "subject":"repo:andrew-rubio/waypoint-demo:pull_request","audiences":["api://AzureADTokenExchange"]}'
+$sp = az ad sp show --id $app --query id -o tsv
+$acct = "/subscriptions/c7233dbc-6a6d-40da-83a7-738e54ffedef/resourceGroups/rg-waypoint/providers/Microsoft.CognitiveServices/accounts/aif-dnszpz4hqfi7g"
+foreach ($r in 'Cognitive Services OpenAI User','Azure AI Developer','Azure AI Safety Evaluator') {
+  az role assignment create --assignee $sp --role $r --scope $acct
+}
+```
+
+Then add repo secrets `AZURE_CLIENT_ID` (the app id), `AZURE_TENANT_ID`, and
+`AZURE_SUBSCRIPTION_ID`. (For runs triggered by `workflow_dispatch` on a branch,
+add a second federated credential with subject
+`repo:andrew-rubio/waypoint-demo:ref:refs/heads/main`.)
+
