@@ -353,10 +353,12 @@ def main() -> None:
 
 
 def check_gate(output_items: list[dict], gate_path: str | None) -> None:
-    """Enforce per-evaluator minimum pass rates; exit non-zero on any breach.
+    """Print every evaluator, marking each gated or report-only, and exit non-zero
+    if any *gated* evaluator is below its threshold.
 
-    Only evaluators listed in the gate file are enforced; others are reported by
-    ``print_summary`` but do not block. Used by CI to fail a regressing build.
+    Report-only evaluators (not listed in the gate file) are shown for
+    transparency but never block the build — e.g. ``task_adherence`` (429-prone),
+    ``gherkin_rubric`` (strict by design), ``scope_adherence`` (one applicable row).
     """
     if not gate_path:
         return
@@ -371,26 +373,26 @@ def check_gate(output_items: list[dict], gate_path: str | None) -> None:
             if res.get("passed") is True:
                 bucket["pass"] += 1
 
-    print("\nQuality gate")
-    print("  " + "-" * 54)
+    print("\nQuality gate  (gated = blocks the build; report-only = informational)")
+    print("  " + "-" * 66)
     failures: list[str] = []
-    for crit in sorted(thresholds):
-        min_rate = float(thresholds[crit])
-        bucket = counts.get(crit)
-        if not bucket or bucket["total"] == 0:
-            print(f"  {crit:<22} NO DATA        required >= {min_rate:.0%}  FAIL")
-            failures.append(crit)
-            continue
-        rate = bucket["pass"] / bucket["total"]
-        ok = rate >= min_rate
-        status = "PASS" if ok else "FAIL"
-        print(f"  {crit:<22} {rate:>4.0%} ({bucket['pass']}/{bucket['total']:<2})  required >= {min_rate:.0%}  {status}")
-        if not ok:
-            failures.append(crit)
-    print("  " + "-" * 54)
+    for crit in sorted(counts):
+        bucket = counts[crit]
+        rate = bucket["pass"] / bucket["total"] if bucket["total"] else 0.0
+        cell = f"{rate:>4.0%} ({bucket['pass']}/{bucket['total']})"
+        if crit in thresholds:
+            min_rate = float(thresholds[crit])
+            ok = bucket["total"] > 0 and rate >= min_rate
+            status = "PASS" if ok else "FAIL"
+            print(f"  {crit:<24}{cell:<14}gated  >= {min_rate:.0%}   {status}")
+            if not ok:
+                failures.append(crit)
+        else:
+            print(f"  {crit:<24}{cell:<14}report-only")
+    print("  " + "-" * 66)
 
     if failures:
-        logger.error("Quality gate FAILED: %s", ", ".join(failures))
+        logger.error("Quality gate FAILED (gated evaluators below threshold): %s", ", ".join(failures))
         raise SystemExit(1)
     print("  Quality gate PASSED\n")
 

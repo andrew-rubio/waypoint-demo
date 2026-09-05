@@ -115,10 +115,20 @@ regresses** below the thresholds in [`gate.json`](gate.json):
 ```
 
 `evaluate.py --gate eval/gate.json` computes each evaluator's pass rate and exits
-non-zero if any gated criterion is below its floor. Only listed evaluators block;
-others (`gherkin_rubric`, `task_adherence`) are reported but informational — the
-rubric is deliberately strict, and `task_adherence` is 429-prone. Thresholds carry
-~1 row of slack (12-row smoke set) to absorb normal judge variance.
+non-zero if any gated criterion is below its floor. The gate output lists **all**
+evaluators, each marked **gated** (blocks the build) or **report-only**
+(informational). Three are report-only on purpose:
+
+- `task_adherence` — the heaviest built-in (ingests the full tool trace) and so
+  the most **429-prone**; gating it would make CI flaky.
+- `gherkin_rubric` — **strict by design** (grades against every clause of
+  `expected_behavior`), so a healthy run still lands ~6–7/12.
+- `scope_adherence` — only **one** out-of-scope row in the smoke set, so a
+  threshold can't catch a single regression yet.
+
+Gated thresholds carry ~1 row of slack (12-row smoke set) to absorb normal judge
+variance. To gate a report-only evaluator, add it to `gate.json` — but expect the
+throttling/strictness/coverage caveats above first.
 
 Make the `eval-gate` job a **required status check** (branch protection on `main`)
 so a regressing change cannot merge, and therefore cannot reach deploy.
