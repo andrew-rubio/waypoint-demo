@@ -41,6 +41,18 @@ endpoint. Step 4 uploads the responses and runs the evaluation in Foundry.
   `expected_behavior` extracted from the approved acceptance criteria. This is the
   bridge from the test suite to the eval: a 1–5 score for how well the agent meets
   the behaviour we already signed off in Gherkin.
+- **Domain evaluators** (custom `score_model`, self-scoping — out-of-domain turns
+  auto-score 5):
+  - **`weather_grounding`** — is a weather / best-time answer grounded in the
+    Open-Meteo climate normals the agent retrieved (fed in via `tool_context`)?
+  - **`guide_grounding`** — are the destination recommendations grounded in the
+    travel-guide passages the agent retrieved (RAG groundedness)?
+  - **`one_clarifying_question`** — does a vague opener get exactly one focused
+    clarifying question and no premature destination list?
+
+  `run-agent.mjs` captures each tool's result into a compact `tool_context` field
+  so the grounding graders judge against the actual retrieved data, not the judge's
+  own knowledge.
 
 ## One-time setup
 
@@ -63,6 +75,10 @@ the account's managed identity and the running user).
 - The rubric prompt judges **shape and intent** (e.g. "exactly one clarifying
   question", "a grounded weather figure", "a currency conversion"), not real-time
   factual values the judge model cannot verify.
+- The judge deployment (`gpt-5.4-mini`) needs enough capacity for the burst of
+  judge calls (7 evaluators × N rows). Too little and rows fail with HTTP 429 and
+  score 0 — which looks like a quality drop but is throttling. The deployment is
+  set to 100 GlobalStandard units for this reason.
 - Endpoint, model, and dataset paths are overridable via `--endpoint`, `--model`,
   `--input`, `--name` (see `python eval/evaluate.py --help`) or env vars
   `FOUNDRY_PROJECT_ENDPOINT`, `FOUNDRY_EVAL_MODEL`, `WAYPOINT_EVAL_INPUT`.

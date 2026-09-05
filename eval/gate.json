@@ -1,5 +1,7 @@
 {
   "relevance": 0.9,
   "intent_resolution": 0.75,
-  "task_adherence": 0.8
+  "task_adherence": 0.8,
+  "weather_grounding": 0.8,
+  "guide_grounding": 0.8
 }

@@ -108,6 +108,52 @@ GHERKIN_RUBRIC_USER = (
     "Return a single integer score from 1 to 5 for how well the response satisfies the expected behaviour."
 )
 
+# --- Domain-scoped custom evaluators (each self-scopes: out-of-domain turns score 5) ---
+
+WEATHER_GROUNDING_SYSTEM = (
+    "You grade whether a weather / best-time-to-visit answer is GROUNDED in the Open-Meteo "
+    "climate-normals data the agent retrieved (shown in TOOL CONTEXT). You cannot verify live "
+    "weather, so judge grounding and shape, NOT real-world accuracy. "
+    "APPLICABILITY: this evaluator only applies to weather / timing turns whose tool context contains "
+    "open-meteo climate data. If the query is not about weather or timing (no open-meteo data in "
+    "context), it does not apply — return 5 with reason 'not a weather turn'. "
+    "For weather turns score 1-5: 5 = every climate figure or seasonal claim in the answer is supported "
+    "by the retrieved data and no numbers are invented; 3 = loosely grounded or vague; "
+    "1 = fabricates figures or ignores the retrieved climate data."
+)
+GUIDE_GROUNDING_SYSTEM = (
+    "You grade whether a destination recommendation is GROUNDED in the travel-guide passages the agent "
+    "retrieved (shown in TOOL CONTEXT). Judge grounding, not your own travel opinions. "
+    "APPLICABILITY: this evaluator only applies to destination-advice turns whose tool context contains "
+    "travel-guide results. If the query is not asking for a destination recommendation (no travel-guide "
+    "data in context), it does not apply — return 5 with reason 'not a destination turn'. "
+    "For destination turns score 1-5: 5 = every recommended destination and supporting claim is present "
+    "in the retrieved guide passages and nothing is invented; 3 = partially grounded; "
+    "1 = recommends destinations absent from the guide or fabricates justifications."
+)
+ONE_QUESTION_SYSTEM = (
+    "You grade whether a VAGUE, underspecified opener is handled by asking EXACTLY ONE focused "
+    "clarifying question and showing NO premature destination list. "
+    "APPLICABILITY: this evaluator only applies to vague openers with no stated preference "
+    "(e.g. 'recommend somewhere', 'where should I go', 'help me plan a trip'). If the query already "
+    "contains a concrete preference — a month, vibe, activity, city, or budget — it does not apply, "
+    "return 5 with reason 'not a vague turn'. "
+    "For vague turns score 1-5: 5 = exactly one focused clarifying question and no destination list; "
+    "3 = a question plus premature suggestions, or more than one question; "
+    "1 = a full destination list with no clarifying question."
+)
+GROUNDING_USER = (
+    "Query:\n{{item.query}}\n\n"
+    "Tool context (data the agent retrieved):\n{{item.tool_context}}\n\n"
+    "Agent response:\n{{item.response}}\n\n"
+    "Return a single integer score from 1 to 5 per the rubric."
+)
+ONE_QUESTION_USER = (
+    "Query:\n{{item.query}}\n\n"
+    "Agent response:\n{{item.response}}\n\n"
+    "Return a single integer score from 1 to 5 per the rubric."
+)
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run Waypoint agent evaluation in Foundry.")
@@ -161,6 +207,40 @@ def build_testing_criteria(model: str, threshold: float) -> list[dict]:
             "range": [1, 5],
             "pass_threshold": threshold,
         },
+        # Domain-scoped custom evaluators (self-scoping; out-of-domain turns score 5).
+        {
+            "type": "score_model",
+            "name": "weather_grounding",
+            "model": model,
+            "input": [
+                {"role": "system", "content": WEATHER_GROUNDING_SYSTEM},
+                {"role": "user", "content": GROUNDING_USER},
+            ],
+            "range": [1, 5],
+            "pass_threshold": threshold,
+        },
+        {
+            "type": "score_model",
+            "name": "guide_grounding",
+            "model": model,
+            "input": [
+                {"role": "system", "content": GUIDE_GROUNDING_SYSTEM},
+                {"role": "user", "content": GROUNDING_USER},
+            ],
+            "range": [1, 5],
+            "pass_threshold": threshold,
+        },
+        {
+            "type": "score_model",
+            "name": "one_clarifying_question",
+            "model": model,
+            "input": [
+                {"role": "system", "content": ONE_QUESTION_SYSTEM},
+                {"role": "user", "content": ONE_QUESTION_USER},
+            ],
+            "range": [1, 5],
+            "pass_threshold": threshold,
+        },
     ]
     return criteria
 
@@ -193,6 +273,7 @@ def main() -> None:
                         "query": {"type": "string"},
                         "response": {"type": "string"},
                         "expected_behavior": {"type": "string"},
+                        "tool_context": {"type": "string"},
                         "context": {"type": "string"},
                         "smoke_reason": {"type": "string"},
                         "source": {"type": "string"},

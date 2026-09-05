@@ -40,6 +40,22 @@ function readJsonl(path) {
     .map((l) => JSON.parse(l));
 }
 
+/** Compact digest of tool results so grounding evaluators can see the source data. */
+function buildToolContext(toolCalls) {
+  return toolCalls
+    .filter((t) => t.name !== 'copilot.chat' && t.result !== undefined)
+    .map((t) => {
+      let body;
+      try {
+        body = typeof t.result === 'string' ? t.result : JSON.stringify(t.result);
+      } catch {
+        body = String(t.result);
+      }
+      return `${t.name}: ${(body ?? '').slice(0, 900)}`;
+    })
+    .join('\n');
+}
+
 /** Replay one query against the hosted agent; return { response, toolCalls }. */
 async function runOne(url, bearer, query) {
   const res = await fetch(url, {
@@ -122,6 +138,7 @@ async function main() {
         response,
         tool_calls: toolCalls.map((t) => t.name),
         tool_calls_detail: toolCalls,
+        tool_context: buildToolContext(toolCalls),
         expected_behavior: row.expected_behavior ?? '',
         expected_tools: row.expected_tools ?? [],
         context: row.context ?? '',
@@ -136,6 +153,7 @@ async function main() {
         response: '',
         tool_calls: [],
         tool_calls_detail: [],
+        tool_context: '',
         expected_behavior: row.expected_behavior ?? '',
         expected_tools: row.expected_tools ?? [],
         context: row.context ?? '',
