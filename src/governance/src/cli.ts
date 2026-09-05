@@ -8,6 +8,7 @@ import { collectEvidence } from './evidence.js';
 import { selectControls } from './select.js';
 import { releaseDecisionMarkdown, evidenceSummaryMarkdown } from './summary.js';
 import { verifyRelease } from './verify.js';
+import { dossierJson, dossierMarkdown, learningMarkdown, traceMarkdown } from './dossier.js';
 import { sha256Of } from './canonical.js';
 import {
   PATHS,
@@ -190,6 +191,37 @@ function cmdDemo(pass: boolean): number {
   return decision.releaseDecision === 'blocked' ? 1 : 0;
 }
 
+function cmdDossier(): number {
+  writeJsonFile(PATHS.dossierJson, dossierJson());
+  writeTextFile(PATHS.dossierMd, dossierMarkdown());
+  console.log(dossierMarkdown());
+  console.log(`\nDossier → ${PATHS.dossierJson} + ${PATHS.dossierMd}`);
+  audit('dossier.generated', { summary: 'Proposition audit dossier generated' });
+  return 0;
+}
+
+function cmdTrace(): number {
+  console.log(traceMarkdown());
+  return 0;
+}
+
+function cmdLearn(): number {
+  const args = parseArgs(process.argv.slice(3));
+  const incidentId = (args['incident'] as string) ?? `incident-${Date.now()}`;
+  const md = learningMarkdown({
+    incidentId,
+    finding: (args['finding'] as string) ?? 'stale currency data blocked a budget confirmation',
+    control: (args['control'] as string) ?? 'DATA-FRESH-001',
+    proposition: (args['proposition'] as string) ?? 'waypoint',
+  });
+  const out = `${PATHS.learningDir}/${incidentId}.md`;
+  writeTextFile(out, md);
+  console.log(md);
+  console.log(`\nLearning artefact (for human review) → ${out}`);
+  audit('learning.proposed', { summary: `Learning artefact ${incidentId} proposed for human review` });
+  return 0;
+}
+
 function cmdStatus(): number {
   const approval = readJsonIfExists<ApprovalRecord>(PATHS.approval);
   const decision = readJsonIfExists<ReleaseDecision>(PATHS.releaseDecision);
@@ -220,9 +252,12 @@ function main(): number {
     case 'certify': return cmdCertify();
     case 'demo-failure': return cmdDemo(false);
     case 'demo-pass': return cmdDemo(true);
+    case 'dossier': return cmdDossier();
+    case 'trace': return cmdTrace();
+    case 'learn': return cmdLearn();
     case 'status': return cmdStatus();
     default:
-      console.error('Usage: waypoint-gov <select|contract|approve|evidence|verify|certify|certify|demo-failure|demo-pass|status> [--flags]');
+      console.error('Usage: waypoint-gov <select|contract|approve|evidence|verify|certify|demo-failure|demo-pass|dossier|trace|learn|status> [--flags]');
       return 2;
   }
 }
