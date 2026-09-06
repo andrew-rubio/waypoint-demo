@@ -1,0 +1,5 @@
+{
+  "_note": "Illustrative recorded sample. Not execution evidence for the current release. Real test outcomes are produced by CI (Vitest/Cucumber) for the assessed commit and uploaded as immutable workflow artefacts.",
+  "booking-approval": "passed",
+  "currency-freshness": "passed"
+}

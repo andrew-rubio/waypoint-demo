@@ -1,0 +1,166 @@
+material:
+  schema: waypoint.governance/contract@1
+  propositionId: waypoint
+  propositionVersion: 1.0.0
+  propositionHash: sha256:412344a8e70cd694aef7bcfa5d5dcdd966df27203948b4302cff1c1e42658d42
+  catalogueId: waypoint-synthetic-policies
+  catalogueVersion: 1.0.0
+  policyCatalogueHash: sha256:789e3c1ff0fb71abd96dec58fd4bb0a0c0f116245a6ef535504a2aaf23e09348
+  controls:
+    - controlId: DATA-FRESH-001
+      severity: blocking
+      enforcementStage: runtime
+      policyRef: SYN-POL-DATA
+      rationale: Applies because the proposition uses currency conversion for
+        budgeting (externalIntegrations contains "currency").
+      matchedBy:
+        - externalIntegrations contains "currency"
+      evidenceRequirements:
+        - evidenceId: currency-freshness-test
+          evidenceType: test-result
+          descriptor: stale-currency detection + containment test
+    - controlId: DATA-MIN-001
+      severity: blocking
+      enforcementStage: build
+      policyRef: SYN-POL-DATA
+      rationale: Applies because the proposition handles personal data
+        (handlesPersonalData is true).
+      matchedBy:
+        - handlesPersonalData is true
+      evidenceRequirements:
+        - evidenceId: data-minimisation
+          evidenceType: config-check
+          descriptor: personal-data declaration + minimisation
+    - controlId: EVAL-GRD-001
+      severity: blocking
+      enforcementStage: pre-release
+      policyRef: SYN-POL-EVAL
+      rationale: Applies because the proposition is retrieval-augmented
+        (retrievalAugmented is true).
+      matchedBy:
+        - retrievalAugmented is true
+      evidenceRequirements:
+        - evidenceId: eval-grounding
+          evidenceType: evaluation-result
+          descriptor: eval gate thresholds
+          threshold: 0.83
+    - controlId: EVAL-HITL-001
+      severity: blocking
+      enforcementStage: pre-release
+      policyRef: SYN-POL-EVAL
+      rationale: Applies because consequential actions require human approval
+        (humanInLoop is true).
+      matchedBy:
+        - humanInLoop is true
+      evidenceRequirements:
+        - evidenceId: booking-approval-test
+          evidenceType: test-result
+          descriptor: human-approval compliance
+    - controlId: OPS-TRACE-001
+      severity: advisory
+      enforcementStage: runtime
+      policyRef: SYN-POL-OPS
+      rationale: Applies because the proposition emits runtime telemetry (usesLLM is
+        true).
+      matchedBy:
+        - usesLLM is true
+      evidenceRequirements:
+        - evidenceId: correlation-id
+          evidenceType: config-check
+          descriptor: correlation id in telemetry
+    - controlId: OPS-VER-001
+      severity: advisory
+      enforcementStage: build
+      policyRef: SYN-POL-OPS
+      rationale: Applies because operational lineage requires version capture (usesLLM
+        is true).
+      matchedBy:
+        - usesLLM is true
+      evidenceRequirements:
+        - evidenceId: version-capture
+          evidenceType: config-check
+          descriptor: runtime metadata version fields
+    - controlId: RAI-HITL-001
+      severity: blocking
+      enforcementStage: runtime
+      policyRef: SYN-POL-RAI
+      rationale: Applies because the proposition keeps a human in the loop for
+        consequential actions (humanInLoop is true).
+      matchedBy:
+        - humanInLoop is true
+      evidenceRequirements:
+        - evidenceId: booking-approval-test
+          evidenceType: test-result
+          descriptor: itinerary-bound booking-approval behavioural test
+    - controlId: RAI-OUT-001
+      severity: blocking
+      enforcementStage: runtime
+      policyRef: SYN-POL-RAI
+      rationale: Applies because the proposition performs a consequential action
+        (consequentialActions contains "simulated-booking").
+      matchedBy:
+        - consequentialActions contains "simulated-booking"
+      evidenceRequirements:
+        - evidenceId: booking-approval-test
+          evidenceType: test-result
+          descriptor: approval-required outcome asserted
+    - controlId: REL-CON-001
+      severity: blocking
+      enforcementStage: release
+      policyRef: SYN-POL-REL
+      rationale: Applies to every promoted proposition (usesLLM is true).
+      matchedBy:
+        - usesLLM is true
+      evidenceRequirements:
+        - evidenceId: approved-contract
+          evidenceType: human-approval
+          descriptor: approved control contract present
+    - controlId: REL-IMM-001
+      severity: blocking
+      enforcementStage: release
+      policyRef: SYN-POL-REL
+      rationale: Applies because the proposition deploys to a container runtime
+        (deploymentSurface contains "azure-container-apps").
+      matchedBy:
+        - deploymentSurface contains "azure-container-apps"
+      evidenceRequirements:
+        - evidenceId: artefact-digest
+          evidenceType: artefact-digest
+          descriptor: certified immutable artefact digest
+    - controlId: SEC-MCP-001
+      severity: blocking
+      enforcementStage: release
+      policyRef: SYN-POL-SEC
+      rationale: Applies because the proposition integrates MCP tools
+        (externalIntegrations contains "mcp").
+      matchedBy:
+        - externalIntegrations contains "mcp"
+      evidenceRequirements:
+        - evidenceId: mcp-allowlist
+          evidenceType: mcp-allowlist
+          descriptor: configured vs approved tool comparison
+    - controlId: SEC-REASON-001
+      severity: blocking
+      enforcementStage: runtime
+      policyRef: SYN-POL-SEC
+      rationale: Applies because the proposition uses an LLM (usesLLM is true).
+      matchedBy:
+        - usesLLM is true
+      evidenceRequirements:
+        - evidenceId: no-chain-of-thought
+          evidenceType: config-check
+          descriptor: telemetry emits no private reasoning
+    - controlId: SEC-RED-001
+      severity: blocking
+      enforcementStage: build
+      policyRef: SYN-POL-SEC
+      rationale: Applies because the proposition streams agent events (usesLLM is true).
+      matchedBy:
+        - usesLLM is true
+      evidenceRequirements:
+        - evidenceId: redaction-test
+          evidenceType: test-result
+          descriptor: redaction executed on a secret fixture
+contractHash: sha256:f692def9bfd729fed5bc4143368c5b49060689fef38b7f9ddc07e31adf47d355
+contractVersion: 1.0.0
+generatedAt: 2026-09-05T23:44:33.166Z
