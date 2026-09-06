@@ -7,8 +7,8 @@
   "approver": "demo.presenter",
   "identityAssurance": "self-asserted",
   "approvalMechanism": "local-demo",
-  "approvedAt": "2026-09-06T11:35:07.968Z",
-  "sourceCommit": "1c404f05998011aa1c73dcf6a51202438d511cc0",
+  "approvedAt": "2026-09-06T12:16:32.835Z",
+  "sourceCommit": "6cf9b0972e5bcca8f67701173293a605ba80cd7a",
   "comment": "governance demo reset",
   "nonRepudiation": false
 }

@@ -1,5 +1,5 @@
 import { fileURLToPath } from 'node:url';
-import { dirname, resolve } from 'node:path';
+import { dirname, resolve, relative } from 'node:path';
 import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
@@ -9,6 +9,11 @@ export const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', 
 
 export function repoPath(...parts: string[]): string {
   return resolve(REPO_ROOT, ...parts);
+}
+
+/** Repo-relative, forward-slashed path for human-facing output (no machine-specific prefix). */
+export function relPath(p: string): string {
+  return relative(REPO_ROOT, p).split('\\').join('/');
 }
 
 /** Canonical artefact locations (transparent, version-controlled). */

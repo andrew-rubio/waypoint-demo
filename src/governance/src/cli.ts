@@ -22,6 +22,7 @@ import {
   writeJsonFile,
   writeTextFile,
   writeYamlFile,
+  relPath,
   REPO_ROOT,
 } from './io.js';
 import type {
@@ -35,7 +36,7 @@ import { ControlContract as ControlContractSchema, EvidenceManifest as EvidenceM
 
 function audit(eventType: string, fields: Record<string, unknown>): void {
   mkdirSync(dirname(PATHS.auditLog), { recursive: true });
-  const record = { eventType, timestamp: new Date().toISOString(), actor: process.env.GITHUB_ACTOR ?? process.env.USERNAME ?? 'local', sourceCommit: currentCommit(), ...fields };
+  const record = { eventType, timestamp: new Date().toISOString(), actor: process.env.GITHUB_ACTOR ?? 'local', sourceCommit: currentCommit(), ...fields };
   appendFileSync(PATHS.auditLog, JSON.stringify(record) + '\n', 'utf8');
 }
 
@@ -48,7 +49,7 @@ function loadInputs() {
 function cmdIntakeInit(): number {
   const { yaml, unresolved } = intakeInit();
   writeTextFile(PATHS.propositionDraft, yaml);
-  console.log(`Deterministic governance intake template written to ${PATHS.propositionDraft}`);
+  console.log(`Deterministic governance intake template written to ${relPath(PATHS.propositionDraft)}`);
   console.log(`\n${unresolved.length} mandatory field(s) require human input (no value is inferred):`);
   for (const f of unresolved) console.log(`  - ${f}`);
   console.log('\nA human supplies the values, then: npm run gov:intake:validate');
@@ -97,7 +98,7 @@ function cmdIntakePromote(): number {
     return 1;
   }
   writeYamlFile(PATHS.proposition, result.proposition);
-  console.log(`Promoted to ${PATHS.proposition} (proposition "${result.proposition.propositionId}" v${result.proposition.version}).`);
+  console.log(`Promoted to ${relPath(PATHS.proposition)} (proposition "${result.proposition.propositionId}" v${result.proposition.version}).`);
   console.log(`  content hash: ${result.proposition.confirmation.contentHash}`);
   console.log(`  confirmed by: ${confirmedBy} (${result.proposition.confirmation.identityAssurance}, ${result.proposition.confirmation.mechanism})`);
   console.log('Deterministic control selection may now run: npm run gov:select');
@@ -202,7 +203,7 @@ function cmdEvidence(): number {
   const out = (args['out'] as string) ?? PATHS.evidenceManifest;
   writeJsonFile(out, manifest);
   console.log(evidenceSummaryMarkdown(manifest));
-  console.log(`\nEvidence set ${manifest.evidenceSetId} (${manifest.evidenceMode}) → ${out}`);
+  console.log(`\nEvidence set ${manifest.evidenceSetId} (${manifest.evidenceMode}) → ${relPath(out)}`);
   audit('evidence.collected', { contractHash: contract.contractHash, evidenceSetId: manifest.evidenceSetId, evidenceMode: manifest.evidenceMode, summary: `Collected ${manifest.entries.length} evidence entries` });
   return 0;
 }
@@ -270,7 +271,7 @@ function cmdDossier(): number {
   writeJsonFile(PATHS.dossierJson, dossierJson());
   writeTextFile(PATHS.dossierMd, dossierMarkdown());
   console.log(dossierMarkdown());
-  console.log(`\nDossier → ${PATHS.dossierJson} + ${PATHS.dossierMd}`);
+  console.log(`\nDossier → ${relPath(PATHS.dossierJson)} + ${relPath(PATHS.dossierMd)}`);
   audit('dossier.generated', { summary: 'Proposition audit dossier generated' });
   return 0;
 }
@@ -320,7 +321,7 @@ function cmdLearn(): number {
   const out = `${PATHS.learningDir}/${incidentId}.md`;
   writeTextFile(out, md);
   console.log(md);
-  console.log(`\nLearning artefact (for human review) → ${out}`);
+  console.log(`\nLearning artefact (for human review) → ${relPath(out)}`);
   audit('learning.proposed', { summary: `Learning artefact ${incidentId} proposed for human review` });
   return 0;
 }
