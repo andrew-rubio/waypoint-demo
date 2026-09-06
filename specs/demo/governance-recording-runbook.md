@@ -25,8 +25,13 @@ npm run gov:intake:init           # deterministic template — every governance 
 npm run gov:intake:validate       # BLOCKED — lists the exact unresolved YAML paths; no controls selected
 # ...an accountable human supplies the mandatory classifications + declares approvedTools...
 npm run gov:intake:validate       # PASSED
-npm run gov:intake:promote -- --confirmed-by "andrew@demo"   # records content hash + self-asserted confirmation
+npx tsx src/governance/src/cli.ts intake-promote --confirmed-by "andrew@demo"   # records content hash + self-asserted confirmation
 ```
+> **Windows note:** the two commands that take a `--flag value` (`intake-promote`,
+> `approve`) must be run via the direct `npx tsx src/governance/src/cli.ts …` form shown
+> here. `npm run … -- --confirmed-by "x"` swallows the named flag (npm parses `--confirmed-by`
+> as its own config), so the CLI reports the value as missing. All no-argument `npm run gov:*`
+> scripts work normally.
 Message: *the requirement and PRD give business context and traceability, but governance
 classifications are never inferred by a model — a schema-controlled intake requires an
 accountable person to supply and confirm the mandatory values, and it fails closed until they do.*
@@ -45,7 +50,7 @@ release gate blocks it until the declaration is remediated.*
 
 ### Segment 3 — Human approval (hash-bound)
 ```bash
-npm run gov:approve -- --approver "you@demo"    # or: npx tsx src/governance/src/cli.ts approve --approver "you@demo"
+npx tsx src/governance/src/cli.ts approve --approver "andrew@demo"
 ```
 Shows the approval record binding approver + contract/proposition/catalogue hashes
 (`nonRepudiation: false`). Message: *a human approves the exact contract; any material
