@@ -64,11 +64,27 @@ export function redactionAdapter(): AdapterResult {
 // ── SEC-MCP-001: configured/effective tools must be a subset of the approved allowlist ──
 function configuredTools(ctx: EvidenceContext): string[] {
   if (ctx.configuredToolsOverride) return ctx.configuredToolsOverride;
-  const driver = rp(ctx, 'src/api/src/agent/copilot-driver.ts');
-  const text = readFileSync(driver, 'utf8');
-  const m = text.match(/const\s+MCP_ALLOWLIST\s*=\s*\[([^\]]*)\]/);
-  if (!m) return [];
-  return [...m[1].matchAll(/'([^']+)'|"([^"]+)"/g)].map((x) => x[1] ?? x[2]);
+  let base: string[] = [];
+  try {
+    const driver = rp(ctx, 'src/api/src/agent/copilot-driver.ts');
+    const text = readFileSync(driver, 'utf8');
+    const m = text.match(/const\s+MCP_ALLOWLIST\s*=\s*\[([^\]]*)\]/);
+    base = m ? [...m[1].matchAll(/'([^']+)'|"([^"]+)"/g)].map((x) => x[1] ?? x[2]) : [];
+  } catch {
+    base = [];
+  }
+  // Governance-only PR-demo fixture: inject extra "configured" tool(s) WITHOUT touching any
+  // application file (see scripts/demo-ci-fixture.mjs). Absent by default.
+  try {
+    const fixture = rp(ctx, 'specs/governance/demo-fixtures/extra-configured-tools.json');
+    if (existsSync(fixture)) {
+      const extra = JSON.parse(readFileSync(fixture, 'utf8'));
+      if (Array.isArray(extra)) return [...base, ...extra.map((x) => String(x))];
+    }
+  } catch {
+    /* malformed fixture is ignored — the driver allowlist remains authoritative */
+  }
+  return base;
 }
 
 export function mcpAllowlistAdapter(ctx: EvidenceContext): AdapterResult {

@@ -94,3 +94,50 @@ Reason: Required evaluation evidence is missing or below the approved threshold.
 Remediation: Run the required evaluation and attach evidence for the current version.
 ```
 After remediation the same contract produces `RELEASE APPROVED`.
+
+---
+
+## CI enforcement segment (local convenience vs authoritative boundary)
+
+> The local commands above are **fast developer feedback**. The **authoritative enforcement
+> boundary is GitHub CI**: the `Governance Contract Gate` runs independently from a clean
+> checkout of the PR commit and, when required on the protected branch, a non-compliant change
+> **cannot merge**. One-time manual setup: [github-enforcement-setup.md](github-enforcement-setup.md).
+
+### Local preview (show briefly — NOT the enforcement boundary)
+```bash
+npm run gov:contract:check    # regenerate + integrity-check the committed contract
+npm run gov:pr-gate           # the same authoritative decision CI runs, with the rich summary
+```
+Narration:
+> These commands give fast local feedback, but they are not the enforcement boundary.
+
+### Authoritative enforcement (record the GitHub pull request)
+
+Prepare two governance-only commits on a demo branch cut from `spec2cloud/foundry-hosted`:
+```bash
+npm run demo:ci:block         # commit 1: injects the isolated SEC-MCP-001 breach (governance-only)
+# open a PR into spec2cloud/foundry-hosted, then after the check fails:
+npm run demo:ci:remediate     # commit 2: removes the breach
+```
+
+Record the PR showing, in order:
+1. Governance files changed on the demo branch.
+2. **`Governance Contract Gate`** starts automatically.
+3. The fixture makes the check **fail**.
+4. The PR shows **merge blocked by the required check**.
+5. The Actions **job summary** names **`SEC-MCP-001`** and the remediation.
+6. Push the remediation commit (`npm run demo:ci:remediate`).
+7. The same check **reruns and passes**.
+8. The PR becomes **eligible to merge**, subject to review.
+9. The workflow graph shows deployment is **downstream** of the approved release decision
+   (post-merge `release-gate.yml` / the separately-recorded Foundry clip), not the local scripts.
+
+Narration:
+> Developers may work freely in feature branches. The authoritative verifier runs independently
+> in GitHub. The target branch requires the governance check, so a non-compliant change cannot
+> enter the trusted release path. Local commands are convenience; the protected workflow is
+> enforcement.
+
+The PR workflow holds **`contents: read` only** — it cannot deploy. Deployment is a separate,
+post-merge, environment-protected workflow gated on the approved decision.

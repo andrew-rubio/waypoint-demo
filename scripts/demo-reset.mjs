@@ -19,7 +19,7 @@ try {
 } catch { /* not a git checkout — leave as-is */ }
 
 // Remove the draft + non-authoritative generated output (safe / regenerable).
-for (const p of ['specs/governance/proposition.draft.yaml', 'specs/governance/.out']) {
+for (const p of ['specs/governance/proposition.draft.yaml', 'specs/governance/.out', 'specs/governance/demo-fixtures/extra-configured-tools.json']) {
   const abs = resolve(root, p);
   if (existsSync(abs)) { rmSync(abs, { recursive: true, force: true }); console.log(`  cleared ${p}`); }
 }

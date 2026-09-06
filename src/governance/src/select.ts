@@ -14,6 +14,10 @@ import type {
  * same inputs always yield the same selection (controls sorted by id).
  */
 
+/** Deterministic selector version. Bump when the selection logic changes; surfaced by
+ *  gov:contract:check so a selector change is a first-class, visible contract input. */
+export const SELECTOR_VERSION = '1.0.0';
+
 function resolveField(chars: PropositionCharacteristics, field: string): unknown {
   return (chars as unknown as Record<string, unknown>)[field];
 }

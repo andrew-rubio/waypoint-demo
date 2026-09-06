@@ -1,0 +1,14 @@
+# CODEOWNERS — review routing for governance-sensitive paths.
+#
+# ⚠ PLACEHOLDER — NOT YET ENFORCED.
+# The owners below are intentionally COMMENTED OUT. Committing a mandatory owner that is not a
+# real GitHub user/team would break pull-request review routing. Before enabling
+# "Require review from Code Owners" in branch protection, replace @REPLACE-WITH-VALID-OWNER with
+# a real handle (e.g. @your-org/governance) and uncomment the lines. See
+# specs/demo/github-enforcement-setup.md.
+#
+# .github/workflows/                        @REPLACE-WITH-VALID-OWNER
+# src/governance/                           @REPLACE-WITH-VALID-OWNER
+# specs/governance/controls.yaml            @REPLACE-WITH-VALID-OWNER
+# specs/governance/control-contract.yaml    @REPLACE-WITH-VALID-OWNER
+# specs/governance/approval-record.json     @REPLACE-WITH-VALID-OWNER

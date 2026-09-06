@@ -4,9 +4,10 @@ import { dirname } from 'node:path';
 import { buildApprovalRecord, checkApproval } from './approval.js';
 import { loadCatalogue, loadProposition } from './catalog.js';
 import { buildControlContract } from './contract.js';
+import { checkContract } from './contract-check.js';
 import { collectEvidence } from './evidence.js';
-import { selectControls } from './select.js';
-import { releaseDecisionMarkdown, evidenceSummaryMarkdown } from './summary.js';
+import { selectControls, SELECTOR_VERSION } from './select.js';
+import { releaseDecisionMarkdown, evidenceSummaryMarkdown, prGateSummaryMarkdown } from './summary.js';
 import { verifyRelease } from './verify.js';
 import { dossierJson, dossierMarkdown, learningMarkdown, traceMarkdown } from './dossier.js';
 import { deriveLifecycle } from './lifecycle.js';
@@ -350,6 +351,109 @@ function cmdStatus(): number {
   return 0;
 }
 
+function cmdContractCheck(): number {
+  const { catalogue, proposition } = loadInputs();
+  const committed = existsSync(PATHS.contract) ? ControlContractSchema.parse(readYamlFile(PATHS.contract)) : undefined;
+  const r = checkContract({ proposition, catalogue, committedContract: committed });
+  if (r.ok) {
+    console.log('CONTROL CONTRACT CHECK PASSED\n');
+    console.log(`Committed contract hash: ${r.committedHash}`);
+    console.log(`Selector version:        ${r.selectorVersion}`);
+    console.log('The committed contract matches the deterministically regenerated contract.');
+    return 0;
+  }
+  console.error('CONTROL CONTRACT CHECK FAILED\n');
+  console.error(`Committed contract hash: ${r.committedHash ?? '(missing)'}`);
+  console.error(`Expected contract hash:  ${r.expectedHash}`);
+  if (r.recomputedHash && r.recomputedHash !== r.committedHash) {
+    console.error(`Recomputed material hash: ${r.recomputedHash}`);
+  }
+  if (r.added.length) console.error(`Controls missing from the committed contract: ${r.added.join(', ')}`);
+  if (r.removed.length) console.error(`Controls present but not expected: ${r.removed.join(', ')}`);
+  console.error('\nReason: proposition, policy set, selector version, threshold, or control obligation changed, or the contract was manually edited.');
+  for (const reason of r.reasons) console.error(`  - ${reason}`);
+  console.error('Required action: regenerate the contract (gov:select + gov:contract) and obtain approval for the new hash.');
+  return 1;
+}
+
+/**
+ * Authoritative PR gate. Independently regenerates + integrity-checks the committed contract,
+ * validates approval binding, collects CI-authoritative source-bound evidence, verifies every
+ * blocking control, writes the rich GitHub Actions summary, and returns non-zero when the
+ * release is blocked/stale/tampered/unapproved. Deterministic — never an LLM.
+ */
+function cmdPrGate(): number {
+  const args = parseArgs(process.argv.slice(3));
+  const writeSummary = (md: string) => {
+    if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, md + '\n', 'utf8');
+  };
+
+  let catalogue, proposition;
+  try {
+    ({ catalogue, proposition } = loadInputs());
+  } catch (err) {
+    const md = `## Governance Contract Gate: BLOCKED ❌\n\nThe committed proposition is missing or invalid: ${(err as Error).message.split('\n')[0]}`;
+    console.error(md);
+    writeSummary(md);
+    return 1;
+  }
+  if (proposition.unresolved.length) {
+    const md = `## Governance Contract Gate: BLOCKED ❌\n\nProposition has unresolved fields awaiting human confirmation: ${proposition.unresolved.join(', ')}`;
+    console.error(md);
+    writeSummary(md);
+    return 1;
+  }
+
+  const committed = existsSync(PATHS.contract) ? ControlContractSchema.parse(readYamlFile(PATHS.contract)) : undefined;
+  const check = checkContract({ proposition, catalogue, committedContract: committed });
+  const approval = readJsonIfExists<ApprovalRecord>(PATHS.approval);
+  const approvalCheck = committed
+    ? checkApproval(committed, approval, proposition, catalogue)
+    : { valid: false, reasons: ['No committed contract to approve.'] };
+
+  const commit = (args['commit'] as string) ?? currentCommit();
+  const digest = (args['digest'] as string) ?? (commit ? `sha256:${commit}` : 'sha256:local-demo');
+
+  let decision: ReleaseDecision | undefined;
+  if (committed) {
+    const manifest = buildManifest(committed, proposition, {
+      mode: 'ci-authoritative',
+      commit,
+      runId: (args['run-id'] as string) ?? undefined,
+      digest,
+      deploymentDigest: digest,
+    });
+    decision = verifyRelease({ proposition, catalogue, contract: committed, approval, manifest, deploymentArtefactDigest: digest });
+    writeJsonFile(PATHS.releaseDecision, decision);
+  }
+
+  const md = prGateSummaryMarkdown({
+    propositionId: proposition.propositionId,
+    propositionTitle: proposition.title,
+    propositionHash: sha256Of(proposition),
+    policySet: `${catalogue.catalogueId}@${catalogue.version} (synthetic-demo)`,
+    selectorVersion: SELECTOR_VERSION,
+    contractCurrent: check.ok,
+    contractHash: check.committedHash ?? check.expectedHash,
+    contractCheckReasons: check.reasons,
+    approvalValid: approvalCheck.valid,
+    approver: approval?.approver,
+    identityAssurance: approval?.identityAssurance,
+    decision,
+    sourceCommit: commit,
+  });
+  console.log(md);
+  writeSummary(md);
+
+  const gatePass = check.ok && approvalCheck.valid && decision?.releaseDecision === 'approved' && decision?.deployable === true;
+  audit('pr-gate.decided', {
+    contractHash: check.committedHash,
+    releaseDecision: decision?.releaseDecision,
+    summary: `PR gate ${gatePass ? 'APPROVED' : 'BLOCKED'}; contractCurrent=${check.ok}; approvalValid=${approvalCheck.valid}`,
+  });
+  return gatePass ? 0 : 1;
+}
+
 function main(): number {
   const sub = process.argv[2];
   switch (sub) {
@@ -358,6 +462,8 @@ function main(): number {
     case 'intake-promote': return cmdIntakePromote();
     case 'select': return cmdSelect();
     case 'contract': return cmdContract();
+    case 'contract-check': return cmdContractCheck();
+    case 'pr-gate': return cmdPrGate();
     case 'approve': return cmdApprove();
     case 'evidence': return cmdEvidence();
     case 'verify': return cmdVerify();
@@ -370,7 +476,7 @@ function main(): number {
     case 'learn': return cmdLearn();
     case 'status': return cmdStatus();
     default:
-      console.error('Usage: waypoint-gov <intake-init|intake-validate|intake-promote|select|contract|approve|evidence|verify|certify|demo-failure|demo-pass|dossier|trace|change-impact|learn|status> [--flags]');
+      console.error('Usage: waypoint-gov <intake-init|intake-validate|intake-promote|select|contract|contract-check|pr-gate|approve|evidence|verify|certify|demo-failure|demo-pass|dossier|trace|change-impact|learn|status> [--flags]');
       return 2;
   }
 }

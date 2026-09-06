@@ -46,6 +46,73 @@ export function releaseDecisionMarkdown(decision: ReleaseDecision): string {
   return lines.join('\n');
 }
 
+/**
+ * Rich GitHub Actions job-summary for the authoritative PR gate. This is the primary visual
+ * for the recording — a reviewer reads pass/stale/blocked at a glance without parsing logs.
+ * The overall verdict is APPROVED only when the contract is current, the approval is valid,
+ * and the release decision is approved + deployable.
+ */
+export interface PrGateSummaryInput {
+  propositionId: string;
+  propositionTitle: string;
+  propositionHash: string;
+  policySet: string;
+  selectorVersion: string;
+  contractCurrent: boolean;
+  contractHash: string;
+  contractCheckReasons: string[];
+  approvalValid: boolean;
+  approver?: string;
+  identityAssurance?: string;
+  decision?: ReleaseDecision;
+  sourceCommit?: string;
+}
+
+export function prGateSummaryMarkdown(i: PrGateSummaryInput): string {
+  const decision = i.decision;
+  const blocking = decision?.controlResults.filter((r) => r.severity === 'blocking') ?? [];
+  const count = (s: string) => blocking.filter((r) => r.status === s).length;
+  const evalResult = decision?.controlResults.find((r) => r.controlId === 'EVAL-GRD-001');
+  const evalStatus = evalResult ? evalResult.status : 'missing';
+  const gatePass =
+    i.contractCurrent && i.approvalValid && decision?.releaseDecision === 'approved' && decision?.deployable === true;
+
+  const lines: string[] = [];
+  lines.push(`## Governance Contract Gate: ${gatePass ? 'APPROVED ✅' : 'BLOCKED ❌'}`);
+  lines.push('');
+  lines.push(`- **Proposition:** ${i.propositionTitle} (\`${i.propositionId}\`)`);
+  lines.push(`- **Proposition hash:** \`${i.propositionHash}\``);
+  lines.push(`- **Policy set:** ${i.policySet}`);
+  lines.push(`- **Selector version:** \`${i.selectorVersion}\``);
+  lines.push(`- **Control contract:** ${i.contractCurrent ? 'current' : 'STALE / mismatched'} (\`${i.contractHash}\`)`);
+  lines.push(
+    `- **Approval:** ${i.approvalValid ? 'current' : 'STALE / invalid'}${i.approver ? ` — ${i.approver}` : ''} (${i.identityAssurance ?? 'n/a'}, non-production assurance)`,
+  );
+  lines.push(
+    `- **Blocking controls:** ${count('pass')} passed, ${count('fail')} failed, ${count('missing')} missing, ${count('error')} error`,
+  );
+  lines.push(`- **Evaluation evidence:** ${evalStatus} _(deterministic demonstration fixture on this recording branch)_`);
+  lines.push(`- **Release decision:** ${(decision?.releaseDecision ?? 'blocked').toUpperCase()}`);
+  if (i.sourceCommit) lines.push(`- **Source commit:** \`${i.sourceCommit}\``);
+  lines.push('');
+
+  if (!gatePass) {
+    lines.push('### Why merge is blocked');
+    for (const r of i.contractCheckReasons) lines.push(`- **Contract integrity:** ${r}`);
+    if (!i.approvalValid) lines.push('- **Approval:** the approval record does not bind the current contract/proposition/policy hashes.');
+    for (const f of decision?.blockingFailures ?? []) {
+      lines.push(`- **${f.controlId}** (${f.status}) — ${f.reason}`);
+      if (f.remediation) lines.push(`  - Remediation: ${f.remediation}`);
+    }
+    lines.push('');
+  }
+
+  lines.push(
+    '> Assurance is hash-bound local-demonstration (self-asserted, `nonRepudiation: false`) — not a production digital signature. Policies are synthetic demonstration content.',
+  );
+  return lines.join('\n');
+}
+
 export function evidenceSummaryMarkdown(manifest: EvidenceManifest): string {
   const lines: string[] = [];
   lines.push(`### Evidence set \`${manifest.evidenceSetId}\` (${manifest.evidenceMode})`);
