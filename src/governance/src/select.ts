@@ -128,5 +128,29 @@ export function selectControls(
     catalogueVersion: catalogue.version,
     selected,
     findings: deterministicFindings(proposition, catalogue, selected),
+    policyFindings: deterministicPolicyFindings(proposition),
   };
 }
+
+/**
+ * Deterministic POLICY findings from the (valid) declared proposition. These are risk/policy
+ * conflicts — the declaration is legitimate, but policy requires a control or remediation, so
+ * a `release-blocking` finding blocks the release gate until the proposition is remediated.
+ * No LLM is involved; the release gate enforces these, intake validation does not.
+ */
+function deterministicPolicyFindings(proposition: PropositionDeclaration): ControlSelection['policyFindings'] {
+  const c = proposition.characteristics;
+  const out: ControlSelection['policyFindings'] = [];
+  // Consequential/financial authority without human oversight → human-approval obligation unmet.
+  if (c.financialTransactions !== 'none' && c.humanInLoop === false) {
+    out.push({
+      controlId: 'RAI-HITL-001',
+      severity: 'release-blocking',
+      reason: 'The proposition declares financial or consequential actions without a required human-approval mechanism (humanInLoop=false).',
+      remediation: 'Declare an approved human-approval mechanism (humanInLoop=true) or remove the consequential/financial authority, then re-select and re-approve.',
+      selectedBy: 'financialTransactions != none AND humanInLoop = false',
+    });
+  }
+  return out.sort((a, b) => a.controlId.localeCompare(b.controlId));
+}
+

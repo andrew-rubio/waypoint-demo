@@ -77,12 +77,12 @@ controls:
     category: responsible-ai
     description: A consequential action must not execute without explicit human approval bound to the exact proposal.
     policyRef: SYN-POL-RAI
-    obligation: The simulated booking must require an itinerary-bound approval record before execution.
+    obligation: A financial/consequential action requires a declared human-approval mechanism and an itinerary-bound approval record before execution.
     enforcementStage: runtime
     severity: blocking
     appliesWhen:
-      - { field: humanInLoop, op: isTrue }
-    rationaleTemplate: Applies because the proposition keeps a human in the loop for consequential actions ({matched}).
+      - { field: financialTransactions, op: neq, value: none }
+    rationaleTemplate: Applies because the proposition performs financial/consequential actions ({matched}).
     evidenceRequirements:
       - { evidenceId: booking-approval-test, evidenceType: test-result, descriptor: itinerary-bound booking-approval behavioural test }
 
@@ -155,6 +155,20 @@ controls:
     rationaleTemplate: Applies because the proposition handles personal data ({matched}).
     evidenceRequirements:
       - { evidenceId: data-minimisation, evidenceType: config-check, descriptor: personal-data declaration + minimisation }
+
+  - id: DATA-CONF-001
+    title: Confidential/restricted information protected
+    category: data
+    description: Confidential or restricted information requires access restriction, encryption, approved storage, and logging/redaction — independently of whether it is personal data.
+    policyRef: SYN-POL-DATA
+    obligation: Confidential/restricted data is protected with keyless/managed-identity access and redaction.
+    enforcementStage: build
+    severity: blocking
+    appliesWhen:
+      - { field: dataClassification, op: in, value: [confidential, restricted] }
+    rationaleTemplate: Applies because the proposition is classified confidential/restricted ({matched}).
+    evidenceRequirements:
+      - { evidenceId: keyless-infra, evidenceType: config-check, descriptor: keyless access + approved storage for confidential data }
 
   - id: EVAL-GRD-001
     title: Grounded tool-use evaluation meets its threshold

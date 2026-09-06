@@ -27,6 +27,7 @@ export function buildControlContract(
     catalogueVersion: catalogue.version,
     policyCatalogueHash: sha256Of(catalogue),
     controls: [...selection.selected].sort((a, b) => a.controlId.localeCompare(b.controlId)),
+    policyFindings: [...selection.policyFindings].sort((a, b) => a.controlId.localeCompare(b.controlId)),
   };
 
   return {

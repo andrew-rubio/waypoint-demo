@@ -33,12 +33,15 @@ accountable person to supply and confirm the mandatory values, and it fails clos
 
 ### Segment 2 — Proposition becomes a control contract
 ```bash
-npm run gov:select                # deterministic selection: 13 controls (11 blocking)
+npm run gov:select                # deterministic selection: 14 controls (12 blocking) + policy findings
 npm run gov:contract              # writes control-contract.yaml + contract hash
 npm run gov:trace                 # requirement -> characteristic -> control -> increment -> evidence -> decision
 ```
 Message: *deterministic rules compile the approved proposition into release obligations —
-no model decides which controls apply.*
+no model decides which controls apply. Intake validation only judged whether the proposition
+is complete and coherent; **policy risk is separated** — an accurately-declared high-risk
+proposition is valid input, then selection raises release-blocking policy findings and the
+release gate blocks it until the declaration is remediated.*
 
 ### Segment 3 — Human approval (hash-bound)
 ```bash

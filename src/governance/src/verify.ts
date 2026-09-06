@@ -116,9 +116,16 @@ export function verifyRelease(opts: VerifyOptions): ReleaseDecision {
     .map((c) => evaluateControl(c, manifest))
     .sort((a, b) => a.controlId.localeCompare(b.controlId));
 
-  const blockingFailures = controlResults.filter(
-    (r) => r.severity === 'blocking' && (r.status === 'fail' || r.status === 'missing' || r.status === 'error'),
-  );
+  // Release-blocking POLICY findings (from the declared proposition) block release
+  // deterministically until the declaration is remediated — independent of evidence.
+  const policyResults: ControlResult[] = (contract.material.policyFindings ?? [])
+    .filter((f) => f.severity === 'release-blocking')
+    .map((f) => ({ controlId: f.controlId, severity: 'blocking' as const, status: 'fail' as const, reason: `policy: ${f.reason}`, remediation: f.remediation }));
+
+  const blockingFailures = [
+    ...controlResults.filter((r) => r.severity === 'blocking' && (r.status === 'fail' || r.status === 'missing' || r.status === 'error')),
+    ...policyResults,
+  ];
   const advisoryFindings = controlResults.filter(
     (r) => r.severity === 'advisory' && (r.status === 'fail' || r.status === 'missing' || r.status === 'error'),
   );
@@ -127,7 +134,7 @@ export function verifyRelease(opts: VerifyOptions): ReleaseDecision {
   const reasons: string[] = [];
   if (!approvalCheck.valid) reasons.push(...approvalCheck.reasons);
   if (blockingFailures.length) {
-    reasons.push(`${blockingFailures.length} blocking control(s) not satisfied.`);
+    reasons.push(`${blockingFailures.length} blocking obligation(s) not satisfied.`);
   }
 
   const digestBound =

@@ -41,6 +41,23 @@ exact metadata (id/name from `package.json`, PRD reference, source commit); ever
 classification starts `UNRESOLVED` and must be supplied + confirmed by a human. No model
 infers a governance value from prose.
 
+## Proposition validity vs policy compliance
+
+Intake validation (`gov:intake:validate`) judges only **completeness + coherence** and returns
+categorised results — `schemaErrors`, `unresolvedFields`, `consistencyErrors` — failing on any
+of them. It does **not** judge policy risk. Cross-field rules are classified:
+
+| Kind | Example | Where it lives |
+|------|---------|----------------|
+| Logical contradiction (by definition) | malformed boolean/enum value | intake validation (`schemaErrors`/`consistencyErrors`) |
+| Risk/policy conflict (values can coexist) | `financialTransactions != none` + `humanInLoop = false`; `dataClassification = confidential` + `handlesPersonalData = false` | deterministic control selection (`policyFinding` + selected control), enforced by the release gate |
+| Missing information | an unresolved mandatory field | unresolved, fail closed |
+
+So an accurately-declared high-risk proposition is **valid input** — it is then subjected to
+stricter controls and **blocked at the release gate** until the declaration is remediated
+(which changes the proposition hash and requires re-approval). `gov:select` prints the
+selected controls **and** any release-blocking `policyFindings`.
+
 ## Hash-bound approval (not a digital signature)
 
 Approval binds an approval record to the sha256 of the canonicalised contract, proposition

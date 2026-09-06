@@ -47,13 +47,16 @@ describe('deterministic governance intake', () => {
     expect(Array.isArray(d.sourceReferences)).toBe(true);
   });
 
-  it('unresolved fields block validation with exact paths', () => {
+  it('unresolved fields block validation with exact paths (categorised)', () => {
     const v = intakeValidate(intakeInit().yaml);
     expect(v.ok).toBe(false);
-    const paths = v.problems.map((p) => p.path);
-    expect(paths).toContain('accountableOwner');
-    expect(paths).toContain('characteristics.dataClassification');
-    expect(paths).toContain('approvedTools');
+    const unresolved = v.unresolvedFields.map((p) => p.path);
+    expect(unresolved).toContain('accountableOwner');
+    expect(unresolved).toContain('characteristics.dataClassification');
+    // approvedTools empty is a structural (schema) error, not a policy risk.
+    expect(v.schemaErrors.map((p) => p.path)).toContain('approvedTools');
+    // No policy-risk combination is ever reported as a consistency error.
+    expect(v.consistencyErrors).toEqual([]);
   });
 
   it('unresolved fields block promotion', () => {
@@ -71,14 +74,22 @@ describe('deterministic governance intake', () => {
     expect(r.reason).toMatch(/unknown enum/);
   });
 
-  it('a contradiction (restricted data + no personal data) blocks promotion', () => {
+  it('confidential, non-personal data is a VALID declaration (policy risk is not a schema error)', () => {
     const r = intakePromote(resolvedDraftText((d) => {
       const c = d.characteristics as Record<string, unknown>;
-      c.dataClassification = 'restricted';
+      c.dataClassification = 'confidential';
       c.handlesPersonalData = false;
     }), 'x@demo');
-    expect(r.ok).toBe(false);
-    expect(r.reason).toMatch(/contradicts/);
+    expect(r.ok).toBe(true);
+  });
+
+  it('financial transactions without human-in-loop is a VALID declaration (blocked later by policy, not intake)', () => {
+    const r = intakePromote(resolvedDraftText((d) => {
+      const c = d.characteristics as Record<string, unknown>;
+      c.financialTransactions = 'real';
+      c.humanInLoop = false;
+    }), 'x@demo');
+    expect(r.ok).toBe(true);
   });
 
   it('empty approvedTools blocks promotion (tools must be declared explicitly)', () => {

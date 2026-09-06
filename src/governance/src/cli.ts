@@ -63,14 +63,23 @@ function cmdIntakeValidate(): number {
   }
   const v = intakeValidate(readFileSync(PATHS.propositionDraft, 'utf8'));
   if (v.ok) {
-    console.log('PROPOSITION VALIDATION PASSED — all mandatory fields resolved. Promote with gov:intake:promote.');
+    console.log('PROPOSITION VALID\n\nThe proposition is complete and schema-valid.\n\nPolicy findings will be evaluated during control selection.');
+    audit('proposition.intake-validated', { summary: 'Proposition valid (complete + coherent)' });
     return 0;
   }
   console.log('PROPOSITION VALIDATION BLOCKED\n');
-  console.log(`${v.problems.length} problem(s) require human input:`);
-  for (const p of v.problems) console.log(`- ${p.path}: ${p.message}`);
+  const groups: Array<[string, typeof v.schemaErrors]> = [
+    ['schemaErrors', v.schemaErrors],
+    ['unresolvedFields', v.unresolvedFields],
+    ['consistencyErrors', v.consistencyErrors],
+  ];
+  for (const [name, list] of groups) {
+    if (!list.length) continue;
+    console.log(`${name} (${list.length}):`);
+    for (const p of list) console.log(`- ${p.path}: ${p.message}`);
+  }
   console.log('\nNo controls have been selected.');
-  audit('proposition.intake-validated', { summary: `Validation blocked: ${v.problems.length} problems` });
+  audit('proposition.intake-validated', { summary: `Validation blocked: ${v.schemaErrors.length} schema, ${v.unresolvedFields.length} unresolved, ${v.consistencyErrors.length} consistency` });
   return 1;
 }
 
@@ -110,10 +119,14 @@ function cmdSelect(): number {
   const selection = selectControls(proposition, catalogue);
   writeJsonFile(PATHS.selection, selection);
   const blocking = selection.selected.filter((s) => s.severity === 'blocking').length;
-  console.log(`Selected ${selection.selected.length} control(s) (${blocking} blocking) for "${proposition.propositionId}".`);
+  const policyBlocking = selection.policyFindings.filter((f) => f.severity === 'release-blocking').length;
+  console.log('CONTROL SELECTION COMPLETE\n');
+  console.log(`${selection.selected.length} controls selected (${blocking} blocking).`);
+  if (policyBlocking) console.log(`${policyBlocking} release-blocking obligation(s) require remediation.`);
   for (const s of selection.selected) console.log(`  - ${s.controlId} [${s.severity}] ${s.rationale}`);
-  for (const f of selection.findings) console.log(`  ! ${f.code}: ${f.detail}`);
-  audit('control-selection.generated', { propositionHash: sha256Of(proposition), policySetHash: sha256Of(catalogue), summary: `Selected ${selection.selected.length} controls (${blocking} blocking)` });
+  for (const f of selection.policyFindings) console.log(`  ! POLICY ${f.controlId} [${f.severity}] ${f.reason}\n    remediation: ${f.remediation}`);
+  for (const f of selection.findings) console.log(`  ~ ${f.code}: ${f.detail}`);
+  audit('control-selection.generated', { propositionHash: sha256Of(proposition), policySetHash: sha256Of(catalogue), summary: `Selected ${selection.selected.length} controls (${blocking} blocking); ${policyBlocking} release-blocking policy findings` });
   return 0;
 }
 

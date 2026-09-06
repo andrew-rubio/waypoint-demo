@@ -103,61 +103,88 @@ export function intakeInit(): { yaml: string; unresolved: string[] } {
 }
 
 export interface IntakeProblem { path: string; message: string; }
-export interface IntakeValidation { ok: boolean; problems: IntakeProblem[]; }
+export interface IntakeValidation {
+  ok: boolean;
+  /** Structural/type problems (unknown enum, malformed value, invalid tool id, missing required field). */
+  schemaErrors: IntakeProblem[];
+  /** Mandatory governance facts not yet supplied by a human. */
+  unresolvedFields: IntakeProblem[];
+  /** LOGICAL contradictions only — where one value excludes another by definition. */
+  consistencyErrors: IntakeProblem[];
+}
 
 function getPath(obj: Record<string, unknown>, path: string): unknown {
   return path.split('.').reduce<unknown>((o, k) => (o && typeof o === 'object' ? (o as Record<string, unknown>)[k] : undefined), obj);
 }
 
-/** Deterministic schema validation. Never modifies the draft. Reports the exact YAML path
- * for every unresolved mandatory field, unknown enum, empty required array, or contradiction. */
+/**
+ * Deterministic INTAKE validation. Answers only: is the proposition complete, well-typed and
+ * internally coherent? It does NOT judge policy risk — an accurately declared high-risk
+ * proposition is valid input and is subjected to controls at selection / blocked at release.
+ * (Policy-risk combinations are `policyFindings`, produced by control selection, not here.)
+ * Never modifies the draft; reports the exact YAML path for each problem.
+ */
 export function intakeValidate(draftText: string): IntakeValidation {
+  const schemaErrors: IntakeProblem[] = [];
+  const unresolvedFields: IntakeProblem[] = [];
+  const consistencyErrors: IntakeProblem[] = [];
+  const done = () => ({ ok: schemaErrors.length === 0 && unresolvedFields.length === 0 && consistencyErrors.length === 0, schemaErrors, unresolvedFields, consistencyErrors });
+
   let d: Record<string, unknown>;
   try {
     d = parseYaml(draftText) as Record<string, unknown>;
   } catch (err) {
-    return { ok: false, problems: [{ path: '(root)', message: `Draft is not valid YAML: ${(err as Error).message}` }] };
+    schemaErrors.push({ path: '(root)', message: `Draft is not valid YAML: ${(err as Error).message}` });
+    return done();
   }
-  const problems: IntakeProblem[] = [];
 
+  // Unresolved mandatory fields (missing human input).
   for (const p of MANDATORY_SCALAR) {
     const v = getPath(d, p);
-    if (v === undefined || v === UNRESOLVED || v === '') problems.push({ path: p, message: 'requires human input' });
+    if (v === undefined || v === UNRESOLVED || v === '') unresolvedFields.push({ path: p, message: 'requires human input' });
   }
   for (const p of MANDATORY_ARRAY) {
     const v = getPath(d, p);
-    if (v === undefined || v === UNRESOLVED) problems.push({ path: p, message: 'requires human input (list)' });
-    else if (!Array.isArray(v)) problems.push({ path: p, message: 'must be a list' });
+    if (v === undefined || v === UNRESOLVED) unresolvedFields.push({ path: p, message: 'requires human input (list)' });
+    else if (!Array.isArray(v)) schemaErrors.push({ path: p, message: 'must be a list' });
   }
-  // approvedTools must be declared explicitly (policy requires entries).
-  const tools = getPath(d, 'approvedTools');
-  if (!Array.isArray(tools) || tools.length === 0) problems.push({ path: 'approvedTools', message: 'approved tools not declared explicitly' });
-  // sourceReferences must be present.
-  const refs = getPath(d, 'sourceReferences');
-  if (!Array.isArray(refs) || refs.length === 0) problems.push({ path: 'sourceReferences', message: 'required source references are missing' });
 
-  // Unknown enum values.
+  // Required structural fields.
+  const tools = getPath(d, 'approvedTools');
+  if (!Array.isArray(tools) || tools.length === 0) {
+    schemaErrors.push({ path: 'approvedTools', message: 'approved tools not declared explicitly' });
+  } else {
+    tools.forEach((t, i) => {
+      if (typeof t !== 'string' || t.trim() === '') schemaErrors.push({ path: `approvedTools[${i}]`, message: 'invalid tool identifier (must be a non-empty string)' });
+    });
+    const dupes = tools.filter((t, i) => tools.indexOf(t) !== i);
+    for (const dup of [...new Set(dupes)]) schemaErrors.push({ path: 'approvedTools', message: `duplicate tool identifier "${String(dup)}"` });
+  }
+  const refs = getPath(d, 'sourceReferences');
+  if (!Array.isArray(refs) || refs.length === 0) schemaErrors.push({ path: 'sourceReferences', message: 'required source references are missing' });
+
+  // Unknown enum values (malformed types).
   for (const [p, allowed] of Object.entries(ENUMS)) {
     const v = getPath(d, p);
     if (v !== undefined && v !== UNRESOLVED && !allowed.includes(v as string)) {
-      problems.push({ path: p, message: `unknown enum value "${String(v)}" (allowed: ${allowed.join(', ')})` });
+      schemaErrors.push({ path: p, message: `unknown enum value "${String(v)}" (allowed: ${allowed.join(', ')})` });
     }
   }
 
-  // Deterministic contradictions.
-  const cls = getPath(d, 'characteristics.dataClassification');
-  const pd = getPath(d, 'characteristics.handlesPersonalData');
-  if ((cls === 'confidential' || cls === 'restricted') && pd === false) {
-    problems.push({ path: 'characteristics.handlesPersonalData', message: `contradicts dataClassification=${String(cls)} (personal data likely in scope)` });
-  }
-  const fin = getPath(d, 'characteristics.financialTransactions');
-  const hil = getPath(d, 'characteristics.humanInLoop');
-  if (fin && fin !== 'none' && fin !== UNRESOLVED && hil === false) {
-    problems.push({ path: 'characteristics.humanInLoop', message: `contradicts financialTransactions=${String(fin)} (human-in-the-loop required)` });
+  // Boolean fields must be actual booleans once resolved (malformed value check).
+  for (const p of ['characteristics.usesLLM', 'characteristics.handlesPersonalData', 'characteristics.humanInLoop', 'characteristics.retrievalAugmented']) {
+    const v = getPath(d, p);
+    if (v !== undefined && v !== UNRESOLVED && typeof v !== 'boolean') {
+      schemaErrors.push({ path: p, message: `malformed value "${String(v)}" (must be true or false)` });
+    }
   }
 
-  return { ok: problems.length === 0, problems };
+  // NOTE: no policy-risk cross-field rules here (e.g. confidential-without-personal-data or
+  // financial-without-human-in-loop). Those are valid declarations; policy is enforced by
+  // deterministic control selection + the release gate, not by intake validation.
+  return done();
 }
+
 
 export interface PromoteResult {
   ok: boolean;
@@ -170,7 +197,8 @@ export interface PromoteResult {
 export function intakePromote(draftText: string, confirmedBy: string): PromoteResult {
   const validation = intakeValidate(draftText);
   if (!validation.ok) {
-    return { ok: false, reason: `Validation failed:\n${validation.problems.map((p) => `  - ${p.path}: ${p.message}`).join('\n')}` };
+    const all = [...validation.schemaErrors, ...validation.unresolvedFields, ...validation.consistencyErrors];
+    return { ok: false, reason: `Validation failed:\n${all.map((p) => `  - ${p.path}: ${p.message}`).join('\n')}` };
   }
   const d = parseYaml(draftText) as Record<string, unknown>;
   const candidate = {

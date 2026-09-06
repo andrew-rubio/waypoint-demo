@@ -5,6 +5,23 @@
   "catalogueVersion": "1.0.0",
   "selected": [
     {
+      "controlId": "DATA-CONF-001",
+      "severity": "blocking",
+      "enforcementStage": "build",
+      "policyRef": "SYN-POL-DATA",
+      "rationale": "Applies because the proposition is classified confidential/restricted (dataClassification in [confidential, restricted]).",
+      "matchedBy": [
+        "dataClassification in [confidential, restricted]"
+      ],
+      "evidenceRequirements": [
+        {
+          "evidenceId": "keyless-infra",
+          "evidenceType": "config-check",
+          "descriptor": "keyless access + approved storage for confidential data"
+        }
+      ]
+    },
+    {
       "controlId": "DATA-FRESH-001",
       "severity": "blocking",
       "enforcementStage": "runtime",
@@ -112,9 +129,9 @@
       "severity": "blocking",
       "enforcementStage": "runtime",
       "policyRef": "SYN-POL-RAI",
-      "rationale": "Applies because the proposition keeps a human in the loop for consequential actions (humanInLoop is true).",
+      "rationale": "Applies because the proposition performs financial/consequential actions (financialTransactions neq none).",
       "matchedBy": [
-        "humanInLoop is true"
+        "financialTransactions neq none"
       ],
       "evidenceRequirements": [
         {
@@ -227,5 +244,6 @@
       ]
     }
   ],
-  "findings": []
+  "findings": [],
+  "policyFindings": []
 }

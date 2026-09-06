@@ -1,14 +1,14 @@
 {
   "schema": "waypoint.governance/approval@1",
-  "contractHash": "sha256:f692def9bfd729fed5bc4143368c5b49060689fef38b7f9ddc07e31adf47d355",
+  "contractHash": "sha256:53618ff76cb9ff14dff34d788a4accad880736065c245f4527fe22d3a2e0ba5e",
   "contractVersion": "1.0.0",
   "propositionHash": "sha256:412344a8e70cd694aef7bcfa5d5dcdd966df27203948b4302cff1c1e42658d42",
-  "policyCatalogueHash": "sha256:789e3c1ff0fb71abd96dec58fd4bb0a0c0f116245a6ef535504a2aaf23e09348",
+  "policyCatalogueHash": "sha256:bc734e5f142576ff315c2773e30aadecd682d2512917a2d9579e04e9383f63b0",
   "approver": "demo.presenter",
   "identityAssurance": "self-asserted",
   "approvalMechanism": "local-demo",
-  "approvedAt": "2026-09-06T11:11:43.522Z",
-  "sourceCommit": "b08994d3b1bb55e6e8ed9a6489abc3a23654e3c5",
+  "approvedAt": "2026-09-06T11:35:07.968Z",
+  "sourceCommit": "1c404f05998011aa1c73dcf6a51202438d511cc0",
   "comment": "governance demo reset",
   "nonRepudiation": false
 }

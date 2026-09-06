@@ -139,14 +139,30 @@ export const SelectedControl = z.object({
 });
 export type SelectedControl = z.infer<typeof SelectedControl>;
 
+/**
+ * A deterministic POLICY finding produced by control selection (not by intake validation).
+ * The proposition is a valid declaration; policy requires a control/approval/remediation.
+ * A `release-blocking` finding blocks the release gate until the declaration is remediated.
+ */
+export const PolicyFinding = z.object({
+  controlId: z.string().min(1),
+  severity: z.enum(['release-blocking', 'advisory']),
+  reason: z.string().min(1),
+  remediation: z.string().min(1),
+  selectedBy: z.string().min(1),
+});
+export type PolicyFinding = z.infer<typeof PolicyFinding>;
+
 export const ControlSelection = z.object({
   propositionId: z.string().min(1),
   propositionVersion: z.string().min(1),
   catalogueId: z.string().min(1),
   catalogueVersion: z.string().min(1),
   selected: z.array(SelectedControl),
-  /** Deterministic advisories: missing classifications, conflicts, etc. */
+  /** Deterministic advisories: missing classifications, etc. */
   findings: z.array(z.object({ code: z.string(), detail: z.string() })).default([]),
+  /** Deterministic policy findings from the declared proposition (risk, not schema error). */
+  policyFindings: z.array(PolicyFinding).default([]),
 });
 export type ControlSelection = z.infer<typeof ControlSelection>;
 
@@ -163,6 +179,8 @@ export const ContractMaterial = z.object({
   catalogueVersion: z.string().min(1),
   policyCatalogueHash: z.string().min(1),
   controls: z.array(SelectedControl),
+  /** Deterministic policy findings carried into the contract so the release gate enforces them. */
+  policyFindings: z.array(PolicyFinding).default([]),
 });
 export type ContractMaterial = z.infer<typeof ContractMaterial>;
 

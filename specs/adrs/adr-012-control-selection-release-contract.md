@@ -64,6 +64,21 @@ repository-local synthetic artefacts and a CI release gate.
     deterministic stale-currency detection that contains budget/booking while keeping the
     service available; a deliberately failing evaluation remains the separate pre-release
     quality-gate beat. Neither is model-decided; neither is model rerouting.
+11. **Proposition validity is separate from policy compliance.** Intake validation answers
+    only *"is the proposition complete, well-typed and internally coherent?"* — it never
+    rewrites a policy violation as malformed intake. Every cross-field rule is classified:
+    - **Logical contradiction** (values cannot both hold *by definition*, e.g. a malformed
+      boolean/enum) → **kept in intake validation** (`schemaErrors`/`consistencyErrors`).
+    - **Risk/policy conflict** (values can coexist but policy requires a control/approval/
+      remediation, e.g. `financialTransactions != none` + `humanInLoop = false`; or
+      `dataClassification = confidential` + `handlesPersonalData = false`) → **moved to
+      deterministic control selection** as a `policyFinding` (release-blocking) and/or a
+      selected control; enforced by the release gate, not intake.
+    - **Missing information** (a required fact is absent) → **kept as unresolved, fail closed.**
+    `gov:intake:validate` fails only on `schemaErrors | unresolvedFields | consistencyErrors`;
+    `policyFindings` are produced by `gov:select`. An accurately-declared high-risk
+    proposition is valid input, then blocked at release until remediated (which changes the
+    proposition hash and requires re-approval).
 
 ## Consequences
 
