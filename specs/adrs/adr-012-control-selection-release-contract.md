@@ -19,9 +19,11 @@ Add an **isolated, deterministic** governance engine (`@waypoint/governance`) pl
 repository-local synthetic artefacts and a CI release gate.
 
 1. **Deterministic engine, not an LLM.** Control **selection** and release **verification**
-   are pure TypeScript over declarative predicates and evidence outcomes. An LLM may only
-   assist with drafting a proposition and explaining controls (off the critical path); it
-   never decides whether a blocking control passes.
+   are pure TypeScript over declarative predicates and evidence outcomes. Proposition intake
+   is **deterministic + human-authored**: a schema-driven template is generated, a human
+   supplies + confirms every governance classification, and deterministic validation gates
+   promotion. No LLM interprets the requirement/PRD into governance values, promotes a
+   proposition, selects controls, approves a contract, or decides whether evidence passes.
 2. **Synthetic catalogue.** The policy catalogue is labelled `synthetic: true`; the engine
    refuses to load a catalogue that is not. No regulatory citation or certification is claimed.
 3. **Human-approved, HASH-BOUND approval (not cryptographic signature).** Approval binds an

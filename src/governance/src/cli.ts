@@ -10,7 +10,7 @@ import { releaseDecisionMarkdown, evidenceSummaryMarkdown } from './summary.js';
 import { verifyRelease } from './verify.js';
 import { dossierJson, dossierMarkdown, learningMarkdown, traceMarkdown } from './dossier.js';
 import { deriveLifecycle } from './lifecycle.js';
-import { draftProposition, promoteProposition } from './draft.js';
+import { intakeInit, intakeValidate, intakePromote } from './intake.js';
 import { sha256Of } from './canonical.js';
 import {
   PATHS,
@@ -45,36 +45,68 @@ function loadInputs() {
 
 // ─────────────────────────────── subcommands ───────────────────────────────
 
-function cmdDraft(): number {
-  const { yaml, unresolved } = draftProposition();
+function cmdIntakeInit(): number {
+  const { yaml, unresolved } = intakeInit();
   writeTextFile(PATHS.propositionDraft, yaml);
-  console.log(`Proposition draft written to ${PATHS.propositionDraft}`);
-  console.log(`\n${unresolved.length} high-impact field(s) left UNRESOLVED (require human confirmation):`);
+  console.log(`Deterministic governance intake template written to ${PATHS.propositionDraft}`);
+  console.log(`\n${unresolved.length} mandatory field(s) require human input (no value is inferred):`);
   for (const f of unresolved) console.log(`  - ${f}`);
-  console.log('\nReview + resolve the draft, then run: npm run gov:promote-proposition');
-  audit('proposition.drafted', { summary: `Draft created with ${unresolved.length} unresolved high-impact fields` });
+  console.log('\nA human supplies the values, then: npm run gov:intake:validate');
+  audit('proposition.intake-initialised', { summary: `Intake template created; ${unresolved.length} mandatory fields UNRESOLVED` });
   return 0;
 }
 
-function cmdPromoteProposition(): number {
+function cmdIntakeValidate(): number {
   if (!existsSync(PATHS.propositionDraft)) {
-    console.error(`No draft at ${PATHS.propositionDraft} — run gov:draft first.`);
+    console.error(`No draft at ${PATHS.propositionDraft} — run gov:intake:init first.`);
     return 2;
   }
-  const result = promoteProposition(readFileSync(PATHS.propositionDraft, 'utf8'));
+  const v = intakeValidate(readFileSync(PATHS.propositionDraft, 'utf8'));
+  if (v.ok) {
+    console.log('PROPOSITION VALIDATION PASSED — all mandatory fields resolved. Promote with gov:intake:promote.');
+    return 0;
+  }
+  console.log('PROPOSITION VALIDATION BLOCKED\n');
+  console.log(`${v.problems.length} problem(s) require human input:`);
+  for (const p of v.problems) console.log(`- ${p.path}: ${p.message}`);
+  console.log('\nNo controls have been selected.');
+  audit('proposition.intake-validated', { summary: `Validation blocked: ${v.problems.length} problems` });
+  return 1;
+}
+
+function cmdIntakePromote(): number {
+  const args = parseArgs(process.argv.slice(3));
+  const confirmedBy = (args['confirmed-by'] as string) ?? '';
+  if (!confirmedBy) { console.error('Error: --confirmed-by "<identity>" is required.'); return 2; }
+  if (!existsSync(PATHS.propositionDraft)) {
+    console.error(`No draft at ${PATHS.propositionDraft} — run gov:intake:init first.`);
+    return 2;
+  }
+  const result = intakePromote(readFileSync(PATHS.propositionDraft, 'utf8'), confirmedBy);
   if (!result.ok || !result.proposition) {
-    console.error(`PROMOTION BLOCKED: ${result.reason}`);
+    console.error(`PROMOTION BLOCKED — ${result.reason}`);
     return 1;
   }
   writeYamlFile(PATHS.proposition, result.proposition);
-  console.log(`Promoted draft to ${PATHS.proposition} (proposition "${result.proposition.propositionId}" v${result.proposition.version}).`);
-  console.log('Control selection may now run: npm run gov:select');
-  audit('proposition.promoted', { propositionHash: sha256Of(result.proposition), summary: 'Draft promoted to approved proposition after human confirmation' });
+  console.log(`Promoted to ${PATHS.proposition} (proposition "${result.proposition.propositionId}" v${result.proposition.version}).`);
+  console.log(`  content hash: ${result.proposition.confirmation.contentHash}`);
+  console.log(`  confirmed by: ${confirmedBy} (${result.proposition.confirmation.identityAssurance}, ${result.proposition.confirmation.mechanism})`);
+  console.log('Deterministic control selection may now run: npm run gov:select');
+  audit('proposition.promoted', { propositionHash: result.proposition.confirmation.contentHash as string, summary: `Human-confirmed intake promoted by ${confirmedBy}` });
   return 0;
 }
 
 function cmdSelect(): number {
-  const { catalogue, proposition } = loadInputs();
+  let inputs;
+  try {
+    inputs = loadInputs();
+  } catch (err) {
+    console.error('CONTROL SELECTION REFUSED — the approved proposition is missing or has unresolved/invalid required classifications.');
+    console.error('Run the deterministic intake first (gov:intake:init → validate → promote). Selection never infers values from prose.');
+    console.error(`Detail: ${(err as Error).message.split('\n')[0]}`);
+    return 1;
+  }
+  const { catalogue, proposition } = inputs;
   const selection = selectControls(proposition, catalogue);
   writeJsonFile(PATHS.selection, selection);
   const blocking = selection.selected.filter((s) => s.severity === 'blocking').length;
@@ -307,8 +339,9 @@ function cmdStatus(): number {
 function main(): number {
   const sub = process.argv[2];
   switch (sub) {
-    case 'draft': return cmdDraft();
-    case 'promote-proposition': return cmdPromoteProposition();
+    case 'intake-init': return cmdIntakeInit();
+    case 'intake-validate': return cmdIntakeValidate();
+    case 'intake-promote': return cmdIntakePromote();
     case 'select': return cmdSelect();
     case 'contract': return cmdContract();
     case 'approve': return cmdApprove();
@@ -323,7 +356,7 @@ function main(): number {
     case 'learn': return cmdLearn();
     case 'status': return cmdStatus();
     default:
-      console.error('Usage: waypoint-gov <draft|promote-proposition|select|contract|approve|evidence|verify|certify|demo-failure|demo-pass|dossier|trace|change-impact|learn|status> [--flags]');
+      console.error('Usage: waypoint-gov <intake-init|intake-validate|intake-promote|select|contract|approve|evidence|verify|certify|demo-failure|demo-pass|dossier|trace|change-impact|learn|status> [--flags]');
       return 2;
   }
 }

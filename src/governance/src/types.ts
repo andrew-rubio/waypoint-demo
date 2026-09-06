@@ -41,7 +41,7 @@ export const PropositionDeclaration = z.object({
   /** MCP servers/tools governance has approved for this proposition (allowlist). */
   approvedTools: z.array(z.string()).default([]),
   characteristics: PropositionCharacteristics,
-  /** Fields the agent-assist flagged as ambiguous/high-impact and awaiting human confirmation. */
+  /** Governance fields left UNRESOLVED by deterministic intake, awaiting explicit human confirmation. */
   unresolved: z.array(z.string()).default([]),
 });
 export type PropositionDeclaration = z.infer<typeof PropositionDeclaration>;

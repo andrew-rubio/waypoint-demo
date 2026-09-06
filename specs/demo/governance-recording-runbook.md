@@ -14,26 +14,31 @@
 
 ## Command sequence + expected output
 
-### Segment 1 — Requirement becomes a proposition
+> Human defines and confirms governance facts. Deterministic rules select controls.
+> Automated checks verify evidence. A human approves the contract. The release gate enforces
+> the decision. **No model interprets the requirement or PRD into governance values.**
+
+### Segment 1 — Deterministic governance intake
 ```bash
-npm run gov:draft                 # writes specs/governance/proposition.draft.yaml
-# → 6 high-impact fields left UNRESOLVED (owner, personal-data, classification,
-#   autonomy, consequential-actions, financial-transactions)
-npm run gov:promote-proposition   # BLOCKED while unresolved  → shows the human gate
-# ...human reviews the draft, fills the high-impact fields, sets `unresolved: []`...
-npm run gov:promote-proposition   # → Promoted draft to proposition.yaml
+npm run demo:governance-reset     # restore baseline, clear the draft + generated evidence
+npm run gov:intake:init           # deterministic template — every governance field UNRESOLVED
+npm run gov:intake:validate       # BLOCKED — lists the exact unresolved YAML paths; no controls selected
+# ...an accountable human supplies the mandatory classifications + declares approvedTools...
+npm run gov:intake:validate       # PASSED
+npm run gov:intake:promote -- --confirmed-by "andrew@demo"   # records content hash + self-asserted confirmation
 ```
-Message: *the idea becomes a structured proposition, but high-impact classifications
-require explicit human confirmation — nothing high-risk is invented.*
+Message: *the requirement and PRD give business context and traceability, but governance
+classifications are never inferred by a model — a schema-controlled intake requires an
+accountable person to supply and confirm the mandatory values, and it fails closed until they do.*
 
 ### Segment 2 — Proposition becomes a control contract
 ```bash
 npm run gov:select                # deterministic selection: 13 controls (11 blocking)
 npm run gov:contract              # writes control-contract.yaml + contract hash
-npm run gov:trace                 # requirement → characteristic → control → increment → evidence → decision
+npm run gov:trace                 # requirement -> characteristic -> control -> increment -> evidence -> decision
 ```
-Message: *organisational standards become machine-readable release obligations, each
-control linked to the proposition characteristic that selected it.*
+Message: *deterministic rules compile the approved proposition into release obligations —
+no model decides which controls apply.*
 
 ### Segment 3 — Human approval (hash-bound)
 ```bash

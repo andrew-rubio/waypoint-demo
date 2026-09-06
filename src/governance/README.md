@@ -9,9 +9,21 @@ never decides whether a blocking control passes**.
 The package is intentionally isolated (clean interfaces in `src/index.ts`) so it can later
 be extracted into a shared package or a central control-selection service.
 
+> **Roles are separated and no model is in the authoritative path:**
+> ```
+> Human defines and confirms governance facts.
+> Deterministic rules select controls.
+> Automated checks verify evidence.
+> Human approves the contract.
+> The release gate enforces the decision.
+> ```
+
 ## Commands
 
 ```bash
+npm run gov:intake:init   # deterministic intake template (every governance field UNRESOLVED)
+npm run gov:intake:validate                          # schema validation; fails closed
+npm run gov:intake:promote -- --confirmed-by "you"   # human-confirmed → proposition.yaml (+ content hash)
 npm run gov:select        # deterministic control selection → control-selection.json
 npm run gov:contract      # versioned, hash-bound control contract → control-contract.yaml
 npx tsx src/governance/src/cli.ts approve --approver "you" --comment "..."   # hash-bound approval
@@ -23,6 +35,11 @@ npm run gov:demo-pass     # positive counterpart
 npm run gov:status        # lifecycle status derived from real artefacts
 npm run test:gov          # engine unit tests
 ```
+
+Proposition intake is **deterministic and human-authored** — `gov:intake:init` only copies
+exact metadata (id/name from `package.json`, PRD reference, source commit); every governance
+classification starts `UNRESOLVED` and must be supplied + confirmed by a human. No model
+infers a governance value from prose.
 
 ## Hash-bound approval (not a digital signature)
 
