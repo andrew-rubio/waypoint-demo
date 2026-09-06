@@ -9,6 +9,7 @@ import type { TripSummary } from '../../shared/types/trip-summary-and-budget';
 import { useChat, type UiMessage } from '../lib/useChat';
 import { AuditPanel } from './AuditPanel';
 import { Markdown } from './Markdown';
+import { RuntimeBadge } from './RuntimeBadge';
 import styles from './page.module.css';
 
 /**
@@ -63,6 +64,7 @@ export default function ChatPage() {
           John Doe · Gold Tier · 7,463 Reward Points
         </span>
         <span className={styles.spacer} />
+        <RuntimeBadge />
         <button className={styles.headerBtn} data-testid="new-chat" onClick={reset}>
           <PlusIcon />
           New chat

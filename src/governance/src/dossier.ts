@@ -63,22 +63,31 @@ export function traceMarkdown(): string {
 
 export function dossierJson() {
   const a = loadArtefacts();
+  const decisionMode = a.decision?.evidenceMode;
+  const integrity: string[] = [];
+  if (!a.contract) integrity.push('control contract unavailable');
+  if (!a.approval) integrity.push('approval record unavailable');
+  if (!a.decision) integrity.push('release decision unavailable — run gov:verify');
+  if (decisionMode && decisionMode !== 'ci-authoritative') integrity.push(`release decision is ${decisionMode} (not authoritative CI evidence)`);
+  if (a.decision && !a.decision.certifiedArtefactDigest) integrity.push('no certified immutable artefact digest present');
   return {
     schema: 'waypoint.governance/dossier@1',
     generatedAt: new Date().toISOString(),
+    integrity: integrity.length ? integrity : ['all referenced artefacts present'],
     intent: { propositionId: a.proposition?.propositionId, title: a.proposition?.title, accountableOwner: a.proposition?.accountableOwner },
-    classification: a.proposition?.characteristics,
+    classification: a.proposition?.characteristics ?? 'unavailable',
     selectedControls: (a.contract?.material.controls ?? []).map((c) => ({ id: c.controlId, severity: c.severity, policyRef: c.policyRef, increments: CONTROL_INCREMENTS[c.controlId] ?? ['INC-13'] })),
-    contract: a.contract ? { version: a.contract.contractVersion, hash: a.contract.contractHash } : undefined,
-    approval: a.approval ? { approver: a.approval.approver, mechanism: a.approval.approvalMechanism, identityAssurance: a.approval.identityAssurance, nonRepudiation: a.approval.nonRepudiation } : undefined,
-    releaseDecision: a.decision ? { decision: a.decision.releaseDecision, deployable: a.decision.deployable, evidenceMode: a.decision.evidenceMode, evidenceSetId: a.decision.evidenceSetId, certifiedArtefactDigest: a.decision.certifiedArtefactDigest, sourceCommit: a.decision.sourceCommit, workflowRunId: a.decision.workflowRunId } : undefined,
+    contract: a.contract ? { version: a.contract.contractVersion, hash: a.contract.contractHash } : 'unavailable',
+    approval: a.approval ? { approver: a.approval.approver, mechanism: a.approval.approvalMechanism, identityAssurance: a.approval.identityAssurance, nonRepudiation: a.approval.nonRepudiation, sourceCommit: a.approval.sourceCommit ?? 'unavailable' } : 'unavailable',
+    releaseDecision: a.decision ? { decision: a.decision.releaseDecision, deployable: a.decision.deployable, evidenceMode: a.decision.evidenceMode, evidenceSetId: a.decision.evidenceSetId, certifiedArtefactDigest: a.decision.certifiedArtefactDigest ?? 'unavailable', sourceCommit: a.decision.sourceCommit ?? 'unavailable', workflowRunId: a.decision.workflowRunId ?? 'unavailable' } : 'unavailable',
+    runtimeEvidence: 'external — see Application Insights (gen_ai.conversation.id) + Foundry portal; referenced, not copied here',
     limitations: [
       'Synthetic policy catalogue; not IAG actual policy.',
       'Approval is hash-bound, not a cryptographic signature (no non-repudiation claim).',
       'Effective packaged runtime tool inventory not fully enumerated in this demo.',
       'Runtime/portal identity evidence is external; referenced, not copied here.',
     ],
-    evidenceReference: 'See uploaded CI workflow artefact "governance-evidence-<run-id>" for authoritative, source-bound evidence.',
+    evidenceReference: 'Authoritative, source-bound evidence is the CI workflow artefact "governance-evidence-<run-id>". A local dossier is demonstration-only.',
   };
 }
 
@@ -87,9 +96,15 @@ export function dossierMarkdown(): string {
   const lines: string[] = ['# Proposition audit dossier', ''];
   lines.push(`- Proposition: **${d.intent.propositionId}** — ${d.intent.title}`);
   lines.push(`- Accountable owner: ${d.intent.accountableOwner}`);
-  lines.push(`- Contract: ${d.contract ? `${d.contract.version} (${d.contract.hash})` : 'n/a'}`);
-  if (d.approval) lines.push(`- Approval: ${d.approval.approver} (${d.approval.identityAssurance}, non-repudiation: ${d.approval.nonRepudiation})`);
-  if (d.releaseDecision) lines.push(`- Release decision: **${d.releaseDecision.decision}** · deployable: ${d.releaseDecision.deployable} · mode: ${d.releaseDecision.evidenceMode}`);
+  const contract = typeof d.contract === 'string' ? 'unavailable' : `${d.contract.version} (${d.contract.hash})`;
+  lines.push(`- Contract: ${contract}`);
+  if (typeof d.approval !== 'string') lines.push(`- Approval: ${d.approval.approver} (${d.approval.identityAssurance}, non-repudiation: ${d.approval.nonRepudiation})`);
+  else lines.push('- Approval: unavailable');
+  if (typeof d.releaseDecision !== 'string') lines.push(`- Release decision: **${d.releaseDecision.decision}** · deployable: ${d.releaseDecision.deployable} · mode: ${d.releaseDecision.evidenceMode} · digest: ${d.releaseDecision.certifiedArtefactDigest}`);
+  else lines.push('- Release decision: unavailable — run gov:verify');
+  lines.push('');
+  lines.push('## Evidence integrity');
+  for (const i of d.integrity) lines.push(`- ${i}`);
   lines.push('');
   lines.push('## Selected controls');
   for (const c of d.selectedControls) lines.push(`- ${c.id} [${c.severity}] ← ${c.policyRef} → ${c.increments.join(', ')}`);

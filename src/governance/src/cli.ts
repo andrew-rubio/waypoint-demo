@@ -9,6 +9,7 @@ import { selectControls } from './select.js';
 import { releaseDecisionMarkdown, evidenceSummaryMarkdown } from './summary.js';
 import { verifyRelease } from './verify.js';
 import { dossierJson, dossierMarkdown, learningMarkdown, traceMarkdown } from './dossier.js';
+import { deriveLifecycle } from './lifecycle.js';
 import { sha256Of } from './canonical.js';
 import {
   PATHS,
@@ -205,6 +206,34 @@ function cmdTrace(): number {
   return 0;
 }
 
+function cmdChangeImpact(): number {
+  const { catalogue, proposition } = loadInputs();
+  const fresh = buildControlContract(proposition, catalogue, selectControls(proposition, catalogue), { contractVersion: '1.0.0', generatedAt: 'compare' });
+  if (!existsSync(PATHS.contract)) {
+    console.log('No stored contract to compare — run gov:contract first.');
+    return 0;
+  }
+  const stored = ControlContractSchema.parse(readYamlFile(PATHS.contract));
+  const storedIds = new Set(stored.material.controls.map((c) => c.controlId));
+  const freshIds = new Set(fresh.material.controls.map((c) => c.controlId));
+  const added = [...freshIds].filter((i) => !storedIds.has(i));
+  const removed = [...storedIds].filter((i) => !freshIds.has(i));
+  const changed = fresh.contractHash !== stored.contractHash;
+  const approval = readJsonIfExists<ApprovalRecord>(PATHS.approval);
+  const approvalValid = approval ? checkApproval(stored, approval, proposition, catalogue).valid : false;
+
+  console.log('# Change-impact report');
+  console.log(`Stored contract hash:  ${stored.contractHash}`);
+  console.log(`Recomputed hash:       ${fresh.contractHash}`);
+  console.log(`Material change:       ${changed ? 'YES' : 'no'}`);
+  console.log(`Controls added:        ${added.length ? added.join(', ') : 'none'}`);
+  console.log(`Controls removed:      ${removed.length ? removed.join(', ') : 'none'}`);
+  console.log(`Affected proposition:  ${proposition.propositionId} (v${proposition.version})`);
+  console.log(`Approval still valid:  ${approvalValid ? 'yes' : 'NO — re-approval required'}`);
+  audit('change-impact.reported', { contractHash: fresh.contractHash, summary: `material change=${changed}; +${added.length}/-${removed.length} controls; approvalValid=${approvalValid}` });
+  return changed && !approvalValid ? 3 : 0;
+}
+
 function cmdLearn(): number {
   const args = parseArgs(process.argv.slice(3));
   const incidentId = (args['incident'] as string) ?? `incident-${Date.now()}`;
@@ -226,18 +255,23 @@ function cmdStatus(): number {
   const approval = readJsonIfExists<ApprovalRecord>(PATHS.approval);
   const decision = readJsonIfExists<ReleaseDecision>(PATHS.releaseDecision);
   const learning = existsSync(PATHS.learningDir) ? readdirSync(PATHS.learningDir).filter((f) => f.endsWith('.md')) : [];
-  const stages: Array<[string, boolean]> = [
-    ['intake', existsSync(PATHS.proposition)],
-    ['specified', existsSync(`${REPO_ROOT}/specs/frd-control-selection-and-release-contract.md`)],
-    ['controls-selected', existsSync(PATHS.selection)],
-    ['approved-for-build', !!approval],
-    ['certified', decision?.releaseDecision === 'approved' || decision?.releaseDecision === 'demonstration-only'],
-    ['deployed', decision?.deployable === true],
-    ['incident-contained', learning.length > 0],
-    ['learning-proposed', learning.length > 0],
-  ];
+  // Approval is only "valid" if it still hash-binds the current contract + proposition + catalogue.
+  let approvalValid = false;
+  if (approval && existsSync(PATHS.contract)) {
+    const { catalogue, proposition } = loadInputs();
+    const contract = ControlContractSchema.parse(readYamlFile(PATHS.contract));
+    approvalValid = checkApproval(contract, approval, proposition, catalogue).valid;
+  }
+  const stages = deriveLifecycle({
+    propositionExists: existsSync(PATHS.proposition),
+    frdExists: existsSync(`${REPO_ROOT}/specs/frd-control-selection-and-release-contract.md`),
+    selectionExists: existsSync(PATHS.selection),
+    approvalValid,
+    decision: decision ? { releaseDecision: decision.releaseDecision, deployable: decision.deployable } : undefined,
+    learningArtefactCount: learning.length,
+  });
   console.log(`Proposition lifecycle — ${existsSync(PATHS.proposition) ? loadProposition(PATHS.proposition).propositionId : 'n/a'}`);
-  for (const [name, done] of stages) console.log(`  [${done ? 'x' : ' '}] ${name}`);
+  for (const s of stages) console.log(`  [${s.complete ? 'x' : ' '}] ${s.stage}`);
   return 0;
 }
 
@@ -254,10 +288,11 @@ function main(): number {
     case 'demo-pass': return cmdDemo(true);
     case 'dossier': return cmdDossier();
     case 'trace': return cmdTrace();
+    case 'change-impact': return cmdChangeImpact();
     case 'learn': return cmdLearn();
     case 'status': return cmdStatus();
     default:
-      console.error('Usage: waypoint-gov <select|contract|approve|evidence|verify|certify|demo-failure|demo-pass|dossier|trace|learn|status> [--flags]');
+      console.error('Usage: waypoint-gov <select|contract|approve|evidence|verify|certify|demo-failure|demo-pass|dossier|trace|change-impact|learn|status> [--flags]');
       return 2;
   }
 }

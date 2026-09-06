@@ -203,7 +203,9 @@ export function keylessInfraAdapter(ctx: EvidenceContext): AdapterResult {
 // ── evaluation: parse the eval gate + a results file, compare to threshold ──
 export function evaluationAdapter(ctx: EvidenceContext): AdapterResult {
   const gatePath = rp(ctx, 'eval/gate.json');
+  const override = process.env.WAYPOINT_EVAL_RESULTS;
   const resultsCandidates = [
+    ...(override ? [override.startsWith('/') || /^[A-Za-z]:/.test(override) ? override : rp(ctx, override)] : []),
     rp(ctx, 'eval/.out/eval_results_latest.json'),
     rp(ctx, 'specs/governance/examples/eval-results.sample.json'),
   ];
