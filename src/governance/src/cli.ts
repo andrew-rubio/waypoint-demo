@@ -138,9 +138,13 @@ function cmdContract(): number {
   // Preserve generatedAt when the material is unchanged so re-running never invalidates approval.
   let generatedAt: string | undefined;
   if (existsSync(PATHS.contract)) {
-    const prev = ControlContractSchema.parse(readYamlFile(PATHS.contract));
-    const candidate = buildControlContract(proposition, catalogue, selection, { contractVersion: prev.contractVersion, generatedAt: prev.generatedAt });
-    if (candidate.contractHash === prev.contractHash) generatedAt = prev.generatedAt;
+    try {
+      const prev = ControlContractSchema.parse(readYamlFile(PATHS.contract));
+      const candidate = buildControlContract(proposition, catalogue, selection, { contractVersion: prev.contractVersion, generatedAt: prev.generatedAt });
+      if (candidate.contractHash === prev.contractHash) generatedAt = prev.generatedAt;
+    } catch {
+      // Previous contract is absent or an incompatible shape (e.g. schema migration) — regenerate fresh.
+    }
   }
   const contract = buildControlContract(proposition, catalogue, selection, { contractVersion: (parseArgs(process.argv.slice(3))['version'] as string) ?? '1.0.0', generatedAt });
   writeYamlFile(PATHS.contract, contract);

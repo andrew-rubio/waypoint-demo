@@ -1,4 +1,5 @@
 import { sha256Of } from './canonical.js';
+import { SELECTOR_VERSION } from './select.js';
 import type {
   ContractMaterial,
   ControlCatalogue,
@@ -26,6 +27,7 @@ export function buildControlContract(
     catalogueId: catalogue.catalogueId,
     catalogueVersion: catalogue.version,
     policyCatalogueHash: sha256Of(catalogue),
+    selectorVersion: SELECTOR_VERSION,
     controls: [...selection.selected].sort((a, b) => a.controlId.localeCompare(b.controlId)),
     policyFindings: [...selection.policyFindings].sort((a, b) => a.controlId.localeCompare(b.controlId)),
   };

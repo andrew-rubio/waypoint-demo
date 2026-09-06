@@ -5,6 +5,19 @@ is the authoritative verifier, but a workflow file **cannot** make itself requir
 ruleset configuration is **external repository state** and cannot be proven by workflow YAML
 alone. Configure the following manually (repo → Settings), then it is enforced for everyone.
 
+## 0. Branch-targeting scope (read first)
+
+- `spec2cloud/foundry-hosted` is the **protected integration branch for this demo** — the target
+  the recorded pull request merges into.
+- The workflow protects **only pull requests whose target branch matches the configured trigger**
+  (`on.pull_request.branches: [spec2cloud/foundry-hosted]`). It does not govern any other branch.
+- In a real enterprise setup you **must require the same gate on the actual trusted release
+  branch** — normally `main` or an organisation-defined release branch — by adding that branch to
+  the trigger and to branch protection.
+- **Protecting this demo branch alone does not protect an ungoverned route into `main`.** If code
+  can reach `main` without this required check, the gate is not an enforcement boundary for
+  production; it only demonstrates the mechanism on the integration branch.
+
 ## 1. Protect the trusted branch `spec2cloud/foundry-hosted`
 
 Settings → Branches → Branch protection rules (or Settings → Rules → Rulesets) → target

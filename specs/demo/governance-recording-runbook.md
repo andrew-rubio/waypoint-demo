@@ -104,6 +104,12 @@ After remediation the same contract produces `RELEASE APPROVED`.
 > checkout of the PR commit and, when required on the protected branch, a non-compliant change
 > **cannot merge**. One-time manual setup: [github-enforcement-setup.md](github-enforcement-setup.md).
 
+> **Branch-targeting scope:** for this demo `spec2cloud/foundry-hosted` is the protected
+> integration branch and the PR target. The workflow governs **only** pull requests whose target
+> branch matches its trigger. A real enterprise configuration must require the **same** gate on
+> the actual trusted release branch (normally `main` or an org-defined release branch) — protecting
+> this demo branch alone does not protect an ungoverned route into `main`.
+
 ### Local preview (show briefly — NOT the enforcement boundary)
 ```bash
 npm run gov:contract:check    # regenerate + integrity-check the committed contract

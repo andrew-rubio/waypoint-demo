@@ -6,6 +6,7 @@ material:
   catalogueId: waypoint-synthetic-policies
   catalogueVersion: 1.0.0
   policyCatalogueHash: sha256:bc734e5f142576ff315c2773e30aadecd682d2512917a2d9579e04e9383f63b0
+  selectorVersion: 1.0.0
   controls:
     - controlId: DATA-CONF-001
       severity: blocking
@@ -174,6 +175,6 @@ material:
           evidenceType: test-result
           descriptor: redaction executed on a secret fixture
   policyFindings: []
-contractHash: sha256:53618ff76cb9ff14dff34d788a4accad880736065c245f4527fe22d3a2e0ba5e
+contractHash: sha256:6dd27f628292ca7d5fd4457372effc12caace9a3900c90ea7b4c5143098afafe
 contractVersion: 1.0.0
-generatedAt: 2026-09-06T21:12:49.223Z
+generatedAt: 2026-09-06T22:33:24.062Z

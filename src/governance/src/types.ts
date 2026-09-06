@@ -178,6 +178,8 @@ export const ContractMaterial = z.object({
   catalogueId: z.string().min(1),
   catalogueVersion: z.string().min(1),
   policyCatalogueHash: z.string().min(1),
+  /** Deterministic selector version bound INTO the contract hash (and thus into approval). */
+  selectorVersion: z.string().min(1),
   controls: z.array(SelectedControl),
   /** Deterministic policy findings carried into the contract so the release gate enforces them. */
   policyFindings: z.array(PolicyFinding).default([]),
