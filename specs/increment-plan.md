@@ -197,3 +197,49 @@ flowchart LR
 | INC-10 | ADR-011 | INC-9 | M | GenAI OTel spans → App Insights ↔ Foundry project |
 | INC-11 | FRD-008 | INC-9 | M | Foundry Evaluations (`azd ai agent eval` / `observe`), golden dataset |
 | INC-12 | FRD-009 | INC-10, INC-11 | M | Continuous eval, monitoring, CI quality gate, governance |
+
+## Governance increment (branch: `spec2cloud/control-contracts`)
+
+> Additive. Formalises the **control-selection & release-contract** capability (FRD-010,
+> ADR-012). The control contract is the **evidence spine** across the delivery journey.
+> Controls are **not** confined to INC-13 — they attach to the increments where the relevant
+> work is implemented (see the traceability matrix below).
+
+### INC-13 — Control selection & release contract
+- **FRD:** FRD-010 · **ADR:** ADR-012 · **Depends on:** INC-1…INC-12 · **Complexity:** L
+- **Scope:** `@waypoint/governance` deterministic engine (schema, canonical hashing,
+  selector, contract, hash-bound approval, verify); synthetic control catalogue +
+  proposition; evidence adapters; itinerary-bound booking approval (M2) + stale-currency
+  runtime containment (D2); `/runtime-info` endpoint + UI badge (D1); `release-gate.yml`
+  (deploy depends on the governance decision); dossier / trace / status / learn commands.
+- **Exit:** `gov:verify` blocks on any unmet blocking control; CI-authoritative + certified
+  digest → deployable; `gov:demo-failure` blocks an undeclared MCP tool; existing suites green.
+
+### Applicable controls per increment (traceability)
+
+| Increment | Applicable controls |
+|-----------|---------------------|
+| INC-1 (chat runtime) | SEC-RED-001 |
+| INC-2 (audit trail) | SEC-REASON-001 |
+| INC-4/5/6/8 (MCP tools) | SEC-MCP-001 |
+| INC-5 (booking) | RAI-HITL-001, RAI-OUT-001, EVAL-HITL-001 |
+| INC-6 (personalisation) | DATA-MIN-001 |
+| INC-7 (budget/currency) | DATA-FRESH-001 |
+| INC-8/11 (RAG/eval) | EVAL-GRD-001 |
+| INC-9 (Foundry hosting) | REL-IMM-001, OPS-VER-001 |
+| INC-10 (observability) | OPS-TRACE-001, OPS-VER-001 |
+| INC-13 (release) | REL-CON-001 (+ all above verified) |
+
+### Requirement → release traceability chain
+
+```text
+business requirement (PRD-*)
+  -> proposition characteristic (proposition.yaml)
+  -> selected control (controls.yaml, deterministic)
+  -> implementation increment (INC-*)
+  -> test / evaluation (Vitest / Cucumber / eval)
+  -> evidence entry (source-bound, gov:evidence)
+  -> release decision (gov:verify → deploy gate)
+```
+
+Run `npm run gov:trace` for the live matrix.

@@ -18,3 +18,7 @@ eval/__pycache__/
 __pycache__/
 .foundry/datasets/_*.jsonl
 .foundry/datasets/*-responses.jsonl
+
+# Governance generated (non-authoritative) output
+specs/governance/.out/
+specs/governance/proposition.draft.yaml

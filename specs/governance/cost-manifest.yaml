@@ -1,0 +1,13 @@
+{
+  "_note": "Illustrative schema-only cost-attribution keys. No real usage or financial values are represented.",
+  "propositionId": "waypoint",
+  "sourceStatus": "illustrative-schema-only",
+  "costDimensions": [
+    "github-actions-minutes",
+    "model-token-consumption",
+    "foundry-agent-runtime",
+    "container-registry-build",
+    "application-hosting",
+    "telemetry-ingestion"
+  ]
+}

@@ -1,0 +1,82 @@
+# Governance PR gate — the authoritative enforcement boundary for the control contract.
+#
+# It runs from a CLEAN checkout of the exact pull-request commit, independently regenerates and
+# integrity-checks the committed control contract, validates approval binding, runs the
+# governance engine tests, produces deterministic evaluation evidence, collects source-bound
+# CI-authoritative evidence, and verifies every blocking control. The final job fails when the
+# release is blocked/stale/tampered/unapproved.
+#
+# This workflow NEVER deploys and holds NO deployment / id-token / package / environment scopes.
+# Local `npm run gov:*` commands are fast developer feedback; THIS workflow is enforcement.
+name: Governance PR gate
+
+on:
+  pull_request:
+    branches:
+      - spec2cloud/foundry-hosted
+  workflow_dispatch:
+
+# Least privilege. checks:write is intentionally omitted — the required status check is derived
+# from the job conclusion, and no Checks-API calls are made. No write, id-token or deploy scopes.
+permissions:
+  contents: read
+
+concurrency:
+  group: governance-pr-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  governance-contract-gate:
+    # This job name is the STABLE required-status-check name to configure in branch protection.
+    name: Governance Contract Gate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout the exact pull-request commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Setup Node (pinned)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies (clean)
+        run: npm ci
+
+      # ── Informational developer-log steps (do not fail the job on their own) ──
+      - name: Regenerate + integrity-check the control contract
+        continue-on-error: true
+        run: npm run gov:contract:check
+
+      # ── Hard gates ──
+      - name: Governance engine tests
+        run: npm run test:gov
+
+      - name: Required evaluation evidence (deterministic demonstration fixture)
+        run: npm run eval:required
+
+      - name: Governance Contract Gate (authoritative decision + summary)
+        run: >-
+          npx tsx src/governance/src/cli.ts pr-gate
+          --commit "${{ github.event.pull_request.head.sha || github.sha }}"
+          --run-id "${{ github.run_id }}"
+
+      - name: Upload governance evidence + decision
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: governance-pr-gate-${{ github.run_id }}
+          path: |
+            specs/governance/control-contract.yaml
+            specs/governance/approval-record.json
+            specs/governance/.out/release-decision.json
+          if-no-files-found: warn
+
+# NOTE (external repository state — NOT expressible in this YAML):
+# configure `Governance Contract Gate` as a REQUIRED status check on the protected branch
+# `spec2cloud/foundry-hosted`. See specs/demo/github-enforcement-setup.md. Deployment lives in a
+# separate post-merge workflow (release-gate.yml) and is downstream of the approved decision.

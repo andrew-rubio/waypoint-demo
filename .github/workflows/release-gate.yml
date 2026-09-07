@@ -1,0 +1,108 @@
+name: Release gate (control contract)
+
+# Deterministic control-contract release gate (FRD-010 / ADR-012). Produces a source-bound
+# evidence manifest + a blocking release decision, and the deploy job DEPENDS on that
+# decision — a blocked or non-deployable decision prevents deployment. To avoid duplicating
+# expensive jobs, the agent-evaluation workflow remains the authoritative behavioural gate
+# (agent-eval.yml); this workflow adds governance verification and gating.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'src/**'
+      - 'specs/governance/**'
+      - 'infra/**'
+      - '.github/workflows/release-gate.yml'
+
+# Least privilege: read-only by default. Elevated scopes are granted per-job only.
+permissions:
+  contents: read
+
+concurrency:
+  group: release-gate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-evaluate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: API + governance unit tests
+        run: |
+          npm run test:unit
+          npm run test:gov
+
+  governance-release-decision:
+    needs: test-and-evaluate
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      deployable: ${{ steps.verify.outputs.deployable }}
+      digest: ${{ steps.digest.outputs.digest }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Compute certified artefact digest
+        id: digest
+        # A production pipeline substitutes the pushed container image digest here.
+        run: echo "digest=sha256:$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Collect source-bound evidence (CI-authoritative)
+        run: >-
+          npx tsx src/governance/src/cli.ts evidence
+          --mode ci-authoritative
+          --commit "${{ github.sha }}"
+          --run-id "${{ github.run_id }}"
+          --digest "${{ steps.digest.outputs.digest }}"
+          --out specs/governance/.out/evidence-manifest.json
+      - name: Verify contract and produce release decision
+        id: verify
+        run: |
+          npx tsx src/governance/src/cli.ts verify \
+            --manifest specs/governance/.out/evidence-manifest.json \
+            --deployment-digest "${{ steps.digest.outputs.digest }}" \
+            --out specs/governance/.out/release-decision.json
+          node -e "const d=require('./specs/governance/.out/release-decision.json');console.log('deployable='+d.deployable);require('fs').appendFileSync(process.env.GITHUB_OUTPUT,'deployable='+d.deployable+'\n')"
+      - name: Upload contract, approval, manifest and decision together
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: governance-evidence-${{ github.run_id }}
+          path: |
+            specs/governance/control-contract.yaml
+            specs/governance/approval-record.json
+            specs/governance/.out/evidence-manifest.json
+            specs/governance/.out/release-decision.json
+          if-no-files-found: warn
+
+  deploy:
+    needs: governance-release-decision
+    if: needs.governance-release-decision.outputs.deployable == 'true'
+    runs-on: ubuntu-latest
+    # Deployment-only privileges; test/eval jobs never receive these.
+    permissions:
+      contents: read
+      id-token: write
+    environment: production
+    steps:
+      - name: Deploy the certified artefact
+        # Deploys only the digest certified by the release decision.
+        run: |
+          echo "Deploying certified artefact ${{ needs.governance-release-decision.outputs.digest }}"
+          # azd deploy / container-app update would run here, pinned to the certified digest.
+
+# NOTE (repository settings not expressible in YAML): mark `governance-release-decision`
+# as a required status check on protected branches, and configure the `production`
+# environment with required reviewers so forked PRs cannot trigger a privileged deploy.

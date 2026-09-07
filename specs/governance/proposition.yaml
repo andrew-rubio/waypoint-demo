@@ -1,0 +1,41 @@
+# Waypoint proposition declaration — the structured classification of the business
+# proposition that deterministically drives control selection. Personal-data and
+# high-impact characteristics are declared explicitly; nothing high-risk is inferred.
+schema: waypoint.governance/proposition@1
+propositionId: waypoint
+title: Waypoint holiday-planning and booking agent
+version: 1.0.0
+accountableOwner: "Proposition Owner (placeholder — demo)"
+sourceRequirementRef: specs/prd.md
+prdRequirementIds:
+  - PRD-1
+  - PRD-2
+  - PRD-3
+# MCP servers/tools governance has approved for this proposition.
+approvedTools:
+  - routestack
+  - open-meteo
+  - currency
+  - cosmos
+  - travel-guide
+characteristics:
+  usesLLM: true
+  handlesPersonalData: true
+  dataClassification: confidential
+  autonomyLevel: supervised
+  consequentialActions:
+    - simulated-booking
+  financialTransactions: simulated
+  externalIntegrations:
+    - mcp
+    - currency
+    - weather
+    - flights
+    - profile
+    - travel-guide
+  humanInLoop: true
+  retrievalAugmented: true
+  deploymentSurface:
+    - azure-container-apps
+    - foundry-agent-service
+unresolved: []

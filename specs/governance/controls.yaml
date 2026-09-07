@@ -1,0 +1,269 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# SYNTHETIC DEMONSTRATION CONTROL CATALOGUE
+#
+# This is illustrative, repository-local demonstration content. It is NOT IAG's
+# actual policy, NOT a Group-wide control repository, and makes NO regulatory or
+# compliance-certification claim. It exists solely to demonstrate the deterministic
+# control-selection and release-contract pattern. A production implementation would
+# consume an authoritative, centrally-versioned policy catalogue.
+# ─────────────────────────────────────────────────────────────────────────────
+schema: waypoint.governance/catalogue@1
+synthetic: true
+disclaimer: >-
+  Synthetic demonstration content. Not actual IAG policy, not a Group-wide control
+  service, no regulatory citation or compliance certification is claimed.
+catalogueId: waypoint-synthetic-policies
+version: 1.0.0
+
+policySources:
+  - id: SYN-POL-RAI
+    owner: Synthetic Responsible-AI Board (demonstration)
+    provenance: repository-local synthetic policy
+    version: 1.0.0
+    effectiveDate: 2026-01-01
+    status: active
+    sourceRef: synthetic://policies/responsible-ai
+    permissionClassification: internal-demonstration
+    applicability: AI propositions taking consequential actions or using LLMs
+  - id: SYN-POL-SEC
+    owner: Synthetic Security Standards (demonstration)
+    provenance: repository-local synthetic policy
+    version: 1.0.0
+    effectiveDate: 2026-01-01
+    status: active
+    sourceRef: synthetic://policies/security
+    permissionClassification: internal-demonstration
+    applicability: Propositions integrating external tools or handling secrets
+  - id: SYN-POL-DATA
+    owner: Synthetic Data Governance (demonstration)
+    provenance: repository-local synthetic policy
+    version: 1.0.0
+    effectiveDate: 2026-01-01
+    status: active
+    sourceRef: synthetic://policies/data
+    permissionClassification: internal-demonstration
+    applicability: Propositions handling personal data
+  - id: SYN-POL-EVAL
+    owner: Synthetic Quality Assurance (demonstration)
+    provenance: repository-local synthetic policy
+    version: 1.0.0
+    effectiveDate: 2026-01-01
+    status: active
+    sourceRef: synthetic://policies/evaluation
+    permissionClassification: internal-demonstration
+    applicability: LLM propositions with retrieval or tool use
+  - id: SYN-POL-OPS
+    owner: Synthetic Operations Standards (demonstration)
+    provenance: repository-local synthetic policy
+    version: 1.0.0
+    effectiveDate: 2026-01-01
+    status: active
+    sourceRef: synthetic://policies/operations
+    permissionClassification: internal-demonstration
+    applicability: All deployed propositions
+  - id: SYN-POL-REL
+    owner: Synthetic Release Governance (demonstration)
+    provenance: repository-local synthetic policy
+    version: 1.0.0
+    effectiveDate: 2026-01-01
+    status: active
+    sourceRef: synthetic://policies/release
+    permissionClassification: internal-demonstration
+    applicability: All propositions promoted to a runtime
+
+controls:
+  - id: RAI-HITL-001
+    title: Explicit approval before a consequential booking or payment
+    category: responsible-ai
+    description: A consequential action must not execute without explicit human approval bound to the exact proposal.
+    policyRef: SYN-POL-RAI
+    obligation: A financial/consequential action requires a declared human-approval mechanism and an itinerary-bound approval record before execution.
+    enforcementStage: runtime
+    severity: blocking
+    appliesWhen:
+      - { field: financialTransactions, op: neq, value: none }
+    rationaleTemplate: Applies because the proposition performs financial/consequential actions ({matched}).
+    evidenceRequirements:
+      - { evidenceId: booking-approval-test, evidenceType: test-result, descriptor: itinerary-bound booking-approval behavioural test }
+
+  - id: RAI-OUT-001
+    title: No representation that an unapproved booking is complete
+    category: responsible-ai
+    description: The agent must not state a booking is complete when no approval exists.
+    policyRef: SYN-POL-RAI
+    obligation: Without an approval, the response must be a safe approval-required message, never a confirmation.
+    enforcementStage: runtime
+    severity: blocking
+    appliesWhen:
+      - { field: consequentialActions, op: contains, value: simulated-booking }
+    rationaleTemplate: Applies because the proposition performs a consequential action ({matched}).
+    evidenceRequirements:
+      - { evidenceId: booking-approval-test, evidenceType: test-result, descriptor: approval-required outcome asserted }
+
+  - id: SEC-MCP-001
+    title: All MCP tools declared and allowlisted
+    category: security
+    description: Every tool the agent can call is declared and present in the approved allowlist.
+    policyRef: SYN-POL-SEC
+    obligation: No configured or effective tool may be outside the approved allowlist.
+    enforcementStage: release
+    severity: blocking
+    appliesWhen:
+      - { field: externalIntegrations, op: contains, value: mcp }
+    rationaleTemplate: Applies because the proposition integrates MCP tools ({matched}).
+    evidenceRequirements:
+      - { evidenceId: mcp-allowlist, evidenceType: mcp-allowlist, descriptor: configured vs approved tool comparison }
+
+  - id: SEC-RED-001
+    title: Secrets and sensitive values redacted from events
+    category: security
+    description: Secrets must be redacted from any streamed or logged event.
+    policyRef: SYN-POL-SEC
+    obligation: The redaction boundary must strip tokens and bearer credentials.
+    enforcementStage: build
+    severity: blocking
+    appliesWhen:
+      - { field: usesLLM, op: isTrue }
+    rationaleTemplate: Applies because the proposition streams agent events ({matched}).
+    evidenceRequirements:
+      - { evidenceId: redaction-test, evidenceType: test-result, descriptor: redaction executed on a secret fixture }
+
+  - id: SEC-REASON-001
+    title: Private model reasoning is not exposed
+    category: security
+    description: Chain-of-thought / private reasoning must never be forwarded to clients or telemetry.
+    policyRef: SYN-POL-SEC
+    obligation: Only decisions, tool calls and results are surfaced.
+    enforcementStage: runtime
+    severity: blocking
+    appliesWhen:
+      - { field: usesLLM, op: isTrue }
+    rationaleTemplate: Applies because the proposition uses an LLM ({matched}).
+    evidenceRequirements:
+      - { evidenceId: no-chain-of-thought, evidenceType: config-check, descriptor: telemetry emits no private reasoning }
+
+  - id: DATA-MIN-001
+    title: Personal-data use declared and minimised
+    category: data
+    description: The proposition declares personal-data use and minimises what it collects.
+    policyRef: SYN-POL-DATA
+    obligation: Personal-data handling is declared; only necessary fields are collected.
+    enforcementStage: build
+    severity: blocking
+    appliesWhen:
+      - { field: handlesPersonalData, op: isTrue }
+    rationaleTemplate: Applies because the proposition handles personal data ({matched}).
+    evidenceRequirements:
+      - { evidenceId: data-minimisation, evidenceType: config-check, descriptor: personal-data declaration + minimisation }
+
+  - id: DATA-CONF-001
+    title: Confidential/restricted information protected
+    category: data
+    description: Confidential or restricted information requires access restriction, encryption, approved storage, and logging/redaction — independently of whether it is personal data.
+    policyRef: SYN-POL-DATA
+    obligation: Confidential/restricted data is protected with keyless/managed-identity access and redaction.
+    enforcementStage: build
+    severity: blocking
+    appliesWhen:
+      - { field: dataClassification, op: in, value: [confidential, restricted] }
+    rationaleTemplate: Applies because the proposition is classified confidential/restricted ({matched}).
+    evidenceRequirements:
+      - { evidenceId: keyless-infra, evidenceType: config-check, descriptor: keyless access + approved storage for confidential data }
+
+  - id: EVAL-GRD-001
+    title: Grounded tool-use evaluation meets its threshold
+    category: evaluation
+    description: Retrieval/tool answers must be grounded above a defined evaluation threshold.
+    policyRef: SYN-POL-EVAL
+    obligation: Gated grounding evaluators must meet their thresholds.
+    enforcementStage: pre-release
+    severity: blocking
+    appliesWhen:
+      - { field: retrievalAugmented, op: isTrue }
+    rationaleTemplate: Applies because the proposition is retrieval-augmented ({matched}).
+    evidenceRequirements:
+      - { evidenceId: eval-grounding, evidenceType: evaluation-result, descriptor: eval gate thresholds, threshold: 0.83 }
+
+  - id: EVAL-HITL-001
+    title: Human-approval compliance meets the required threshold
+    category: evaluation
+    description: The agent's compliance with the human-approval requirement is verified.
+    policyRef: SYN-POL-EVAL
+    obligation: The human-approval behavioural test must pass.
+    enforcementStage: pre-release
+    severity: blocking
+    appliesWhen:
+      - { field: humanInLoop, op: isTrue }
+    rationaleTemplate: Applies because consequential actions require human approval ({matched}).
+    evidenceRequirements:
+      - { evidenceId: booking-approval-test, evidenceType: test-result, descriptor: human-approval compliance }
+
+  - id: DATA-FRESH-001
+    title: Currency/rate data freshness enforced before budget confirmation
+    category: data
+    description: Stale exchange-rate data must be detected deterministically and must not confirm a budget or booking.
+    policyRef: SYN-POL-DATA
+    obligation: A currency result older than the approved freshness threshold blocks final budget/booking; the model does not decide freshness.
+    enforcementStage: runtime
+    severity: blocking
+    appliesWhen:
+      - { field: externalIntegrations, op: contains, value: currency }
+    rationaleTemplate: Applies because the proposition uses currency conversion for budgeting ({matched}).
+    evidenceRequirements:
+      - { evidenceId: currency-freshness-test, evidenceType: test-result, descriptor: stale-currency detection + containment test }
+
+  - id: OPS-TRACE-001
+    title: Runtime activity carries a correlation identifier
+    category: operations
+    description: Every runtime turn is correlated for observability.
+    policyRef: SYN-POL-OPS
+    obligation: Telemetry tags activity with a correlation id.
+    enforcementStage: runtime
+    severity: advisory
+    appliesWhen:
+      - { field: usesLLM, op: isTrue }
+    rationaleTemplate: Applies because the proposition emits runtime telemetry ({matched}).
+    evidenceRequirements:
+      - { evidenceId: correlation-id, evidenceType: config-check, descriptor: correlation id in telemetry }
+
+  - id: OPS-VER-001
+    title: Model, agent and artefact versions are captured
+    category: operations
+    description: Runtime metadata captures the versions that produced a transaction.
+    policyRef: SYN-POL-OPS
+    obligation: Runtime metadata exposes agent + artefact version identifiers.
+    enforcementStage: build
+    severity: advisory
+    appliesWhen:
+      - { field: usesLLM, op: isTrue }
+    rationaleTemplate: Applies because operational lineage requires version capture ({matched}).
+    evidenceRequirements:
+      - { evidenceId: version-capture, evidenceType: config-check, descriptor: runtime metadata version fields }
+
+  - id: REL-IMM-001
+    title: Release uses an immutable artefact identifier
+    category: release
+    description: A release must reference an immutable artefact digest, not a mutable tag.
+    policyRef: SYN-POL-REL
+    obligation: CI-authoritative evidence must bind the certified immutable digest to the deployment.
+    enforcementStage: release
+    severity: blocking
+    appliesWhen:
+      - { field: deploymentSurface, op: contains, value: azure-container-apps }
+    rationaleTemplate: Applies because the proposition deploys to a container runtime ({matched}).
+    evidenceRequirements:
+      - { evidenceId: artefact-digest, evidenceType: artefact-digest, descriptor: certified immutable artefact digest }
+
+  - id: REL-CON-001
+    title: Approved control contract and complete blocking evidence required
+    category: release
+    description: A release requires an approved, current control contract and complete blocking evidence.
+    policyRef: SYN-POL-REL
+    obligation: A valid hash-bound approval must exist for the released contract.
+    enforcementStage: release
+    severity: blocking
+    appliesWhen:
+      - { field: usesLLM, op: isTrue }
+    rationaleTemplate: Applies to every promoted proposition ({matched}).
+    evidenceRequirements:
+      - { evidenceId: approved-contract, evidenceType: human-approval, descriptor: approved control contract present }
