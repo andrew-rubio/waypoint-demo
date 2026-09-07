@@ -1,0 +1,67 @@
+# Reusable component inventory (demonstration)
+#
+# Shows the factory produces reusable capability, not only one bespoke app. Portability
+# is demonstrated through components + open interfaces; a complete agent is NOT claimed to
+# be copyable unchanged across every cloud runtime.
+schema: waypoint.governance/reuse-inventory@1
+propositionId: waypoint
+components:
+  - componentId: skill.destination-advice
+    version: 1.0.0
+    owner: waypoint-team (demo)
+    sourcePath: src/api/src/agent/skills/destination-advice
+    interface: copilot-sdk-skill (Markdown)
+    portabilityClass: portable
+    kind: reusable
+    approved: true
+    consumingProposition: waypoint
+  - componentId: mcp.waypoint-data
+    version: 1.0.0
+    owner: waypoint-team (demo)
+    sourcePath: src/mcp
+    interface: MCP streamable-http (cosmos.getTravellerProfile, travel-guide.searchByMonth)
+    portabilityClass: portable
+    kind: reusable
+    approved: true
+    consumingProposition: waypoint
+  - componentId: eval.waypoint-smoke
+    version: 1.0.0
+    owner: waypoint-team (demo)
+    sourcePath: eval
+    interface: JSONL dataset + evaluators + gate
+    portabilityClass: portable
+    kind: reusable
+    approved: true
+    consumingProposition: waypoint
+  - componentId: control.schema
+    version: 1.0.0
+    owner: waypoint-team (demo)
+    sourcePath: src/governance/src/types.ts
+    interface: Zod schema + YAML catalogue
+    portabilityClass: portable
+    kind: reusable
+    approved: true
+    consumingProposition: any
+  - componentId: infra.container-app
+    version: 1.0.0
+    owner: waypoint-team (demo)
+    sourcePath: infra/modules/container-app.bicep
+    interface: Bicep module
+    portabilityClass: portable
+    kind: reusable
+    approved: true
+    consumingProposition: waypoint
+  - componentId: harness.copilot-sdk-adapter
+    version: 1.0.0
+    owner: waypoint-team (demo)
+    sourcePath: src/api/src/agent
+    interface: AgentEvent stream + Responses/Invocations adapter
+    portabilityClass: runtime-specific
+    kind: reusable-with-adaptation
+    approved: true
+    consumingProposition: waypoint
+
+# Portable or reusable: skills, MCP interfaces/servers, prompts/instructions (where
+# compatible), evaluation datasets, control schemas, shared workflow components.
+# Runtime-specific / requires adaptation: harness integration, session primitives,
+# identity integration, deployment configuration, platform-specific telemetry.

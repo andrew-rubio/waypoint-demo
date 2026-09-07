@@ -1,0 +1,8 @@
+{
+  "_note": "Deterministic FAILING evaluation fixture. weather_grounding + guide_grounding fall below the eval/gate.json thresholds so EVAL-GRD-001 (blocking) fails and release certification is blocked.",
+  "relevance": 0.95,
+  "intent_resolution": 0.85,
+  "weather_grounding": 0.40,
+  "guide_grounding": 0.55,
+  "one_clarifying_question": 0.85
+}
