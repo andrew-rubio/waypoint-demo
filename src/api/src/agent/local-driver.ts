@@ -35,6 +35,7 @@ import { estimateBudget, isEurRequest, isSummaryQuery, summariseTrip, weatherNot
 import { offlineConvertFromGBP } from '../tools/currency.js';
 import type { TripSummary } from '../../../shared/types/trip-summary-and-budget.js';
 import { evaluateToolCall } from './governance/gate.js';
+import { requestApproval, awaitApproval } from './governance/pending-approvals.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -365,6 +366,36 @@ export class LocalAgentDriver implements AgentDriver {
       yield { type: 'tool_result', name: 'copilot.chat', ok: true, result: reply };
       yield { type: 'done' };
       return;
+    }
+
+    // Runtime authority (ADR-013): a consequential simulated booking needs an
+    // explicit, itinerary-bound approval. The policy engine returns
+    // `require_approval`; we pause the stream and wait for the traveller.
+    const gate = evaluateToolCall('booking-simulator');
+    if (gate.decision === 'require_approval') {
+      const itineraryId = `itin-${cityLabel(options.place)}-${options.checkIn}`;
+      const approval = requestApproval({ sessionId: input.sessionId, tool: 'booking-simulator', itineraryId });
+      yield { type: 'decision', summary: `Booking needs your approval — ${gate.reason}` };
+      yield {
+        type: 'approval_request',
+        approvalId: approval.approvalId,
+        tool: 'booking-simulator',
+        itineraryId,
+        summary: 'Approve the simulated booking of your selected flight and hotel (demo only — no payment).',
+        reason: gate.reason,
+      };
+      const decision = await awaitApproval(approval);
+      yield { type: 'approval_resolved', approvalId: approval.approvalId, decision };
+      if (decision === 'denied') {
+        const declined = 'No problem — I won’t book anything. Your itinerary is saved; just say the word (or approve the booking) when you’re ready.';
+        for (const word of declined.split(' ')) {
+          await sleep(8);
+          yield { type: 'token', value: word + ' ' };
+        }
+        yield { type: 'tool_result', name: 'copilot.chat', ok: true, result: declined };
+        yield { type: 'done' };
+        return;
+      }
     }
 
     // A brief intro precedes the summary + confirmation cards — the detailed

@@ -59,6 +59,8 @@ When('the agent presents the flight options', async function (this: CustomWorld)
 When('the Traveller books the first flight and hotel', async function (this: CustomWorld) {
   await this.chat.send('Book the first flight and the first hotel.');
   this.sent += 1;
+  // Runtime governance (ADR-013): approve the pause so the simulated booking proceeds.
+  await this.chat.approveBookingIfPrompted();
 });
 
 // ── Then: personalisation note ───────────────────────────────────────

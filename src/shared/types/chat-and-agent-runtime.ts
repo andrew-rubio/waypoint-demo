@@ -32,13 +32,15 @@ export interface ChatMessage {
 
 /** Discriminator for every event the agent can stream. */
 export type AgentEventType =
-  | 'decision'      // an observable choice the agent made (e.g. "call weather MCP")
-  | 'token'         // a chunk of the assistant's reply text
-  | 'status'        // a transient progress line (e.g. "Searching for flights…"); UI-only, not audited
-  | 'tool_call'     // the agent invoked a skill / tool / MCP server
-  | 'tool_result'   // the result returned from that invocation
-  | 'done'          // the reply finished successfully (always last on success)
-  | 'error';        // something failed; the turn is aborted
+  | 'decision'          // an observable choice the agent made (e.g. "call weather MCP")
+  | 'token'             // a chunk of the assistant's reply text
+  | 'status'            // a transient progress line (e.g. "Searching for flights…"); UI-only, not audited
+  | 'tool_call'         // the agent invoked a skill / tool / MCP server
+  | 'tool_result'       // the result returned from that invocation
+  | 'approval_request'  // runtime governance requires human approval before a consequential action
+  | 'approval_resolved' // the human approved or denied the pending action
+  | 'done'              // the reply finished successfully (always last on success)
+  | 'error';            // something failed; the turn is aborted
 
 /** An agent decision — the "why" surfaced to the audit trail, not model CoT. */
 export interface DecisionEvent {
@@ -86,6 +88,33 @@ export interface DoneEvent {
   type: 'done';
 }
 
+/**
+ * Runtime governance (ADR-013) requires explicit human approval before a
+ * consequential action (e.g. a simulated booking). The stream pauses on this
+ * event; the client resolves it via `POST /api/chat/approve`, after which the
+ * agent emits `approval_resolved` and continues (or declines) on the same stream.
+ */
+export interface ApprovalRequestEvent {
+  type: 'approval_request';
+  /** Opaque id the client echoes back to `POST /api/chat/approve`. */
+  approvalId: string;
+  /** The tool/action awaiting approval, e.g. "booking-simulator". */
+  tool: string;
+  /** The exact thing being authorised (approval is bound to it), e.g. an itinerary id. */
+  itineraryId: string;
+  /** Human-readable prompt shown on the approval card. */
+  summary: string;
+  /** Why approval is required (the matched policy reason). */
+  reason: string;
+}
+
+/** The outcome of an `ApprovalRequestEvent` once the human decides. */
+export interface ApprovalResolvedEvent {
+  type: 'approval_resolved';
+  approvalId: string;
+  decision: 'approved' | 'denied';
+}
+
 /** Terminal failure event (validation, mid-stream error, timeout, etc.). */
 export interface ErrorEvent {
   type: 'error';
@@ -102,6 +131,8 @@ export type AgentEvent =
   | StatusEvent
   | ToolCallEvent
   | ToolResultEvent
+  | ApprovalRequestEvent
+  | ApprovalResolvedEvent
   | DoneEvent
   | ErrorEvent;
 
@@ -111,6 +142,21 @@ export type AgentEvent =
 export interface ChatErrorResponse {
   error: string;
   code: 'invalid_request' | 'payload_too_large' | 'agent_unavailable';
+}
+
+/** Body of `POST /api/chat/approve` — resolves a pending `approval_request`. */
+export interface ApprovalDecisionRequest {
+  sessionId: string;
+  approvalId: string;
+  /** The human's decision. */
+  decision: 'approve' | 'deny';
+}
+
+/** Success body of `POST /api/chat/approve`. */
+export interface ApprovalDecisionResponse {
+  ok: true;
+  approvalId: string;
+  decision: 'approved' | 'denied';
 }
 
 // ── Boundary limits (kept in one place so API and Web agree) ────────────────

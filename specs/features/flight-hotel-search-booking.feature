@@ -48,10 +48,18 @@ Feature: Flight & hotel search + simulated booking
   Scenario: Selecting options produces a clearly-simulated booking confirmation
     Given the Traveller has been shown flight and hotel options for Lisbon
     When the Traveller says "book the first flight and the first hotel"
+    And the Traveller approves the booking
     Then a booking confirmation should be shown with a reference code
     And the booking confirmation should echo the chosen flight and hotel itinerary
     And the booking confirmation should be clearly marked as a demo simulation
     And no payment should be taken
+
+  @flights-hotels @governance @edge
+  Scenario: Denying the runtime-governance approval blocks the booking
+    Given the Traveller has been shown flight and hotel options for Lisbon
+    When the Traveller says "book the first flight and the first hotel"
+    And the Traveller denies the booking
+    Then the booking should be blocked pending approval
 
   @flights-hotels @edge
   Scenario: No availability for the chosen criteria

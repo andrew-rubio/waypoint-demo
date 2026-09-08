@@ -26,6 +26,10 @@ export class ChatPage {
   readonly flightOptions: Locator;
   readonly hotelOptions: Locator;
   readonly bookingConfirmation: Locator;
+  readonly approvalCard: Locator;
+  readonly approvalApprove: Locator;
+  readonly approvalDeny: Locator;
+  readonly approvalOutcome: Locator;
   readonly personalisationNote: Locator;
   readonly tripSummaryCard: Locator;
   readonly budgetBreakdown: Locator;
@@ -53,6 +57,10 @@ export class ChatPage {
     this.flightOptions = page.getByTestId('flight-options');
     this.hotelOptions = page.getByTestId('hotel-options');
     this.bookingConfirmation = page.getByTestId('booking-confirmation');
+    this.approvalCard = page.getByTestId('approval-card');
+    this.approvalApprove = page.getByTestId('approval-approve');
+    this.approvalDeny = page.getByTestId('approval-deny');
+    this.approvalOutcome = page.getByTestId('approval-outcome');
     this.personalisationNote = page.getByTestId('personalisation-note');
     this.tripSummaryCard = page.getByTestId('trip-summary-card');
     this.budgetBreakdown = page.getByTestId('budget-breakdown');
@@ -96,5 +104,27 @@ export class ChatPage {
 
   async expectSendDisabled(): Promise<void> {
     await expect(this.sendButton).toBeDisabled();
+  }
+
+  /** Wait for the runtime-governance approval card and approve the booking (ADR-013 HITL). */
+  async approveBooking(): Promise<void> {
+    await expect(this.approvalCard).toBeVisible();
+    await this.approvalApprove.click();
+  }
+
+  /** Approve only if an approval card appears (tolerant — for shared/setup steps). */
+  async approveBookingIfPrompted(): Promise<void> {
+    try {
+      await this.approvalCard.waitFor({ state: 'visible', timeout: 8000 });
+    } catch {
+      return; // no approval was required (e.g. nothing to book)
+    }
+    await this.approvalApprove.click();
+  }
+
+  /** Wait for the approval card and deny the booking. */
+  async denyBooking(): Promise<void> {
+    await expect(this.approvalCard).toBeVisible();
+    await this.approvalDeny.click();
   }
 }

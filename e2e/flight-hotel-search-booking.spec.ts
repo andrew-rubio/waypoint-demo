@@ -68,9 +68,27 @@ test.describe('Flight & hotel search + simulated booking (FRD-005) @flow:search-
 
     await chat.send('Book the first flight and the first hotel.');
 
+    // Runtime governance (ADR-013): the booking pauses for explicit human approval.
+    await chat.approveBooking();
+
     await expect(chat.bookingConfirmation).toBeVisible();
     await expect(chat.bookingConfirmation).toContainText(/simulation|demo/i);
     await expect(chat.bookingConfirmation).toContainText(/ref/i);
+  });
+
+  test('denying the governance approval blocks the booking (ADR-013 HITL)', async ({ page }) => {
+    const chat = new ChatPage(page);
+    await chat.goto();
+
+    await chat.send(SEARCH_LISBON);
+    await expect(chat.flightOptions).toBeVisible();
+
+    await chat.send('Book the first flight and the first hotel.');
+
+    await chat.denyBooking();
+
+    await expect(chat.approvalOutcome).toContainText(/denied|no booking/i);
+    await expect(chat.bookingConfirmation).toHaveCount(0);
   });
 
   test('no availability is explained with a suggestion to adjust (AC-005-4)', async ({ page }) => {

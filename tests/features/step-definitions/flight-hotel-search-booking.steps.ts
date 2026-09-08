@@ -289,6 +289,21 @@ Then('no booking confirmation should be shown', async function (this: CustomWorl
   await expect(this.chat.bookingConfirmation).toHaveCount(0);
 });
 
+// ── Runtime governance approval (ADR-013 HITL) ───────────────────────
+
+When('the Traveller approves the booking', async function (this: CustomWorld) {
+  await this.chat.approveBooking();
+});
+
+When('the Traveller denies the booking', async function (this: CustomWorld) {
+  await this.chat.denyBooking();
+});
+
+Then('the booking should be blocked pending approval', async function (this: CustomWorld) {
+  await expect(this.chat.approvalOutcome).toContainText(/denied|no booking/i);
+  await expect(this.chat.bookingConfirmation).toHaveCount(0);
+});
+
 // ── Then: quota / retry ──────────────────────────────────────────────
 
 Then('the search should not be retried', async function (this: CustomWorld) {

@@ -19,6 +19,14 @@ export interface UiMessage {
   booking?: BookingConfirmation;
   personalisation?: PersonalisationResult;
   tripSummary?: TripSummary;
+  /** A pending/resolved runtime-governance approval (ADR-013 HITL). */
+  approval?: {
+    approvalId: string;
+    tool: string;
+    summary: string;
+    reason: string;
+    status: 'pending' | 'approved' | 'denied';
+  };
   /** A "tell me more" reply grounded in web research (Wikipedia). */
   research?: boolean;
 }
@@ -137,6 +145,31 @@ export function useChat() {
   /** Empty the audit trail between demo runs (AC-002-5). */
   const clearAudit = useCallback(() => setAudit(emptyAuditState()), []);
 
+  /**
+   * Resolve a pending runtime-governance approval (ADR-013 HITL). Posts the
+   * decision to the API, which settles the still-open chat stream so it either
+   * proceeds with the simulated booking (approve) or declines (deny).
+   */
+  const approve = useCallback(async (approvalId: string, decision: 'approve' | 'deny'): Promise<void> => {
+    // Optimistically mark the card as resolving so the buttons disable.
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.approval?.approvalId === approvalId
+          ? { ...m, approval: { ...m.approval, status: decision === 'approve' ? 'approved' : 'denied' } }
+          : m,
+      ),
+    );
+    try {
+      await fetch('/api/chat/approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ sessionId: sessionId.current, approvalId, decision }),
+      });
+    } catch {
+      setError('Could not send your approval decision. Please try again.');
+    }
+  }, []);
+
   return {
     messages,
     streaming,
@@ -146,6 +179,7 @@ export function useChat() {
     started,
     send,
     reset,
+    approve,
     auditOpen,
     auditGroups,
     toggleAudit,
@@ -223,6 +257,20 @@ function applyEvent(
       if (last?.role === 'assistant') next[next.length - 1] = { ...last, research: true };
       return next;
     });
+  } else if (event.type === 'approval_request') {
+    const approval = { approvalId: event.approvalId, tool: event.tool, summary: event.summary, reason: event.reason, status: 'pending' as const };
+    setMessages((prev) => {
+      const next = [...prev];
+      const last = next[next.length - 1];
+      if (last?.role === 'assistant') next[next.length - 1] = { ...last, approval };
+      return next;
+    });
+  } else if (event.type === 'approval_resolved') {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.approval?.approvalId === event.approvalId ? { ...m, approval: { ...m.approval, status: event.decision } } : m,
+      ),
+    );
   } else if (event.type === 'error') {
     setError(event.message);
   }

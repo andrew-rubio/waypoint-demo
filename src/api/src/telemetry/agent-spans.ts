@@ -117,6 +117,12 @@ export async function* traceAgentTurn(
           root.setAttribute('error.type', event.code);
           root.setStatus({ code: SpanStatusCode.ERROR, message: event.code });
           break;
+        case 'approval_request':
+          root.addEvent('waypoint.approval.request', { 'approval.id': event.approvalId, 'approval.tool': event.tool, 'approval.itinerary': event.itineraryId, 'approval.reason': event.reason });
+          break;
+        case 'approval_resolved':
+          root.addEvent('waypoint.approval.resolved', { 'approval.id': event.approvalId, 'approval.decision': event.decision });
+          break;
         default:
           break;
       }

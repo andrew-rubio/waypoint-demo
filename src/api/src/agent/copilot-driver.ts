@@ -8,6 +8,7 @@ import type { TravelSearchRequest, TravelSearchResult } from '../../../shared/ty
 import { logger } from '../logger.js';
 import { waypointSkillSessionConfig } from './runtime-skills.js';
 import { evaluateToolCall } from './governance/gate.js';
+import { requestApproval, awaitApproval } from './governance/pending-approvals.js';
 import {
   adviseDestinations,
   destinationAdvisorParameters,
@@ -369,8 +370,8 @@ export class CopilotAgentDriver implements AgentDriver {
       // Called before every tool call. This is where the audit trail is born and
       // where runtime authority is enforced: we ask the AGT policy engine (ADR-013)
       // whether this action is within Waypoint's approved authority, record the
-      // decision, then approve or reject. Connectivity ≠ authority.
-      onPermissionRequest: (request: any) => {
+      // decision, then approve, deny, or pause for human approval. Connectivity ≠ authority.
+      onPermissionRequest: async (request: any) => {
         const name: string = request.toolName ?? request.kind ?? 'tool';
         const gate = evaluateToolCall(name, request.kind ?? 'tool');
 
@@ -381,8 +382,30 @@ export class CopilotAgentDriver implements AgentDriver {
           return { kind: 'reject', feedback: gate.reason };
         }
 
-        // ALLOW (and, for this slice, REQUIRE_APPROVAL — the human-in-the-loop
-        // approval flow lands in a later slice, so approvals are auto-granted here).
+        // REQUIRE_APPROVAL: pause for an explicit, itinerary-bound human approval
+        // (ADR-013). The permission callback awaits the traveller's decision, which
+        // arrives out-of-band via POST /api/chat/approve.
+        if (gate.decision === 'require_approval') {
+          const itineraryId = `itin-${input.sessionId}`;
+          const approval = requestApproval({ sessionId: input.sessionId, tool: name, itineraryId });
+          queue.push({ type: 'decision', summary: `Booking needs your approval — ${gate.reason}` });
+          queue.push({
+            type: 'approval_request',
+            approvalId: approval.approvalId,
+            tool: name,
+            itineraryId,
+            summary: 'Approve the simulated booking of your selected flight and hotel (demo only — no payment).',
+            reason: gate.reason,
+          });
+          const decision = await awaitApproval(approval);
+          queue.push({ type: 'approval_resolved', approvalId: approval.approvalId, decision });
+          if (decision === 'denied') {
+            return { kind: 'reject', feedback: 'The traveller did not approve the simulated booking.' };
+          }
+          return { kind: 'approve-once' };
+        }
+
+        // ALLOW.
         queue.push({ type: 'decision', summary: `Use ${name} to help answer the request.` });
 
         if (request.kind === 'mcp') {

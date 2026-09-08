@@ -68,6 +68,7 @@ test.describe('Personalisation via Cosmos DB (FRD-006) @flow:personalisation @fr
     await chat.send(SEARCH_LISBON);
     await expect(chat.flightOptions).toBeVisible();
     await chat.send('Book the first flight and the first hotel.');
+    await chat.approveBooking();
 
     await expect(chat.bookingConfirmation).toBeVisible();
     await expect(chat.bookingConfirmation).toContainText(/aisle|seat \d{1,2}[A-F]/i);

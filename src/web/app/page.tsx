@@ -18,7 +18,7 @@ import styles from './page.module.css';
  * lives in useChat — this file is just the view.
  */
 export default function ChatPage() {
-  const { messages, streaming, error, truncated, loadingStatus, started, send, reset, auditOpen, auditGroups, toggleAudit, clearAudit } =
+  const { messages, streaming, error, truncated, loadingStatus, started, send, reset, approve, auditOpen, auditGroups, toggleAudit, clearAudit } =
     useChat();
   const [draft, setDraft] = useState('');
   const threadEndRef = useRef<HTMLDivElement>(null);
@@ -124,6 +124,7 @@ export default function ChatPage() {
                     <TravelOptions message={m} onSelect={(phrase) => setDraft(phrase)} />
                   )}
                   {m.role === 'assistant' && m.tripSummary && <TripSummaryCard summary={m.tripSummary} />}
+                  {m.role === 'assistant' && m.approval && <ApprovalCard message={m} onDecision={approve} />}
                   {showBooking && <BookingConfirmationCard message={m} />}
                 </Fragment>
               );
@@ -529,6 +530,57 @@ function HotelOptionCard({
   );
 }
 
+function ApprovalCard({
+  message,
+  onDecision,
+}: {
+  message: UiMessage;
+  onDecision: (approvalId: string, decision: 'approve' | 'deny') => void;
+}) {
+  const approval = message.approval;
+  if (!approval) return null;
+  const pending = approval.status === 'pending';
+  return (
+    <section className={styles.approvalBubble} aria-label="Approval required" data-testid="approval-card">
+      <div className={styles.approvalCard} data-approval-status={approval.status}>
+        <span className={styles.approvalRibbon} data-testid="approval-ribbon">
+          <ShieldIcon />
+          Runtime governance · approval required
+        </span>
+        <p className={styles.approvalSummary}>{approval.summary}</p>
+        <p className={styles.approvalReason} data-testid="approval-reason">
+          {approval.reason}
+        </p>
+        {pending ? (
+          <div className={styles.approvalActions}>
+            <button
+              className={styles.approveBtn}
+              data-testid="approval-approve"
+              onClick={() => onDecision(approval.approvalId, 'approve')}
+            >
+              <CheckIcon />
+              Approve booking
+            </button>
+            <button
+              className={styles.denyBtn}
+              data-testid="approval-deny"
+              onClick={() => onDecision(approval.approvalId, 'deny')}
+            >
+              Deny
+            </button>
+          </div>
+        ) : (
+          <p className={styles.approvalOutcome} data-testid="approval-outcome" data-decision={approval.status}>
+            {approval.status === 'approved'
+              ? 'Approved — proceeding with the simulated booking.'
+              : 'Denied — no booking was made.'}
+          </p>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function BookingConfirmationCard({ message }: { message: UiMessage }) {
   const booking = message.booking;
   if (!booking) return null;
@@ -777,6 +829,15 @@ function WalletIcon() {
   return (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M12 1v22M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+    </svg>
+  );
+}
+
+function ShieldIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z" />
+      <path d="m9 12 2 2 4-4" />
     </svg>
   );
 }

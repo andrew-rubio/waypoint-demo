@@ -101,6 +101,7 @@ test.describe('Trip summary, budget & currency (FRD-007) @flow:trip-summary @frd
     await expect(chat.flightOptions).toBeVisible();
 
     await chat.send('Book the first flight and the first hotel.');
+    await chat.approveBooking();
 
     // Both cards appear automatically, with the summary (blue) above the confirmation (green).
     await expect(chat.tripSummaryCard).toBeVisible();

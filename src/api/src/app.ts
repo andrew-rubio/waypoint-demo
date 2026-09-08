@@ -4,6 +4,7 @@ import { validateChatRequest } from './validation/chat.js';
 import { redactSecrets } from './security/redact.js';
 import { createSessionStore } from './session/store.js';
 import { runAgent } from './agent/runtime.js';
+import { resolveApproval } from './agent/governance/pending-approvals.js';
 import { runViaFoundryAgent, foundryAgentUrl, ensureConversationId } from './agent/foundry-agent-proxy.js';
 import { parseResponsesRequest, streamResponses, collectResponse } from './responses/openai-responses.js';
 import { traceAgentTurn } from './telemetry/agent-spans.js';
@@ -110,6 +111,25 @@ export function createApp(): Express {
     } finally {
       res.end();
     }
+  });
+
+  // Resolve a pending human approval (ADR-013 runtime governance HITL). The chat
+  // stream pauses on an `approval_request`; this settles it so the paused stream
+  // continues (approved) or declines (denied) on its still-open connection.
+  app.post('/api/chat/approve', (req, res) => {
+    const approvalId = typeof req.body?.approvalId === 'string' ? req.body.approvalId : undefined;
+    const raw = req.body?.decision;
+    const decision = raw === 'approve' ? 'approved' : raw === 'deny' ? 'denied' : undefined;
+    if (!approvalId || !decision) {
+      res.status(400).json({ error: 'approvalId and decision (approve|deny) are required', code: 'invalid_request' });
+      return;
+    }
+    const resolved = resolveApproval(approvalId, decision);
+    if (!resolved) {
+      res.status(404).json({ error: 'no pending approval for that id', code: 'not_found' });
+      return;
+    }
+    res.json({ ok: true, approvalId, decision });
   });
 
   // Foundry `responses` protocol surface (INC-9, ADR-010, Path A). Same agent
