@@ -34,6 +34,7 @@ import {
 import { estimateBudget, isEurRequest, isSummaryQuery, summariseTrip, weatherNoteFor } from '../tools/trip-summary.js';
 import { offlineConvertFromGBP } from '../tools/currency.js';
 import type { TripSummary } from '../../../shared/types/trip-summary-and-budget.js';
+import { evaluateToolCall } from './governance/gate.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -48,6 +49,20 @@ const RESEARCH_LOAD_MS = TEST ? 0 : 1200;
 
 /** The city label for the search progress line, e.g. "Lisbon". */
 const cityLabel = (place: string): string => place.split(',')[0].trim();
+
+/** A refund/chargeback request — an action outside Waypoint's approved authority. */
+function isRefundQuery(message: string): boolean {
+  return /\b(refund|charge\s?back|chargeback|money\s+back|reimburse)\b/i.test(message);
+}
+
+/** The reply shown when runtime governance blocks a refund attempt. */
+function composeRefundDenied(reason: string): string {
+  return (
+    `I can’t do that — ${reason} ` +
+    'Issuing refunds is outside my approved authority, so Waypoint’s runtime governance blocked the action before it ran. ' +
+    'I can help you review your booking or plan another trip instead.'
+  );
+}
 
 /**
  * Emit the Cosmos personalisation lifecycle: the `cosmos.getTravellerProfile`
@@ -78,6 +93,10 @@ async function* personaliseEvents(message: string): AsyncIterable<AgentEvent> {
  */
 export class LocalAgentDriver implements AgentDriver {
   async *run(input: AgentInput): AsyncIterable<AgentEvent> {
+    if (isRefundQuery(input.message)) {
+      yield* this.runRefund(input);
+      return;
+    }
     if (isBookingQuery(input.message, input.history)) {
       yield* this.runBooking(input);
       return;
@@ -167,6 +186,31 @@ export class LocalAgentDriver implements AgentDriver {
     yield { type: 'tool_result', name: 'wikipedia.summary', ok: true, result: researchAuditSummary(place, research) };
     yield { type: 'status', message: '' };
     const reply = composeResearchReply(place, research);
+    for (const word of reply.split(' ')) {
+      await sleep(8);
+      yield { type: 'token', value: word + ' ' };
+    }
+    yield { type: 'tool_result', name: 'copilot.chat', ok: true, result: reply };
+    yield { type: 'done' };
+  }
+
+  /**
+   * A refund request. The agent *attempts* the issueRefund tool, but the runtime
+   * authority gate (ADR-013) denies it before it can execute — Waypoint has no
+   * approved authority to move money. This makes the DENY outcome deterministic
+   * and demonstrable without a live Copilot credential.
+   */
+  private async *runRefund(input: AgentInput): AsyncIterable<AgentEvent> {
+    yield { type: 'decision', summary: 'Attempt issueRefund to action the refund request.' };
+    yield { type: 'tool_call', name: 'copilot.chat', args: { model: 'local', prompt: input.message } };
+
+    const gate = evaluateToolCall('issueRefund');
+    yield { type: 'tool_call', name: 'issueRefund', args: {} };
+    // Fail-closed: the policy denies this action, so it never runs.
+    yield { type: 'decision', summary: `Blocked issueRefund: ${gate.reason}` };
+    yield { type: 'tool_result', name: 'issueRefund', ok: false, result: gate.reason };
+
+    const reply = composeRefundDenied(gate.reason);
     for (const word of reply.split(' ')) {
       await sleep(8);
       yield { type: 'token', value: word + ' ' };
