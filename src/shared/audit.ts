@@ -119,6 +119,44 @@ export function applyAuditEvent(state: AuditState, turnId: string, event: AgentE
       });
     }
 
+    // Runtime governance HITL (ADR-013): a consequential action pauses for a human
+    // approval — surface the request as a pending row that resolves to ok/denied.
+    case 'approval_request':
+      return pushEntry(base, {
+        turnId,
+        type: 'decision',
+        name: 'approval',
+        requestSummary: summarise(event.reason || event.summary),
+        responseSummary: '',
+        durationMs: null,
+        status: 'pending',
+        ts: new Date(now).toISOString(),
+      });
+
+    case 'approval_resolved': {
+      const approved = event.decision === 'approved';
+      const idx = lastPendingIndex(base.entries, turnId, 'approval');
+      if (idx === -1) {
+        return pushEntry(base, {
+          turnId,
+          type: 'decision',
+          name: 'approval',
+          requestSummary: '',
+          responseSummary: approved ? 'approved' : 'denied',
+          durationMs: 0,
+          status: approved ? 'ok' : 'error',
+          reason: approved ? undefined : 'Booking not approved by the traveller',
+          ts: new Date(now).toISOString(),
+        });
+      }
+      return resolveEntry(base, idx, {
+        status: approved ? 'ok' : 'error',
+        responseSummary: approved ? 'approved' : 'denied',
+        durationMs: elapsed(base.entries[idx].ts, now),
+        reason: approved ? undefined : 'Booking not approved by the traveller',
+      });
+    }
+
     // token / done carry no audit information.
     default:
       return base;

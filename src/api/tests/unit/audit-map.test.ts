@@ -31,6 +31,31 @@ describe('Audit reducer — decision entries (AC-002-3)', () => {
   });
 });
 
+describe('Audit reducer — approval HITL entries (ADR-013)', () => {
+  it('records an approval as a pending row that resolves to ok when approved', () => {
+    const state = fold([
+      [{ type: 'approval_request', approvalId: 'a1', tool: 'booking-simulator', itineraryId: 'itin-x', summary: 'Approve the simulated booking.', reason: 'Consequential booking.' }, 1000],
+      [{ type: 'approval_resolved', approvalId: 'a1', decision: 'approved' }, 1500],
+    ]);
+    expect(state.entries).toHaveLength(1);
+    const entry = state.entries[0];
+    expect(entry.name).toBe('approval');
+    expect(entry.status).toBe('ok');
+    expect(entry.responseSummary).toBe('approved');
+    expect(entry.durationMs).toBe(500);
+  });
+
+  it('resolves an approval to error when denied', () => {
+    const state = fold([
+      [{ type: 'approval_request', approvalId: 'a2', tool: 'booking-simulator', itineraryId: 'itin-y', summary: 'Approve the simulated booking.', reason: 'Consequential booking.' }, 1000],
+      [{ type: 'approval_resolved', approvalId: 'a2', decision: 'denied' }, 1400],
+    ]);
+    const entry = state.entries[0];
+    expect(entry.status).toBe('error');
+    expect(entry.responseSummary).toBe('denied');
+  });
+});
+
 describe('Audit reducer — tool call lifecycle (AC-002-2)', () => {
   it('creates a pending entry on tool_call and resolves it to ok with a duration', () => {
     const state = fold([
