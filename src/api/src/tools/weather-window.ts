@@ -83,6 +83,12 @@ const PLACES: PlaceModel[] = [
   { name: 'Marrakesh, Morocco', country: 'Morocco', aliases: ['marrakesh', 'marrakech'], latitude: 31.63, longitude: -7.99, hemisphere: 'N', annualMeanC: 19, seasonalAmpC: 9, dielC: 14, annualPrecipMm: 250, wetPeakMonth: 11, precipAmp: 0.7 },
   { name: 'Innsbruck, Austria', country: 'Austria', aliases: ['innsbruck'], latitude: 47.27, longitude: 11.39, hemisphere: 'N', annualMeanC: 9, seasonalAmpC: 9, dielC: 10, annualPrecipMm: 900, wetPeakMonth: 7, precipAmp: 0.4 },
   { name: 'Zermatt, Switzerland', country: 'Switzerland', aliases: ['zermatt'], latitude: 46.02, longitude: 7.75, hemisphere: 'N', annualMeanC: 4, seasonalAmpC: 8, dielC: 9, annualPrecipMm: 700, wetPeakMonth: 7, precipAmp: 0.3 },
+  // Travel-guide December picks — modelled so "weather there" resolves for a suggested city.
+  { name: 'Vienna, Austria', country: 'Austria', aliases: ['vienna', 'wien'], latitude: 48.21, longitude: 16.37, hemisphere: 'N', annualMeanC: 11, seasonalAmpC: 9, dielC: 8, annualPrecipMm: 620, wetPeakMonth: 6, precipAmp: 0.4 },
+  { name: 'Tortola, British Virgin Islands', country: 'British Virgin Islands', aliases: ['tortola', 'british virgin islands', 'bvi'], latitude: 18.42, longitude: -64.62, hemisphere: 'N', annualMeanC: 27, seasonalAmpC: 2.5, dielC: 6, annualPrecipMm: 1150, wetPeakMonth: 10, precipAmp: 0.5 },
+  { name: 'Kerala, India', country: 'India', aliases: ['kerala', 'kochi', 'cochin'], latitude: 9.93, longitude: 76.27, hemisphere: 'N', annualMeanC: 27.5, seasonalAmpC: 1.5, dielC: 8, annualPrecipMm: 3000, wetPeakMonth: 6, precipAmp: 0.9 },
+  { name: 'Lapland, Finland', country: 'Finland', aliases: ['lapland', 'rovaniemi'], latitude: 66.5, longitude: 25.73, hemisphere: 'N', annualMeanC: 0, seasonalAmpC: 13, dielC: 7, annualPrecipMm: 535, wetPeakMonth: 8, precipAmp: 0.4 },
+  { name: 'San Pedro de Atacama, Chile', country: 'Chile', aliases: ['san pedro de atacama', 'atacama'], latitude: -22.91, longitude: -68.2, hemisphere: 'S', annualMeanC: 14, seasonalAmpC: 7, dielC: 18, annualPrecipMm: 30, wetPeakMonth: 1, precipAmp: 0.8 },
 ];
 
 /** Places famous enough to be ambiguous — the agent must ask which one. */
