@@ -190,6 +190,21 @@ const CATALOGUE: Record<string, CityInventory> = {
       { name: 'Nordkette View', rating: 3, amount: 116, includesTaxesAndFees: true },
     ],
   },
+  vienna: {
+    place: 'Vienna, Austria',
+    iata: 'VIE',
+    currency: 'EUR',
+    flights: [
+      { airline: 'Austrian Airlines', durationMin: 140, stops: 0, amount: 168, best: true },
+      { airline: 'British Airways', durationMin: 145, stops: 0, amount: 192 },
+      { airline: 'easyJet', durationMin: 150, stops: 0, amount: 124 },
+    ],
+    hotels: [
+      { name: 'Hotel Sacher', rating: 5, amount: 268, includesTaxesAndFees: true, best: true },
+      { name: 'Ringstrasse Grand', rating: 4, amount: 196, includesTaxesAndFees: false },
+      { name: 'Prater Boutique', rating: 3, amount: 132, includesTaxesAndFees: true },
+    ],
+  },
 };
 
 /** Covered cities that deliberately return no inventory, to exercise the no-availability path. */
@@ -583,8 +598,16 @@ const ISO_DATE = /(\d{4}-\d{2}-\d{2})/g;
 
 /** Parse a free-text search turn into a structured request (origin may be absent). */
 export function travelRequestFromConversation(message: string, history: ChatMessage[] = []): TravelSearchRequest {
-  const dates = message.match(ISO_DATE) ?? [];
-  const [checkIn = '', checkOut = ''] = dates;
+  const iso = message.match(ISO_DATE) ?? [];
+  let [checkIn = '', checkOut = ''] = iso;
+  if (!checkIn || !checkOut) {
+    // Fall back to natural-language ranges like "1–8 December" or "1st Dec to 8th Dec".
+    const natural = parseNaturalDateRange(message);
+    if (natural) {
+      checkIn = checkIn || natural.checkIn;
+      checkOut = checkOut || natural.checkOut;
+    }
+  }
   return {
     destination: extractDestination(message) ?? mostRecentDestination(history) ?? '',
     origin: extractOrigin(message) ?? mostRecentOrigin(history),
@@ -593,6 +616,49 @@ export function travelRequestFromConversation(message: string, history: ChatMess
     party: extractParty(message) ?? 2,
     rooms: extractRooms(message),
   };
+}
+
+const MONTH_INDEX: Record<string, number> = {
+  january: 0, jan: 0, february: 1, feb: 1, march: 2, mar: 2, april: 3, apr: 3, may: 4,
+  june: 5, jun: 5, july: 6, jul: 6, august: 7, aug: 7, september: 8, sep: 8, sept: 8,
+  october: 9, oct: 9, november: 10, nov: 10, december: 11, dec: 11,
+};
+
+/** ISO date for a day + month, rolling to next year if that date has already passed. */
+function isoForDayMonth(day: number, monthIdx: number): string {
+  const now = new Date();
+  let year = now.getUTCFullYear();
+  const today = Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate());
+  if (Date.UTC(year, monthIdx, day) < today) year += 1;
+  return `${year}-${String(monthIdx + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+}
+
+function orderedRange(d1: number, mo1: number, d2: number, mo2: number): { checkIn: string; checkOut: string } {
+  const a = isoForDayMonth(d1, mo1);
+  const b = isoForDayMonth(d2, mo2);
+  return a <= b ? { checkIn: a, checkOut: b } : { checkIn: b, checkOut: a };
+}
+
+/** Resolve informal date ranges (e.g. "1st Dec to 8th Dec", "1–8 December", "Dec 1-8") to ISO. */
+export function parseNaturalDateRange(message: string): { checkIn: string; checkOut: string } | undefined {
+  const text = message.toLowerCase().replace(/[–—]/g, '-');
+  const day = '(\\d{1,2})(?:st|nd|rd|th)?';
+  // A) day + month … to … day + month  ("1st dec to 8th dec")
+  let m = text.match(new RegExp(`\\b${day}\\s+(?:of\\s+)?(${MONTHS_RE})\\b[\\s\\S]{0,12}?(?:to|-|until|through|and)\\s*${day}\\s+(?:of\\s+)?(${MONTHS_RE})\\b`, 'i'));
+  if (m && MONTH_INDEX[m[2]] != null && MONTH_INDEX[m[4]] != null) {
+    return orderedRange(Number(m[1]), MONTH_INDEX[m[2]], Number(m[3]), MONTH_INDEX[m[4]]);
+  }
+  // B) day–day + single month  ("1-8 december", "1 to 8 december")
+  m = text.match(new RegExp(`\\b${day}\\s*(?:to|-|until|through)\\s*${day}\\s+(?:of\\s+)?(${MONTHS_RE})\\b`, 'i'));
+  if (m && MONTH_INDEX[m[3]] != null) {
+    return orderedRange(Number(m[1]), MONTH_INDEX[m[3]], Number(m[2]), MONTH_INDEX[m[3]]);
+  }
+  // C) month + day–day  ("december 1-8", "dec 1 to 8")
+  m = text.match(new RegExp(`\\b(${MONTHS_RE})\\s+${day}\\s*(?:to|-|until|through)\\s*${day}\\b`, 'i'));
+  if (m && MONTH_INDEX[m[1]] != null) {
+    return orderedRange(Number(m[2]), MONTH_INDEX[m[1]], Number(m[3]), MONTH_INDEX[m[1]]);
+  }
+  return undefined;
 }
 
 /** Rebuild the most recent search request from the conversation, for booking. */
