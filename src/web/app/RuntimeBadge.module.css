@@ -1,0 +1,36 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.dot {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+.foundry {
+  color: #0a7d3b;
+  background: #e6f6ec;
+  border-color: #b7e4c7;
+}
+
+.local {
+  color: #8a5a00;
+  background: #fdf3e2;
+  border-color: #f3d9a8;
+}
+
+.unknown {
+  color: #6b7280;
+  background: #f1f3f5;
+  border-color: #d9dee3;
+}

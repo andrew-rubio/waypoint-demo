@@ -1,0 +1,8 @@
+{
+  "_note": "Illustrative recorded sample. Not execution evidence for the current release. Real evaluation results are produced by CI (npm run eval:run-agent + eval/evaluate.py) and uploaded as immutable workflow artefacts.",
+  "relevance": 0.95,
+  "intent_resolution": 0.85,
+  "weather_grounding": 0.95,
+  "guide_grounding": 0.95,
+  "one_clarifying_question": 0.85
+}

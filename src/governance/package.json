@@ -1,0 +1,25 @@
+{
+  "name": "@waypoint/governance",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Deterministic control-selection and release-contract engine (spec2cloud governance core). Isolated so it can later be extracted into a shared package or central service.",
+  "bin": {
+    "waypoint-gov": "src/cli.ts"
+  },
+  "scripts": {
+    "gov": "tsx src/cli.ts",
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run --config vitest.config.ts"
+  },
+  "dependencies": {
+    "yaml": "^2.5.0",
+    "zod": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

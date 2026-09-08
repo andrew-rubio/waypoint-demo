@@ -8,6 +8,7 @@ import { extractMonth, guideAuditSummary } from '../tools/travel-guide.js';
 import { searchTravel } from '../tools/routestack.js';
 import { estimateBudget, isSummaryQuery, summariseTrip, weatherNoteFor } from '../tools/trip-summary.js';
 import type { TravelOptionsResult } from '../../../shared/types/flight-hotel-search-booking.js';
+import { isApprovedFor } from '../../../shared/types/booking-approval.js';
 import { logger } from '../logger.js';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -38,8 +39,7 @@ function selectDriver(): AgentDriver {
 }
 
 /** Read BYOK → Foundry settings; baseUrl + model + one auth method (key or managed identity) required. */
-function readFoundryConfig(): FoundryProviderConfig | undefined {
-  // Foundry Agent Service reserves all FOUNDRY_*/AGENT_* container env names, so when hosted
+function readFoundryConfig(): FoundryProviderConfig | undefined {  // Foundry Agent Service reserves all FOUNDRY_*/AGENT_* container env names, so when hosted
   // the same settings arrive under WAYPOINT_* aliases (+ AZURE_AI_MODEL_DEPLOYMENT_NAME).
   const baseUrl = process.env.FOUNDRY_MODEL_URL ?? process.env.WAYPOINT_MODEL_URL;
   const apiKey = process.env.FOUNDRY_API_KEY ?? process.env.WAYPOINT_API_KEY;
@@ -50,6 +50,14 @@ function readFoundryConfig(): FoundryProviderConfig | undefined {
   const wire = process.env.FOUNDRY_WIRE_API ?? process.env.WAYPOINT_WIRE_API;
   const wireApi = wire === 'completions' ? 'completions' : 'responses';
   return { baseUrl, apiKey, model, wireApi, useManagedIdentity };
+}
+
+export type ActiveDriverKind = 'foundry-model-sdk' | 'local-deterministic';
+
+/** The driver that WOULD serve a turn now — derived from the real selection logic, not a lone env flag. */
+export function activeDriverKind(): ActiveDriverKind {
+  if (process.env.NODE_ENV !== 'test' && readFoundryConfig()) return 'foundry-model-sdk';
+  return 'local-deterministic';
 }
 
 /** One traveller turn → a stream of AgentEvents. Optional `fault` (test/demo only). */
@@ -195,6 +203,59 @@ async function* runFault(kind: string, input: RunAgentInput): AsyncIterable<Agen
       await sleep(60);
       yield { type: 'tool_result', name: 'booking-simulator', ok: false, result: 'booking simulation failed' };
       yield { type: 'error', code: 'booking_error', message: "Couldn't complete the (simulated) booking. Please try again." };
+      return;
+    }
+
+    // FR-010-11 (RAI-HITL-001 / RAI-OUT-001): a booking is attempted with NO approval bound
+    // to the exact itinerary. Deterministic code blocks execution, emits an approval-required
+    // entry into the audit stream, and NEVER represents the booking as complete. "Book…" text
+    // alone is not sufficient approval.
+    case 'booking-no-approval': {
+      const itineraryId = 'itin-LIS-demo';
+      yield { type: 'decision', summary: 'Booking requested — checking for an itinerary-bound approval before any consequential action.' };
+      yield { type: 'tool_call', name: 'booking-approval-check', args: { itineraryId } };
+      await sleep(40);
+      // No approval exists for this itinerary → blocked (deterministic, not model-decided).
+      yield { type: 'tool_result', name: 'booking-approval-check', ok: false, result: { status: 'approval_required', itineraryId, reason: 'No approval bound to this itinerary. An explicit "Approve simulated booking" is required.' } };
+      const reply = 'I can’t complete that booking yet — it needs your explicit approval for this exact itinerary. Please approve the simulated booking to proceed.';
+      for (const word of reply.split(' ')) { await sleep(8); yield { type: 'token', value: word + ' ' }; }
+      yield { type: 'done' };
+      return;
+    }
+
+    // Positive counterpart: an explicit approval bound to the exact itinerary authorises the
+    // simulated booking; the approval id is surfaced in the audit stream.
+    case 'booking-approved': {
+      const itineraryId = 'itin-LIS-demo';
+      const approval = { approvalId: 'appr-demo-1', itineraryId, approvedBy: 'traveller', approvedAt: new Date().toISOString(), scope: 'simulated-booking' as const };
+      yield { type: 'decision', summary: 'Explicit itinerary-bound approval present — proceeding with the simulated booking.' };
+      yield { type: 'tool_call', name: 'booking-approval-check', args: { itineraryId, approvalId: approval.approvalId } };
+      yield { type: 'tool_result', name: 'booking-approval-check', ok: isApprovedFor(itineraryId, approval), result: { status: 'approved', approvalId: approval.approvalId, itineraryId } };
+      yield { type: 'tool_call', name: 'booking-simulator', args: { itineraryId, approvalId: approval.approvalId } };
+      yield { type: 'tool_result', name: 'booking-simulator', ok: true, result: { simulated: true, ref: 'WP-LIS-DEMO', approvalId: approval.approvalId, note: 'Simulated only — no payment taken.' } };
+      const reply = 'Your simulated booking is confirmed (demo only, no payment) under approval appr-demo-1.';
+      for (const word of reply.split(' ')) { await sleep(8); yield { type: 'token', value: word + ' ' }; }
+      yield { type: 'done' };
+      return;
+    }
+
+    // FR-010-12 (DATA-FRESH-001): the currency conversion returns STALE data. Deterministic
+    // freshness code (not the model) detects it, contains the budget/booking, keeps the
+    // service available, preserves the itinerary, and records a runtime finding.
+    case 'stale-currency': {
+      const asOf = '2026-08-01T00:00:00Z';
+      const thresholdHours = 24;
+      const ageHours = Math.floor((Date.parse('2026-09-06T00:00:00Z') - Date.parse(asOf)) / 3_600_000);
+      yield { type: 'decision', summary: 'Converting the budget to EUR — validating currency-data freshness before any confirmation.' };
+      yield { type: 'tool_call', name: 'currency.convert', args: { from: 'GBP', to: 'EUR' } };
+      await sleep(40);
+      yield { type: 'tool_result', name: 'currency.convert', ok: true, result: { rate: 1.17, asOf, toolVersion: 'currency-mcp@1' } };
+      // Deterministic freshness check → stale.
+      yield { type: 'tool_call', name: 'currency-freshness', args: { asOf, thresholdHours } };
+      yield { type: 'tool_result', name: 'currency-freshness', ok: false, result: { status: 'stale', asOf, ageHours, thresholdHours, correlationId: input.sessionId, containment: 'final budget + simulated booking blocked; itinerary preserved' } };
+      const reply = 'I’m holding off on the final EUR budget and booking — the exchange-rate data is stale (older than the allowed freshness window), so confirming it could mislead you. Your itinerary is saved; I’ll refresh the rate and continue.';
+      for (const word of reply.split(' ')) { await sleep(8); yield { type: 'token', value: word + ' ' }; }
+      yield { type: 'done' };
       return;
     }
 
