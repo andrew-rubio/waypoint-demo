@@ -1,0 +1,31 @@
+# Waypoint runtime authority policy — enforced by the Agent Governance Toolkit
+# (@microsoft/agent-governance-sdk, Public Preview). Deterministic PDP; no LLM.
+#
+# Principle: approved MCP connectivity does NOT grant unrestricted authority.
+#   - read-only travel search        -> allow
+#   - consequential booking          -> require_approval   (enforces contract RAI-HITL-001)
+#   - out-of-scope operation (refund) -> deny                (never reaches the wire)
+# Everything else falls through to default_action (allow) so the existing approved
+# tools keep working; the release gate (ADR-012 / SEC-MCP-001) governs what may ship.
+apiVersion: governance.toolkit/v1
+name: waypoint-runtime-policy
+description: Runtime per-action authority for the Waypoint holiday-planning agent.
+default_action: allow
+rules:
+  - name: require-approval-booking
+    description: Creating a booking is consequential; hold for explicit human approval (RAI-HITL-001).
+    condition: "tool == 'booking-simulator'"
+    ruleAction: require_approval
+    approvers:
+      - waypoint-reviewer
+    priority: 100
+  - name: deny-out-of-scope-refund
+    description: Refunds are outside Waypoint's approved authority; deny before execution.
+    condition: "tool == 'issueRefund'"
+    ruleAction: deny
+    priority: 100
+  - name: allow-flight-hotel-search
+    description: Read-only flight/hotel search is a permitted action.
+    condition: "tool == 'travel-search'"
+    ruleAction: allow
+    priority: 50
