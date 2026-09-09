@@ -8,7 +8,7 @@ import { collectEvidence } from './evidence.js';
 import { selectControls } from './select.js';
 import { releaseDecisionMarkdown, evidenceSummaryMarkdown } from './summary.js';
 import { verifyRelease } from './verify.js';
-import { dossierJson, dossierMarkdown, learningMarkdown, traceMarkdown } from './dossier.js';
+import { dossierJson, dossierMarkdown, dossierReportMarkdown, learningMarkdown, traceMarkdown } from './dossier.js';
 import { deriveLifecycle } from './lifecycle.js';
 import { sha256Of } from './canonical.js';
 import {
@@ -195,8 +195,18 @@ function cmdDemo(pass: boolean): number {
 function cmdDossier(): number {
   writeJsonFile(PATHS.dossierJson, dossierJson());
   writeTextFile(PATHS.dossierMd, dossierMarkdown());
-  console.log(dossierMarkdown());
-  console.log(`\nDossier → ${PATHS.dossierJson} + ${PATHS.dossierMd}`);
+  writeTextFile(PATHS.dossierReport, dossierReportMarkdown());
+  const j = dossierJson();
+  const release = typeof j.releaseDecision === 'string' ? 'not yet produced (run gov:verify)' : `${j.releaseDecision.decision} · deployable: ${j.releaseDecision.deployable}`;
+  console.log('Proposition audit dossier generated.');
+  console.log(`  Proposition:      ${j.intent.propositionId} — ${j.intent.title}`);
+  console.log(`  Controls selected: ${j.selectedControls.length}`);
+  console.log(`  Release decision:  ${release}`);
+  console.log('');
+  console.log(`  Readable report → ${PATHS.dossierReport}`);
+  console.log(`  Machine JSON    → ${PATHS.dossierJson}`);
+  console.log('');
+  console.log('  Open the readable report to review the full, explained dossier.');
   audit('dossier.generated', { summary: 'Proposition audit dossier generated' });
   return 0;
 }

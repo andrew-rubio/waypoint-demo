@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { PATHS, readJsonIfExists, readYamlFile } from './io.js';
-import type { ApprovalRecord, ControlContract, ControlSelection, ReleaseDecision } from './types.js';
+import type { ApprovalRecord, ControlCatalogue, ControlContract, ControlSelection, ReleaseDecision } from './types.js';
 
 /** Control → implementation increment(s) mapping for the traceability chain. */
 const CONTROL_INCREMENTS: Record<string, string[]> = {
@@ -114,6 +114,281 @@ export function dossierMarkdown(): string {
   lines.push('');
   lines.push(`> ${d.evidenceReference}`);
   return lines.join('\n');
+}
+
+/** Explanatory lookups so a non-technical reader understands every coded value. */
+function loadCatalogue(): ControlCatalogue | undefined {
+  return existsSync(PATHS.catalogue) ? (readYamlFile(PATHS.catalogue) as ControlCatalogue) : undefined;
+}
+
+const CHARACTERISTIC_LABELS: Record<string, { label: string; explain: string }> = {
+  usesLLM: { label: 'Uses a large language model', explain: 'The proposition relies on a generative AI model to produce responses.' },
+  handlesPersonalData: { label: 'Handles personal data', explain: 'The proposition processes information about identifiable people.' },
+  dataClassification: { label: 'Data classification', explain: 'The sensitivity tier of the data the proposition handles.' },
+  autonomyLevel: { label: 'Autonomy level', explain: 'How much the agent can act on its own — assistive, supervised, or autonomous.' },
+  consequentialActions: { label: 'Consequential actions', explain: 'Actions with real-world impact (here, a simulated booking) that need extra control.' },
+  financialTransactions: { label: 'Financial transactions', explain: 'Whether the proposition moves money — none, simulated, or real.' },
+  externalIntegrations: { label: 'External integrations / tools', explain: 'Outside services and tools the agent can call (via MCP and APIs).' },
+  humanInLoop: { label: 'Human-in-the-loop', explain: 'A person must approve before a consequential action proceeds.' },
+  retrievalAugmented: { label: 'Retrieval-augmented (RAG)', explain: 'The agent grounds answers in retrieved data rather than model memory alone.' },
+  deploymentSurface: { label: 'Deployment surface', explain: 'Where the proposition runs in production.' },
+};
+
+const SEVERITY_EXPLAIN: Record<string, string> = {
+  blocking: 'Blocking — a release cannot proceed until this control is satisfied.',
+  advisory: 'Advisory — recorded and reviewed, but does not by itself block a release.',
+};
+
+const STAGE_EXPLAIN: Record<string, string> = {
+  build: 'enforced when the application is built/packaged',
+  'pre-release': 'checked by automated evaluations before promotion',
+  runtime: 'enforced live, on every request, while the agent runs',
+  release: 'checked at the go/no-go gate before deployment',
+  deploy: 'enforced during the deployment step',
+};
+
+const EVIDENCE_TYPE_EXPLAIN: Record<string, string> = {
+  'test-result': 'the outcome of an automated test',
+  'evaluation-result': 'the score from an automated quality evaluation',
+  'config-check': 'a check of the application configuration',
+  'mcp-allowlist': 'a comparison of configured tools against the approved allowlist',
+  'artefact-digest': 'the immutable fingerprint of the deployed build',
+  'human-approval': 'a recorded human sign-off',
+  'runtime-finding': 'an observation captured from live runtime telemetry',
+};
+
+const IDENTITY_ASSURANCE_EXPLAIN: Record<string, string> = {
+  'self-asserted': 'the approver identified themselves locally (demo only — no verified identity)',
+  'pull-request': 'approval captured through a reviewed GitHub pull request',
+  'protected-environment': 'approval captured inside a protected CI environment',
+};
+
+const EVIDENCE_MODE_EXPLAIN: Record<string, string> = {
+  'ci-authoritative': 'Authoritative — evidence produced by the CI pipeline on a specific commit',
+  'local-demonstration': 'Demonstration only — evidence produced locally, not from an authoritative CI run',
+};
+
+const fmtValue = (v: unknown): string => {
+  if (Array.isArray(v)) return v.length ? v.map((x) => `\`${x}\``).join(', ') : '_none_';
+  if (typeof v === 'boolean') return v ? 'Yes' : 'No';
+  return `\`${String(v)}\``;
+};
+
+/**
+ * A rich, plain-English version of the dossier intended to be opened as a file and
+ * shown to a non-technical governance audience. Every coded value (policy ids,
+ * control ids, severities, stages) is accompanied by supporting text.
+ */
+export function dossierReportMarkdown(): string {
+  const a = loadArtefacts();
+  const cat = loadCatalogue();
+  const controlById = new Map((cat?.controls ?? []).map((c) => [c.id, c] as const));
+  const policyById = new Map((cat?.policySources ?? []).map((p) => [p.id, p] as const));
+  const d = dossierJson();
+  const generated = new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+  const L: string[] = [];
+
+  L.push('# Waypoint — AI Governance Assurance Dossier');
+  L.push('');
+  L.push(`_Generated ${generated} from version-controlled governance artefacts._`);
+  L.push('');
+  L.push('> **What this is.** A plain-English audit trail for the Waypoint AI agent. It shows the');
+  L.push('> business proposition being governed, the governance controls it must satisfy and *why*');
+  L.push('> each one applies, the frozen set of obligations that was approved, and the current');
+  L.push('> go/no-go release decision. Every item below is derived **deterministically** from');
+  L.push('> declared facts and version-controlled files — not from model opinion.');
+  L.push('>');
+  L.push('> ⚠️ **Demonstration content.** The policy catalogue is **synthetic** (illustrative). It is');
+  L.push('> not any organisation\u2019s actual policy and makes no regulatory or compliance-certification claim.');
+  L.push('');
+
+  // At-a-glance summary (the compact snapshot, before the detailed sections).
+  const contractSummary = typeof d.contract === 'string' ? '_unavailable_' : `${d.contract.version} (\`${d.contract.hash}\`)`;
+  const approvalSummary = typeof d.approval === 'string'
+    ? '_unavailable_'
+    : `${d.approval.approver} (${d.approval.identityAssurance}, non-repudiation: ${d.approval.nonRepudiation ? 'yes' : 'no'})`;
+  const releaseSummary = typeof d.releaseDecision === 'string'
+    ? '_not yet produced — run `npm run gov:verify`_'
+    : `**${d.releaseDecision.decision}** · deployable: ${d.releaseDecision.deployable ? 'yes' : 'no'} · mode: ${d.releaseDecision.evidenceMode}`;
+  L.push('## At a glance');
+  L.push('');
+  L.push('| Field | Value |');
+  L.push('|---|---|');
+  L.push(`| Proposition | **${d.intent.propositionId}** — ${d.intent.title} |`);
+  L.push(`| Accountable owner | ${d.intent.accountableOwner} |`);
+  L.push(`| Control contract | ${contractSummary} |`);
+  L.push(`| Approval | ${approvalSummary} |`);
+  L.push(`| Release decision | ${releaseSummary} |`);
+  L.push(`| Controls selected | ${d.selectedControls.length} |`);
+  L.push('');
+  L.push('### Selected controls');
+  L.push('');
+  L.push('| Control | Severity | Policy source | Implemented in |');
+  L.push('|---|---|---|---|');
+  for (const c of d.selectedControls) {
+    L.push(`| \`${c.id}\` | ${c.severity} | \`${c.policyRef}\` | ${c.increments.join(', ')} |`);
+  }
+  L.push('');
+  L.push('_Full explanations of every field, control and code below._');
+  L.push('');
+  L.push('---');
+  L.push('');
+
+  // 1. Proposition
+  L.push('## 1. The proposition being governed');
+  L.push('');
+  L.push('This is the thing under assessment — the product/capability whose declared characteristics drive everything else.');
+  L.push('');
+  L.push(`- **Proposition ID:** \`${d.intent.propositionId}\` — the internal identifier for this capability.`);
+  L.push(`- **Title:** ${d.intent.title}`);
+  L.push(`- **Accountable owner:** ${d.intent.accountableOwner} — the person answerable for it.`);
+  if (a.proposition) {
+    L.push(`- **Source requirements:** ${(a.proposition.prdRequirementIds ?? []).map((r) => `\`${r}\``).join(', ') || '_n/a_'} — the product requirements this traces back to.`);
+    L.push(`- **Approved tools:** ${((a.proposition as { approvedTools?: string[] }).approvedTools ?? []).map((t) => `\`${t}\``).join(', ') || '_none_'} — the only external tools governance has allow-listed.`);
+  }
+  L.push('');
+  if (a.proposition && typeof d.classification === 'object') {
+    L.push('### Declared characteristics');
+    L.push('');
+    L.push('These declared facts are what the control-selection engine reads. Nothing high-risk is inferred — it is stated up front.');
+    L.push('');
+    L.push('| Characteristic | Declared value | What it means |');
+    L.push('|---|---|---|');
+    const chars = d.classification as Record<string, unknown>;
+    for (const [key, meta] of Object.entries(CHARACTERISTIC_LABELS)) {
+      if (!(key in chars)) continue;
+      L.push(`| ${meta.label} | ${fmtValue(chars[key])} | ${meta.explain} |`);
+    }
+    L.push('');
+  }
+
+  // 2. How controls are selected
+  L.push('## 2. How controls were selected');
+  L.push('');
+  L.push('Each control in the catalogue carries an *"applies when"* rule written over the declared');
+  L.push('characteristics above. A control is included **only if its rule matches** — a transparent,');
+  L.push('repeatable decision with no model judgement involved. The matched rule is shown against each control.');
+  L.push('');
+
+  // 3. Selected controls
+  L.push('## 3. Selected controls — the obligations Waypoint must meet');
+  L.push('');
+  L.push(`${d.selectedControls.length} control(s) were selected for this proposition.`);
+  L.push('');
+  for (const sc of d.selectedControls) {
+    const full = controlById.get(sc.id);
+    const contractControl = a.contract?.material.controls.find((c) => c.controlId === sc.id);
+    const title = full?.title ?? sc.id;
+    L.push(`### ${sc.id} — ${title}`);
+    L.push('');
+    if (full?.description) L.push(`${full.description}`);
+    L.push('');
+    if (full?.category) L.push(`- **Category:** ${full.category}`);
+    L.push(`- **Severity:** ${SEVERITY_EXPLAIN[sc.severity] ?? sc.severity}`);
+    if (full?.enforcementStage) L.push(`- **Enforced at:** \`${full.enforcementStage}\` — ${STAGE_EXPLAIN[full.enforcementStage] ?? ''}`);
+    const pol = policyById.get(sc.policyRef);
+    L.push(`- **Policy source:** \`${sc.policyRef}\`${pol ? ` — ${pol.owner}; applies to: ${pol.applicability}` : ''}`);
+    if (contractControl?.matchedBy?.length) L.push(`- **Why it applies:** ${contractControl.matchedBy.join('; ')}`);
+    else if (contractControl?.rationale) L.push(`- **Why it applies:** ${contractControl.rationale}`);
+    if (full?.obligation) L.push(`- **What it requires:** ${full.obligation}`);
+    const evReqs = contractControl?.evidenceRequirements ?? full?.evidenceRequirements ?? [];
+    if (evReqs.length) {
+      const ev = evReqs.map((e) => `${e.descriptor} (${EVIDENCE_TYPE_EXPLAIN[e.evidenceType] ?? e.evidenceType})`).join('; ');
+      L.push(`- **Evidence required:** ${ev}`);
+    }
+    L.push(`- **Implemented in:** ${sc.increments.join(', ')}${CONTROL_TESTS[sc.id] ? ` · verified by ${CONTROL_TESTS[sc.id]}` : ''}`);
+    L.push('');
+  }
+
+  // 4. Policy sources
+  const usedPolicies = [...new Set(d.selectedControls.map((c) => c.policyRef))];
+  if (usedPolicies.length) {
+    L.push('## 4. Policy sources referenced');
+    L.push('');
+    L.push('The controls above trace to these (synthetic) policy sources. In a real deployment these');
+    L.push('would come from an authoritative, centrally-versioned policy catalogue.');
+    L.push('');
+    L.push('| Policy ID | Owner | Governs |');
+    L.push('|---|---|---|');
+    for (const pid of usedPolicies) {
+      const p = policyById.get(pid);
+      L.push(`| \`${pid}\` | ${p?.owner ?? '_unknown_'} | ${p?.applicability ?? '_unknown_'} |`);
+    }
+    L.push('');
+  }
+
+  // 5. Control contract & approval
+  L.push('## 5. The approved control contract');
+  L.push('');
+  L.push('The selected controls are frozen into a **control contract** and hashed. The hash is a');
+  L.push('tamper-evident fingerprint: if any obligation changed, the hash would change and the');
+  L.push('existing approval would no longer match.');
+  L.push('');
+  if (typeof d.contract !== 'string') {
+    L.push(`- **Contract version:** \`${d.contract.version}\``);
+    L.push(`- **Contract hash:** \`${d.contract.hash}\` — the fingerprint the approval is bound to.`);
+  } else {
+    L.push('- **Contract:** _unavailable — run `npm run gov:contract`._');
+  }
+  if (typeof d.approval !== 'string') {
+    L.push(`- **Approved by:** ${d.approval.approver}`);
+    L.push(`- **Identity assurance:** \`${d.approval.identityAssurance}\` — ${IDENTITY_ASSURANCE_EXPLAIN[d.approval.identityAssurance] ?? ''}.`);
+    L.push(`- **Approval mechanism:** \`${d.approval.mechanism}\`.`);
+    L.push(`- **Non-repudiation:** ${d.approval.nonRepudiation ? 'Yes' : 'No'} — this demo does **not** claim a cryptographic signature.`);
+    if (d.approval.sourceCommit) L.push(`- **Approved at commit:** \`${d.approval.sourceCommit}\`.`);
+  } else {
+    L.push('- **Approval:** _unavailable — run `npm run gov:approve`._');
+  }
+  L.push('');
+
+  // 6. Release decision
+  L.push('## 6. Release decision');
+  L.push('');
+  L.push('The go/no-go outcome. A release is only deployable when every **blocking** control has passing evidence.');
+  L.push('');
+  if (typeof d.releaseDecision !== 'string') {
+    const rd = d.releaseDecision;
+    L.push(`- **Decision:** **${rd.decision}**`);
+    L.push(`- **Deployable:** ${rd.deployable ? 'Yes' : 'No'}`);
+    L.push(`- **Evidence mode:** \`${rd.evidenceMode}\` — ${EVIDENCE_MODE_EXPLAIN[rd.evidenceMode] ?? ''}.`);
+    L.push(`- **Evidence set:** \`${rd.evidenceSetId}\``);
+    L.push(`- **Certified artefact digest:** \`${rd.certifiedArtefactDigest}\` — the immutable build fingerprint the decision certifies.`);
+    if (rd.sourceCommit && rd.sourceCommit !== 'unavailable') L.push(`- **Assessed commit:** \`${rd.sourceCommit}\``);
+  } else {
+    L.push('- **No release decision has been produced yet.** Run `npm run gov:verify` to evaluate the');
+    L.push('  evidence and generate a decision. Until then the proposition is treated as **not deployable**.');
+  }
+  L.push('');
+
+  // 7. Evidence integrity
+  L.push('## 7. Evidence integrity');
+  L.push('');
+  L.push('An honest self-check: this dossier flags anything missing or non-authoritative rather than implying success.');
+  L.push('');
+  for (const i of d.integrity) L.push(`- ${i}`);
+  L.push('');
+
+  // 8. Limitations
+  L.push('## 8. Limitations & non-claims');
+  L.push('');
+  for (const l of d.limitations) L.push(`- ${l}`);
+  L.push('');
+  L.push(`> ${d.evidenceReference}`);
+  L.push('');
+
+  // Glossary
+  L.push('## Glossary');
+  L.push('');
+  L.push('- **Blocking vs advisory** — blocking controls stop a release until satisfied; advisory controls are reviewed but non-blocking.');
+  L.push('- **Enforcement stage** — *when* a control is checked: build, pre-release (evaluations), runtime (live), release (go/no-go gate), or deploy.');
+  L.push('- **Evidence** — the proof a control is met: a test result, evaluation score, config check, allowlist comparison, artefact digest, or human sign-off.');
+  L.push('- **Contract hash** — a tamper-evident fingerprint of the exact approved control set; any change invalidates the prior approval.');
+  L.push('- **Artefact digest** — the immutable fingerprint of the built container image, so the release is pinned to an exact build (not a moving tag).');
+  L.push('- **Evidence mode** — *ci-authoritative* (produced by CI on a commit) vs *local-demonstration* (produced locally, for illustration only).');
+  L.push('- **Non-repudiation** — a cryptographic guarantee the approver cannot later deny signing. This demo does **not** claim it.');
+  L.push('');
+
+  return L.join('\n');
 }
 
 export function learningMarkdown(opts: { incidentId: string; finding: string; control: string; proposition: string }): string {

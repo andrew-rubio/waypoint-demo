@@ -22,6 +22,8 @@ export const PATHS = {
   releaseDecision: repoPath('specs/governance/.out/release-decision.json'),
   dossierJson: repoPath('specs/governance/.out/dossier.json'),
   dossierMd: repoPath('specs/governance/.out/dossier.md'),
+  /** Human-readable, explanatory report — the file a reviewer opens. */
+  dossierReport: repoPath('specs/governance/dossier-report.md'),
   auditLog: repoPath('specs/governance/governance-audit.jsonl'),
   learningDir: repoPath('specs/learning'),
 } as const;
