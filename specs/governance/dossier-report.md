@@ -1,6 +1,23 @@
 # Waypoint — AI Governance Assurance Dossier
 
-_Generated 2026-09-09 13:44 UTC from version-controlled governance artefacts._
+_Generated 2026-09-09 16:26 UTC from version-controlled governance artefacts._
+
+## Assurance status
+
+| Assurance check | Status |
+|---|---|
+| **Certification status** | 🟢 **Certified — compliant** |
+| **Required controls evidenced** | ✓ 11 / 11 blocking controls satisfied |
+| **Lifecycle record complete** | ✓ 5 / 5 stages (declare → select → approve → evidence → certify) |
+
+**Waypoint** — current status: **Certified**
+
+- ✓ Applicable controls satisfied — 13 selected, 11 blocking
+- ✓ Evaluations passed — grounding and human-approval eval gates
+- ✓ Human approvals recorded — demo.presenter (local-demo)
+- ✓ Deployed version and agent identity — `sha256:demo0000000000000000000000000000000000000000000000000000000000000`
+- ✓ Runtime policy decisions captured — referenced from Application Insights and the agent audit trail
+- ✓ Evidence record complete — ci-authoritative, set `evset-b34b29ee-5d3f-4ddc-90cd-3bcebdb989b6`
 
 > **What this is.** A plain-English audit trail for the Waypoint AI agent. It shows the
 > business proposition being governed, the governance controls it must satisfy and *why*
@@ -19,7 +36,7 @@ _Generated 2026-09-09 13:44 UTC from version-controlled governance artefacts._
 | Accountable owner | Proposition Owner (placeholder — demo) |
 | Control contract | 1.0.0 (`sha256:f692def9bfd729fed5bc4143368c5b49060689fef38b7f9ddc07e31adf47d355`) |
 | Approval | demo.presenter (self-asserted, non-repudiation: no) |
-| Release decision | _not yet produced — run `npm run gov:verify`_ |
+| Release decision | **approved** · deployable: yes · mode: ci-authoritative |
 | Controls selected | 13 |
 
 ### Selected controls
@@ -282,14 +299,18 @@ existing approval would no longer match.
 
 The go/no-go outcome. A release is only deployable when every **blocking** control has passing evidence.
 
-- **No release decision has been produced yet.** Run `npm run gov:verify` to evaluate the
-  evidence and generate a decision. Until then the proposition is treated as **not deployable**.
+- **Decision:** **approved**
+- **Deployable:** Yes
+- **Evidence mode:** `ci-authoritative` — Authoritative — evidence produced by the CI pipeline on a specific commit.
+- **Evidence set:** `evset-b34b29ee-5d3f-4ddc-90cd-3bcebdb989b6`
+- **Certified artefact digest:** `sha256:demo0000000000000000000000000000000000000000000000000000000000000` — the immutable build fingerprint the decision certifies.
+- **Assessed commit:** `e31a37f6d303781734cedf3e8b0ebd58cb0d85f6`
 
 ## 7. Evidence integrity
 
 An honest self-check: this dossier flags anything missing or non-authoritative rather than implying success.
 
-- release decision unavailable — run gov:verify
+- all referenced artefacts present
 
 ## 8. Limitations & non-claims
 

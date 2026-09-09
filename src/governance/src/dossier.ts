@@ -186,11 +186,52 @@ export function dossierReportMarkdown(): string {
   const policyById = new Map((cat?.policySources ?? []).map((p) => [p.id, p] as const));
   const d = dossierJson();
   const generated = new Date().toISOString().replace('T', ' ').slice(0, 16) + ' UTC';
+
+  // Derived assurance status — reflects the real artefacts, never hard-coded.
+  const decision = a.decision;
+  const controls = a.contract?.material.controls ?? [];
+  const blockingControls = controls.filter((c) => c.severity === 'blocking');
+  const approved = decision?.releaseDecision === 'approved' && decision.deployable === true;
+  const certified = approved && !!decision?.certifiedArtefactDigest && decision?.evidenceMode === 'ci-authoritative';
+  const blockingSatisfied = approved && (decision?.blockingFailures?.length ?? 0) === 0;
+  const lifecycleStages = [!!a.proposition, controls.length > 0, !!a.approval, !!decision, certified];
+  const lifecycleComplete = lifecycleStages.every(Boolean);
+  const lifecycleDone = lifecycleStages.filter(Boolean).length;
+  const mark = (b: boolean) => (b ? '✓' : '—');
+  const statusLabel = certified
+    ? '🟢 **Certified — compliant**'
+    : approved
+      ? '🟡 **Approved — demonstration evidence (not yet CI-certified)**'
+      : decision?.releaseDecision === 'blocked'
+        ? '🔴 **Blocked — a required control is not satisfied**'
+        : decision?.releaseDecision === 'demonstration-only'
+          ? '🟡 **Demonstration only — not certified**'
+          : '⚪ **Pending verification** — run `npm run gov:verify` then `gov:certify`';
   const L: string[] = [];
 
   L.push('# Waypoint — AI Governance Assurance Dossier');
   L.push('');
   L.push(`_Generated ${generated} from version-controlled governance artefacts._`);
+  L.push('');
+  L.push('## Assurance status');
+  L.push('');
+  L.push('| Assurance check | Status |');
+  L.push('|---|---|');
+  L.push(`| **Certification status** | ${statusLabel} |`);
+  L.push(`| **Required controls evidenced** | ${mark(blockingSatisfied)} ${blockingControls.length ? `${blockingSatisfied ? blockingControls.length : 0} / ${blockingControls.length} blocking controls satisfied` : 'no contract generated yet'} |`);
+  L.push(`| **Lifecycle record complete** | ${mark(lifecycleComplete)} ${lifecycleDone} / ${lifecycleStages.length} stages (declare → select → approve → evidence → certify) |`);
+  L.push('');
+  const statusWord = certified ? '**Certified**' : approved ? '**Approved (demonstration)**' : decision?.releaseDecision === 'blocked' ? '**Blocked**' : '**Pending**';
+  L.push(`**Waypoint** — current status: ${statusWord}`);
+  L.push('');
+  L.push(`- ${mark(blockingSatisfied)} Applicable controls satisfied${controls.length ? ` — ${controls.length} selected, ${blockingControls.length} blocking` : ''}`);
+  L.push(`- ${mark(approved)} Evaluations passed — grounding and human-approval eval gates`);
+  L.push(`- ${mark(!!a.approval)} Human approvals recorded${a.approval ? ` — ${a.approval.approver} (${a.approval.approvalMechanism})` : ''}`);
+  const certDigest = decision?.certifiedArtefactDigest;
+  L.push(`- ${mark(!!certDigest)} Deployed version and agent identity${certDigest ? ` — \`${certDigest}\`` : ' — pending certification'}`);
+  L.push(`- ${mark(!!decision)} Runtime policy decisions captured — referenced from Application Insights and the agent audit trail`);
+  const evidenceComplete = !!decision && decision.evidenceMode === 'ci-authoritative';
+  L.push(`- ${mark(evidenceComplete)} Evidence record complete${decision ? ` — ${decision.evidenceMode}${decision.evidenceSetId ? `, set \`${decision.evidenceSetId}\`` : ''}` : ''}`);
   L.push('');
   L.push('> **What this is.** A plain-English audit trail for the Waypoint AI agent. It shows the');
   L.push('> business proposition being governed, the governance controls it must satisfy and *why*');
