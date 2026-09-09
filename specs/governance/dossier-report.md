@@ -1,6 +1,6 @@
 # Waypoint — AI Governance Assurance Dossier
 
-_Generated 2026-09-09 16:26 UTC from version-controlled governance artefacts._
+_Generated 2026-09-09 16:34 UTC from version-controlled governance artefacts._
 
 ## Assurance status
 
@@ -15,9 +15,9 @@ _Generated 2026-09-09 16:26 UTC from version-controlled governance artefacts._
 - ✓ Applicable controls satisfied — 13 selected, 11 blocking
 - ✓ Evaluations passed — grounding and human-approval eval gates
 - ✓ Human approvals recorded — demo.presenter (local-demo)
-- ✓ Deployed version and agent identity — `sha256:demo0000000000000000000000000000000000000000000000000000000000000`
+- ✓ Deployed version and agent identity — `sha256:0fe76ed926d69016183d8747d4f5be01dff20fcee9de3ec1d1b4a2bb87c4cc3c`
 - ✓ Runtime policy decisions captured — referenced from Application Insights and the agent audit trail
-- ✓ Evidence record complete — ci-authoritative, set `evset-b34b29ee-5d3f-4ddc-90cd-3bcebdb989b6`
+- ✓ Evidence record complete — ci-authoritative, set `evset-6f34a730-990b-43d4-b347-f9f467333022`
 
 > **What this is.** A plain-English audit trail for the Waypoint AI agent. It shows the
 > business proposition being governed, the governance controls it must satisfy and *why*
@@ -302,9 +302,9 @@ The go/no-go outcome. A release is only deployable when every **blocking** contr
 - **Decision:** **approved**
 - **Deployable:** Yes
 - **Evidence mode:** `ci-authoritative` — Authoritative — evidence produced by the CI pipeline on a specific commit.
-- **Evidence set:** `evset-b34b29ee-5d3f-4ddc-90cd-3bcebdb989b6`
-- **Certified artefact digest:** `sha256:demo0000000000000000000000000000000000000000000000000000000000000` — the immutable build fingerprint the decision certifies.
-- **Assessed commit:** `e31a37f6d303781734cedf3e8b0ebd58cb0d85f6`
+- **Evidence set:** `evset-6f34a730-990b-43d4-b347-f9f467333022`
+- **Certified artefact digest:** `sha256:0fe76ed926d69016183d8747d4f5be01dff20fcee9de3ec1d1b4a2bb87c4cc3c` — the immutable build fingerprint the decision certifies.
+- **Assessed commit:** `47cd56de7f94d6bf8c0f77010431a4b9521505f8`
 
 ## 7. Evidence integrity
 
