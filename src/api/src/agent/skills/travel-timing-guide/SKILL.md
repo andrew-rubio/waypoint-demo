@@ -1,5 +1,5 @@
 ---
-name: weather-window
+name: travel-timing-guide
 description: Answer weather and best-time-to-travel questions for a destination. Use when a traveller asks what the weather is like in a place for a month, or when the best (or worst) months to visit are.
 ---
 

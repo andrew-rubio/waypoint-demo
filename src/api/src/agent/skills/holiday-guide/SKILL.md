@@ -1,5 +1,5 @@
 ---
-name: destination-advice
+name: holiday-guide
 description: Guide destination discovery when a traveller asks where to go, requests recommendations, gives travel preferences, or refines a previous shortlist.
 ---
 

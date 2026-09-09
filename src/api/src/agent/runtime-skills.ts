@@ -14,7 +14,7 @@ const waypointAgent = {
   description: 'A concise holiday-planning agent with trusted travel tools.',
   prompt:
     'Help travellers plan holidays. Apply the preloaded skills and ground structured recommendations in their trusted tools.',
-  skills: ['destination-advice', 'weather-window', 'travel-search'],
+  skills: ['holiday-guide', 'travel-timing-guide', 'trip-booking-guide'],
   tools: ['destination-advisor', 'weather-window', 'travel-search', 'booking-simulator'],
 };
 

@@ -1,5 +1,5 @@
 ---
-name: travel-search
+name: trip-booking-guide
 description: Search flights and hotels for a destination and dates, and produce a clearly-simulated booking. Use when a traveller asks to find or book flights and hotels for a chosen destination.
 ---
 
