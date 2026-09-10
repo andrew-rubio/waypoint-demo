@@ -1,10 +1,117 @@
 {
   "mode": "greenfield",
   "phase": "increment-delivery",
-  "step": "delivered",
-  "status": "done",
-  "currentIncrement": "INC-2",
+  "step": "verification",
+  "status": "in-progress",
+  "currentIncrement": "BUGFIX-AGT-LOADER",
+  "lastUpdated": "2026-09-10T07:34:29Z",
   "increments_progress": {
+    "BUGFIX-AGT-LOADER": {
+      "type": "bugfix",
+      "frd": "FRD-011",
+      "name": "agt-extension-loader",
+      "status": "in-progress",
+      "scope": "Restore repository-scoped AGT build governance without runtime TypeScript loading or policy changes.",
+      "recovery": {
+        "previousSession": "6c584dd2-124d-4583-8511-1ce0d088e954",
+        "continuedSession": "53fe7688-9cc4-437e-a674-607ce867e26f",
+        "transcriptBackup": "recovered-repository-analysis.events.jsonl in the continued session's files directory",
+        "branch": "spec2cloud/impl/agt-build-governance",
+        "remoteChanges": false,
+        "note": "Prior state only recorded delivered INC-2. Recovered the approved FRD-011 first cut and preserved all existing local edits."
+      },
+      "tests": {
+        "status": "approved",
+        "humanApproval": "Approve and continue with the repair (Recommended)",
+        "file": "src/governance/tests/agt-build-loader.test.ts",
+        "baseline": "red->green: the built adapter loads without TSX; all four loader/policy tests pass",
+        "regression": {
+          "governance": "36 passed",
+          "apiUnitAndIntegration": "126 passed",
+          "workspaceBuild": "passed",
+          "rootTypeCheck": "blocked by the pre-existing e2e/playwright.config.ts(22) reducedMotion TS2769",
+          "bdd": "interrupted at the user's pause; not reported as complete",
+          "e2e": "not rerun during recovery; prior session already recorded unrelated application failures"
+        }
+      },
+      "research": {
+        "source": "Installed Copilot SDK docs/extensions.md and docs/agent-author.md",
+        "finding": "Extensions use .mjs entry points and the host module resolver; compile the adapter before loading it, avoiding the incompatible runtime TSX namespace loader."
+      },
+      "implementation": {
+        "status": "hard-denial-demonstrated",
+        "files": [
+          "scripts/agt-setup.mjs",
+          "src/governance/tsconfig.agt-build.json",
+          ".github/extensions/agt-build/extension.mjs.disabled"
+        ],
+        "liveHost": "The compiled adapter initialized in the actual host. A protected-file request was denied before execution with no approval option.",
+        "authoringSession": {
+          "extensionEnabled": false,
+          "reason": "User requested relief from AGT review prompts in this repair session. Renamed the entry point to extension.mjs.disabled and reloaded; zero extensions running.",
+          "policyChanged": false,
+          "ordinaryCopilotPermissionsChanged": false
+        },
+        "recording": "completed: narrated and captioned edited evidence walkthrough; not a continuous native-app screen recording",
+        "projectSetup": {
+          "file": ".github/github-app.yml",
+          "script": "AGT setup (Node 22+)",
+          "trigger": "manual",
+          "configuredThrough": "GitHub Copilot app project settings",
+          "note": "Runs npm run agt:setup with Node 22+ on PATH; no machine-specific path. Does not activate the disabled authoring hook. Repository configuration changes require the app's trust review."
+        },
+        "reviewHandoff": {
+          "preparedAt": "2026-09-10T07:29:12Z",
+          "status": "publishing-draft",
+          "target": "andrew-rubio/waypoint-demo",
+          "recommendedReviewer": "andrew-rubio",
+          "recommendedPullRequest": "draft",
+          "publicationAuthorization": "User approved proceeding with the proposed commit, branch push and draft-PR handoff on 2026-09-10.",
+          "changes": [
+            "Portable manual project setup requiring Node 22+ on PATH",
+            "Documentation and ADR aligned with the user-selected hard-denial demonstration and explicit opt-in activation",
+            "Root and workspace governance test commands now prepare the ignored AGT installation and compiled adapter before testing"
+          ],
+          "verification": {
+            "coldBaseline": "Four AGT tests failed without generated files before lifecycle setup was added",
+            "coldRootAndWorkspace": "Four unchanged AGT tests passed through each entry point from an unprepared fixture",
+            "governance": "36 passed",
+            "apiUnitAndIntegration": "126 passed",
+            "governanceBuild": "passed",
+            "repositoryTypeCheck": "pre-existing e2e/playwright.config.ts(22) reducedMotion TS2769 remains",
+            "fullApplicationRegression": "not established; no merge-ready claim"
+          },
+          "draftArtifact": "agt-pr-draft.json in session artifacts",
+          "extensionEnabled": false,
+          "committed": false,
+          "pushed": false,
+          "pullRequestCreated": false
+        },
+        "video": {
+          "status": "done",
+          "path": "/Users/arturzielinski/.copilot/session-state/53fe7688-9cc4-437e-a674-607ce867e26f/files/agt-demo/Waypoint-AGT-project-setup-and-hard-denial-narrated.mp4",
+          "desktopPath": "/Users/arturzielinski/Desktop/Waypoint-AGT-demo-with-voiceover.mp4",
+          "durationSeconds": 119,
+          "resolution": "1920x1080",
+          "sizeBytes": 12552198,
+          "audio": "Scene-synchronised Azure Ava Dragon HD narration, calm; AAC 48kHz stereo. Captions retained.",
+          "source": "Actual cropped project-settings capture, repository configuration/policy/code, successful setup output, original Copilot denial event and native AGT audit entry",
+          "originalDenialTimestamp": "2026-09-08T15:54:53.651Z",
+          "provenanceFile": "agt-demo/provenance.json in session artifacts",
+          "remoteUpload": false
+        },
+        "proofSession": {
+          "createdId": "5e60447e-61fd-4faf-8a21-d640b923c4c0",
+          "activeId": "0f571b37-ae2e-4640-a828-80c5135331bd",
+          "name": "AGT live proof",
+          "workspace": "user-approved isolated worktree",
+          "path": "/Users/arturzielinski/dev/github-repos/copilot-worktrees/waypoint-demo/arturcrmbot-animated-guacamole",
+          "status": "no longer found by the app; former worktree directory is absent",
+          "scope": "Hard allow/deny proof completed earlier. User rejected the human-approval demonstration as irrelevant. The current narrated video and manual project setup are recorded separately above.",
+          "removal": "Not performed by this repair session; no cause inferred and no recreation attempted."
+        }
+      }
+    },
     "INC-2": {
       "frd": "FRD-002",
       "name": "audit-trail",

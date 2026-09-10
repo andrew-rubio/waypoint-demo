@@ -10,6 +10,7 @@
   "scripts": {
     "gov": "tsx src/cli.ts",
     "build": "tsc -p tsconfig.json",
+    "pretest": "npm --prefix ../.. run agt:setup",
     "test": "vitest run --config vitest.config.ts"
   },
   "dependencies": {

@@ -1,0 +1,6 @@
+scripts:
+  - name: AGT setup (Node 22+)
+    command: npm run agt:setup
+automation:
+  auto_issue_session: true
+  remote_control: false

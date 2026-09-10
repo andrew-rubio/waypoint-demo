@@ -10,7 +10,9 @@
     "test:unit:watch": "vitest --config src/api/vitest.config.ts",
     "test:bdd": "cross-env NODE_OPTIONS=\"--import tsx\" cucumber-js",
     "test:e2e": "playwright test --config e2e/playwright.config.ts",
+    "pretest:gov": "npm run agt:setup",
     "test:gov": "vitest run --config src/governance/vitest.config.ts",
+    "agt:setup": "node scripts/agt-setup.mjs",
     "eval:dataset": "node eval/generate-dataset.mjs",
     "eval:run-agent": "node eval/run-agent.mjs",
     "eval:demo-fail": "node scripts/eval-demo.mjs fail",
@@ -36,6 +38,7 @@
   },
   "devDependencies": {
     "@cucumber/cucumber": "^11.2.0",
+    "@microsoft/agent-governance-copilot-cli": "5.0.0",
     "@playwright/test": "^1.48.0",
     "@types/node": "^22.7.0",
     "@types/supertest": "^6.0.2",

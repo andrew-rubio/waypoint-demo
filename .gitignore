@@ -7,6 +7,7 @@ test-results/
 playwright-report/
 .azure/
 *.log
+!.spec2cloud/audit.log
 .env
 .env.*
 !.env.example
@@ -21,3 +22,6 @@ __pycache__/
 
 # Governance generated (non-authoritative) output
 specs/governance/.out/
+
+# Repository-local AGT installation and proof audit logs
+.agt/

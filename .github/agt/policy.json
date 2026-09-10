@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "version": 1,
+  "mode": "enforce",
+  "denyOnPolicyError": true,
+  "toolPolicies": {
+    "allowedTools": ["view", "glob", "rg", "agt_build_status"],
+    "reviewTools": ["bash", "powershell"],
+    "blockedTools": [],
+    "defaultEffect": "review"
+  },
+  "directResourcePolicies": {
+    "pathRules": [
+      {
+        "id": "protected-proof-file",
+        "operation": "read",
+        "effect": "deny",
+        "reason": "AGT blocks reads of this protected proof fixture.",
+        "pathPatterns": [
+          {
+            "source": "(^|/)\\.github/agt/protected-proof\\.txt$",
+            "flags": "i"
+          }
+        ],
+        "allowPathPatterns": []
+      }
+    ],
+    "urlRules": []
+  },
+  "additionalContext": [
+    "Waypoint's repository-scoped AGT build policy is active.",
+    "This first cut demonstrates allow, review, and deny for developer tool calls."
+  ]
+}

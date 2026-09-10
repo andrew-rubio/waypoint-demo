@@ -154,6 +154,14 @@ The runtime auto‑switches to the Copilot SDK driver with `provider: { type: 'o
 
 ## Tests
 
+### Copilot build-time governance
+
+The opt-in [AGT build integration](.github/agt/README.md) demonstrates a policy
+allowing ordinary reads and blocking a protected-file read before execution.
+It ships disabled so normal Copilot sessions are unaffected. It is separate from
+the holiday-planning agent and does not use the legacy control-contract engine
+to decide tool permissions.
+
 All suites run against the app (Cucumber/Playwright expect a running web + api; the harness [`scripts/e2e.mjs`](scripts/e2e.mjs) boots both).
 
 ```powershell
