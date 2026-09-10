@@ -4,7 +4,7 @@
   "step": "verification",
   "status": "in-progress",
   "currentIncrement": "BUGFIX-AGT-LOADER",
-  "lastUpdated": "2026-09-10T07:34:29Z",
+  "lastUpdated": "2026-09-10T07:37:48Z",
   "increments_progress": {
     "BUGFIX-AGT-LOADER": {
       "type": "bugfix",
@@ -62,7 +62,7 @@
         },
         "reviewHandoff": {
           "preparedAt": "2026-09-10T07:29:12Z",
-          "status": "publishing-draft",
+          "status": "draft-open; awaiting-review",
           "target": "andrew-rubio/waypoint-demo",
           "recommendedReviewer": "andrew-rubio",
           "recommendedPullRequest": "draft",
@@ -83,9 +83,18 @@
           },
           "draftArtifact": "agt-pr-draft.json in session artifacts",
           "extensionEnabled": false,
-          "committed": false,
-          "pushed": false,
-          "pullRequestCreated": false
+          "committed": true,
+          "pushed": true,
+          "pullRequestCreated": true,
+          "codeCommit": "06764c6c9c48d07736bcc33174fcd395a8eb6dd5",
+          "pullRequest": {
+            "number": 5,
+            "url": "https://github.com/andrew-rubio/waypoint-demo/pull/5",
+            "base": "main",
+            "draft": true,
+            "requestedReviewer": "andrew-rubio",
+            "publishedAt": "2026-09-10T07:37:48Z"
+          }
         },
         "video": {
           "status": "done",
