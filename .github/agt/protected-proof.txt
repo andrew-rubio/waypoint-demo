@@ -1,0 +1,2 @@
+This is a harmless AGT demonstration fixture, not a credential or secret.
+The first-cut policy denies viewing it to demonstrate a real blocked tool call.

@@ -1,0 +1,63 @@
+import { randomUUID } from 'node:crypto';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { joinSession } from '@github/copilot-sdk/extension';
+
+const repoRoot = fileURLToPath(new URL('../../../', import.meta.url));
+const auditPath = join(repoRoot, '.agt', 'audit', `${randomUUID()}.json`);
+let governance;
+let initializationError;
+
+try {
+  const { createBuildGovernance } = await import('../../../.agt/build/agt-build.js');
+  governance = await createBuildGovernance({ repoRoot, auditPath });
+} catch (error) {
+  initializationError = error instanceof Error ? error.message : String(error);
+}
+
+function status() {
+  return governance
+    ? { initialized: true, ...governance.status() }
+    : { initialized: false, initializationError, repoRoot };
+}
+
+const session = await joinSession({
+  hooks: {
+    onPreToolUse: (input, invocation) => {
+      if (!governance) {
+        return {
+          permissionDecision: 'deny',
+          permissionDecisionReason:
+            `AGT build governance is unavailable: ${initializationError}. ` +
+            'Run npm run agt:setup with Node 22+ in a human terminal, then reload the extension.',
+        };
+      }
+      return governance.onPreToolUse(input, invocation);
+    },
+  },
+  tools: [
+    {
+      name: 'agt_build_status',
+      description: 'Show the active repository-scoped AGT build policy, SDK and audit location.',
+      skipPermission: true,
+      parameters: { type: 'object', properties: {}, additionalProperties: false },
+      handler: () => JSON.stringify(status(), null, 2),
+    },
+  ],
+  commands: [
+    {
+      name: 'agt-build',
+      description: 'Show the repository-scoped AGT build governance status.',
+      handler: async () => {
+        await session.log(JSON.stringify(status(), null, 2));
+      },
+    },
+  ],
+});
+
+await session.log(
+  governance
+    ? `AGT build governance loaded for ${repoRoot}. Local audit: ${auditPath}`
+    : `AGT build governance failed to initialize: ${initializationError}`,
+  { level: governance ? 'info' : 'error' },
+);
