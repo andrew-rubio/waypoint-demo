@@ -79,6 +79,9 @@ Browser ──► Next.js (web) ──► Route Handler proxy ──► Express 
   tab is fed by the platform's own agent-server telemetry, which the hosted **sandbox drops
   when it freezes between requests**, so it's best-effort in preview.
 - **Evaluate & govern:** offline golden-dataset evaluations ([FRD-008](specs/frd-agent-evaluation-and-quality.md)) and governance — RBAC/managed identity, content safety, immutable versions, CI quality gate ([FRD-009](specs/frd-governance-and-observability.md)).
+- **PAYG or provisioned throughput:** the hosted agent can run on a pay-as-you-go or a PTU
+  deployment of the same model with no code change. See
+  [Switching the model between PAYG and PTU](#switching-the-model-between-payg-and-ptu-frd-011-adr-013).
 
 ---
 
@@ -184,17 +187,88 @@ azd up
 
 The API image installs `ca-certificates` (the Copilot native runtime needs a system CA store for TLS). Auth is **managed identity** — the Container App identity is granted **Cognitive Services OpenAI User** on the Foundry resource, plus **Cosmos DB Data Reader** and **Search Index Data Reader**; there is no key or secret to store. Cosmos DB (serverless) and Azure AI Search (Free tier) are provisioned by Bicep, along with a Foundry **`text-embedding-3-small`** deployment (embeds the travel-guide) and a **Foundry project connection** to AI Search so the `travel-guide` index is visible inside the Foundry project (ADR-008). After provisioning, the guide index is seeded by [`scripts/ingest-guide.mjs`](scripts/ingest-guide.mjs).
 
-### PAYG → PTU demonstration (FRD-011, ADR-013)
+---
 
-Bicep keeps the PAYG `gpt-5.4-mini` deployment (`GlobalStandard`, 500) and can add a
-side-by-side `gpt-5.4-mini-ptu` deployment (`GlobalProvisionedManaged`, 15 PTUs, hourly).
-Only the deployment name changes; the agent, tools, identity, endpoint, and telemetry stay the same.
-Chat turns are proxied to the Foundry-hosted agent, so switch the hosted agent and the API together:
-the hosted agent's deployment serves the model calls, and the API's `FOUNDRY_MODEL` labels its audit spans.
+## Switching the model between PAYG and PTU (FRD-011, ADR-013)
+
+Waypoint can run GPT-5.4-mini on **pay-as-you-go (PAYG)** or **provisioned throughput (PTU)**
+without any code change. Both are deployments of the same model and version in the same Foundry
+account, and the app selects one **by deployment name**. PAYG is the default and is never removed,
+so it is always available for comparison and rollback.
+
+| | PAYG (default) | PTU |
+|---|---|---|
+| Deployment name | `gpt-5.4-mini` | `gpt-5.4-mini-ptu` |
+| Deployment type (SKU) | `GlobalStandard` | `GlobalProvisionedManaged` |
+| Capacity | 500 (thousands of tokens per minute) | 15 PTUs (model minimum, 5-PTU steps) |
+| Model and version | `gpt-5.4-mini` `2026-03-17` | `gpt-5.4-mini` `2026-03-17` |
+| Billing | Per token used | Hourly while the deployment exists, even when idle (USD 15/hour for 15 PTUs when demonstrated; confirm in the Foundry portal) |
+| Created by | Bicep, always | Bicep, only when `DEPLOY_FOUNDRY_PTU=true` |
+
+### How the switch works
+
+Chat turns from the web app are proxied by the API to the **Foundry-hosted agent**, which calls
+the model deployment. The deployment that answers is therefore chosen by the hosted agent:
+
+```text
+Browser ─► web ─► api (Container App) ─► Foundry-hosted agent ─► Foundry endpoint /openai/v1/ ─┬─► gpt-5.4-mini      (PAYG)
+                  FOUNDRY_MODEL           AZURE_AI_MODEL_DEPLOYMENT_NAME                        └─► gpt-5.4-mini-ptu  (PTU)
+```
+
+| Setting | Where it lives | What it does | PAYG | PTU |
+|---|---|---|---|---|
+| `DEPLOY_FOUNDRY_PTU` | Root azd environment → Bicep `deployFoundryPtu` | Creates the PTU deployment beside PAYG | `false` | `true` |
+| `USE_FOUNDRY_PTU` | Root azd environment → Bicep `useFoundryPtu` | Sets the API's `FOUNDRY_MODEL`; ignored unless PTU is deployed | `false` | `true` |
+| `AZURE_AI_MODEL_DEPLOYMENT_NAME` | `foundry/` azd environment → hosted agent | The deployment the hosted agent calls; this serves every chat turn | `gpt-5.4-mini` | `gpt-5.4-mini-ptu` |
+
+The API's `FOUNDRY_MODEL` labels the API's own audit spans and is the model used if the API runs the
+agent in-process (when `FOUNDRY_AGENT_RESPONSES_URL` is unset). Switch both together so traces name
+the deployment that actually served the turn; the verifier's `switch` check fails if they disagree.
+
+### Impact across the application and agent
+
+| Area | Impact | Why |
+|---|---|---|
+| Agent code, prompts, tools, and skills | None | The Copilot SDK driver passes the deployment name as `model`. No file in `src/api/src` knows which tier it runs on, and the verifier checks this. |
+| Web app and UI | None | The web app only talks to the API. The chat stream and audit panel look identical. |
+| API contracts (`/api/chat`, `/responses`) | None | Request and event shapes are unchanged. |
+| Tools and data (RouteStack, Open-Meteo, currency, Wikipedia, Cosmos DB, AI Search) | None | These services never call the chat model. |
+| Embeddings and travel-guide search | None | `text-embedding-3-small` stays on `GlobalStandard`. |
+| Endpoint, identity, and RBAC | None | Both deployments share the account endpoint and the account-scoped **Cognitive Services OpenAI User** role. Still keyless. |
+| Answer quality | None expected | Same model and version; only the capacity tier differs. |
+| Latency | Low, usually better | PTU reserves capacity, so model calls avoid shared-pool queuing and are more consistent. Tool calls make up most of a full conversation, so end-to-end gains are smaller than raw model gains. |
+| Throughput and throttling | Medium | PAYG is limited by its tokens-per-minute quota; PTU by its 15 reserved PTUs. At 100% utilization PTU returns HTTP 429. Interactive chat fits easily; bursty jobs such as evaluation judging should stay on PAYG. |
+| Traces (Application Insights, Foundry Observability) | Low | Same spans and correlation. Only `gen_ai.request.model` changes to the PTU name, which proves PTU served the turn. Sampling stays at 20%, so run a few conversations before showing traces. |
+| Monitoring | Low, adds a metric | PTU adds the Azure Monitor metric **Provisioned-Managed Utilization V2** (`AzureOpenAIProvisionedManagedUtilizationV2`), split by `ModelDeploymentName`. |
+| Evaluations | Low | Replays (`npm run eval:run-agent`) call the hosted agent, so they exercise PTU while it's active. The judge model stays on PAYG; see [`eval/README.md`](eval/README.md). |
+| Governance and release gate | None | The proposition and controls don't change, so the contract hash and approval stay valid. Runtime metadata reports the active deployment name, which supports version-capture lineage (OPS-VER-001). |
+| Hosted agent versions | Low | Each switch publishes a new immutable agent version (version 9 for PTU and version 10 back to PAYG in the demonstration). |
+| Infrastructure and deployment | Low | One optional deployment and two flags. A switch runs `azd up` (about 4 to 13 minutes) and `azd deploy waypoint-agent` (about 1 to 2 minutes). |
+| Cost | High | PTU is billed every hour it exists, including idle time, and can't be paused. Delete it after use: setting `DEPLOY_FOUNDRY_PTU=false` does not delete an existing deployment. |
+| Local development and tests | None | Local runs use the deterministic driver; automated PTU tests use labelled simulated evidence. |
+
+### Results from the live demonstration (2026-10-06)
+
+| Check | Result |
+|---|---|
+| Preflight | 100 PTUs of quota, 100 PTUs of live capacity in Sweden Central, 15 required |
+| PTU deployment | `gpt-5.4-mini-ptu` healthy at 15 PTUs; PAYG unchanged at 500 |
+| Full conversation through the app | PAYG 16.2 s, PTU 12.4 s, both HTTP 200 |
+| Same prompt sent directly to each deployment | PAYG 5.7 s, PTU 1.6 s, no throttling |
+| Traces | Correlated `invoke_agent`, `chat`, and `execute_tool` spans for both tiers; the PTU run names `gpt-5.4-mini-ptu` |
+| Utilization | 120 one-minute data points for the PTU deployment, peaking at 7.3% |
+| Cleanup | Agent and API back on PAYG, PTU deployment deleted, both flags `false` |
+
+Latency figures are single samples and indicative only.
+
+### Runbook
 
 > [!CAUTION]
 > A PTU deployment is billed every hour it exists, even when idle, and can't be paused.
 > Create it only after confirming the hourly price in the Foundry portal, and delete it after the demo.
+
+Before you start, sign azd in to the tenant that owns the subscription (`azd auth login --tenant-id <tenant-id>`)
+and start Docker, which `azd up` needs to build the container images.
 
 ```powershell
 # 1. Read-only preflight: quota, live capacity, and the price gate
@@ -224,17 +298,17 @@ node scripts/verify-ptu-demo.mjs --mode utilization --live --azd-env
 # 4. Roll back to PAYG, then delete PTU to stop billing (load RouteStack credentials as in step 3 first)
 Push-Location foundry; Remove-Item Env:AZURE_ENV_NAME -ErrorAction SilentlyContinue
 azd env set AZURE_AI_MODEL_DEPLOYMENT_NAME gpt-5.4-mini; azd deploy waypoint-agent; Pop-Location
+az cognitiveservices account deployment delete -g <resource-group> -n <foundry-account> --deployment-name gpt-5.4-mini-ptu
 azd env set USE_FOUNDRY_PTU false
 azd env set DEPLOY_FOUNDRY_PTU false
 azd up
-az cognitiveservices account deployment delete -g <resource-group> -n <foundry-account> --deployment-name gpt-5.4-mini-ptu
 node scripts/verify-ptu-demo.mjs --mode cleanup --deployment payg --live --azd-env
 ```
 
-Bicep owns both deployments; [`foundry/azure.yaml`](foundry/azure.yaml) only selects one through
-`AZURE_AI_MODEL_DEPLOYMENT_NAME`. Setting `DEPLOY_FOUNDRY_PTU` back to `false` does not delete an existing
-deployment, so the explicit delete is required. Without `--live`, the verifier uses labelled simulated
-evidence for automated tests.
+Rolling back the hosted agent first keeps chat working throughout, and deleting PTU before the
+final `azd up` stops billing several minutes sooner. Bicep owns both deployments;
+[`foundry/azure.yaml`](foundry/azure.yaml) only selects one through `AZURE_AI_MODEL_DEPLOYMENT_NAME`.
+Without `--live`, the verifier uses labelled simulated evidence for automated tests.
 
 ---
 
@@ -243,7 +317,12 @@ evidence for automated tests.
 | Variable | Where | Purpose |
 |---|---|---|
 | `FOUNDRY_MODEL_URL` | api | Foundry OpenAI‑compatible endpoint, e.g. `https://<resource>.openai.azure.com/openai/v1/`. |
-| `FOUNDRY_MODEL` | api | Foundry **deployment name** (passed to the SDK as `model`). |
+| `FOUNDRY_MODEL` | api | Foundry **deployment name** (passed to the SDK as `model`). Set by Bicep: `gpt-5.4-mini` (PAYG) or `gpt-5.4-mini-ptu` (PTU). |
+| `FOUNDRY_AGENT_RESPONSES_URL` | api | Responses endpoint of the Foundry-hosted agent. When set, `/api/chat` proxies each turn to it; Bicep preserves it from the root azd environment. |
+| `DEPLOY_FOUNDRY_PTU` | azd (root) | `true` creates the `gpt-5.4-mini-ptu` deployment beside PAYG. Default `false`. Billed hourly while it exists. |
+| `USE_FOUNDRY_PTU` | azd (root) | `true` points the API's `FOUNDRY_MODEL` at PTU; ignored unless PTU is deployed. Default `false`. |
+| `AZURE_AI_MODEL_DEPLOYMENT_NAME` | azd (`foundry/`) | Deployment the Foundry-hosted agent calls (`gpt-5.4-mini` or `gpt-5.4-mini-ptu`). |
+| `PTU_PRICE_APPROVED` | verifier | Set to `true` after confirming the hourly PTU price in the Foundry portal; the preflight blocks until then. |
 | `FOUNDRY_USE_MANAGED_IDENTITY` | api | `true` → authenticate with the managed identity (Entra). |
 | `AZURE_CLIENT_ID` | api | Client ID of the user‑assigned identity (selects it for `DefaultAzureCredential`). |
 | `FOUNDRY_API_KEY` | api | Alternative to managed identity (only if the resource allows keys). All auth absent → local‑driver mode. |

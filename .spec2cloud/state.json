@@ -2,15 +2,15 @@
   "mode": "greenfield",
   "phase": "increment-delivery",
   "step": "verify-and-ship",
-  "status": "awaiting-human-gate",
-  "lastUpdated": "2026-10-06T13:15:00Z",
+  "status": "complete",
+  "lastUpdated": "2026-10-06T14:05:00Z",
   "currentIncrement": "EXT-001",
   "increments_progress": {
     "EXT-001": {
       "frd": "FRD-011",
       "name": "ptu-observability-demonstration",
       "depends_on": ["EXT-PRE-001"],
-      "status": "live-verified-ptu-active",
+      "status": "delivered",
       "branch": "spec2cloud/extend/ptu-live-demo",
       "priceApproval": "USD 15/hour for 15 PTUs, approved by user 2026-10-06 from the Foundry portal; hourly, no reservation",
       "liveEvidence": {
@@ -28,7 +28,9 @@
         "verifier parsed App Insights dynamic columns as strings; now JSON-parsed",
         "hosted-agent deploy needs RouteStack credentials loaded from the root azd environment"
       ],
-      "humanGate": "pending: keep PTU for the demo or roll back and delete"
+      "humanGate": "approved: demo completed; user requested rollback",
+      "cleanup": "hosted agent v10 and API back on gpt-5.4-mini; gpt-5.4-mini-ptu deleted; DEPLOY_FOUNDRY_PTU and USE_FOUNDRY_PTU false; verifier cleanup PASS",
+      "docs": "README PAYG/PTU section with impact table and results; eval/README and src/governance/README impact notes"
     },
     "EXT-PRE-001": {
       "frd": "FRD-011",
@@ -289,7 +291,7 @@
         { "id": "INC-6", "frd": "FRD-006", "name": "personalisation-fabric", "depends_on": ["INC-1"] },
         { "id": "INC-7", "frd": "FRD-007", "name": "trip-summary-and-budget", "depends_on": ["INC-4", "INC-5", "INC-6"] },
         { "id": "EXT-PRE-001", "type": "extension-prerequisite", "frd": "FRD-011", "name": "parameterize-model-deployment-capacity", "depends_on": [], "status": "delivered", "gherkin": { "path": "specs/features/provisioned-model-capacity.feature", "status": "approved", "scenarios": 17 } },
-        { "id": "EXT-001", "type": "extension", "frd": "FRD-011", "name": "ptu-observability-demonstration", "depends_on": ["EXT-PRE-001"], "status": "live-verified-ptu-active", "humanGate": "price-approved", "gherkin": { "path": "specs/features/provisioned-model-capacity.feature", "status": "approved", "scenarios": 17 } }
+        { "id": "EXT-001", "type": "extension", "frd": "FRD-011", "name": "ptu-observability-demonstration", "depends_on": ["EXT-PRE-001"], "status": "delivered", "humanGate": "price-approved", "gherkin": { "path": "specs/features/provisioned-model-capacity.feature", "status": "approved", "scenarios": 17 } }
       ]
     },
     "techStack": {
