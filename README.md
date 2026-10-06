@@ -209,15 +209,21 @@ node scripts/verify-ptu-demo.mjs --mode post-provision --live --azd-env
 # 3. Switch the API and the hosted agent to PTU, then prove the conversation, traces, and utilization
 azd env set USE_FOUNDRY_PTU true
 azd up
-Push-Location foundry; azd env set AZURE_AI_MODEL_DEPLOYMENT_NAME gpt-5.4-mini-ptu; azd deploy waypoint-agent; Pop-Location
+# The hosted agent's env references RouteStack credentials that live in the root azd environment;
+# load them for this process only so the new agent version keeps live flight/hotel search.
+$root = azd env get-values --output json | ConvertFrom-Json
+$env:ROUTESTACK_API_KEY = $root.ROUTESTACK_API_KEY; $env:ROUTESTACK_SECRET = $root.ROUTESTACK_SECRET
+Push-Location foundry; Remove-Item Env:AZURE_ENV_NAME -ErrorAction SilentlyContinue
+azd env set AZURE_AI_MODEL_DEPLOYMENT_NAME gpt-5.4-mini-ptu; azd deploy waypoint-agent; Pop-Location
 node scripts/verify-ptu-demo.mjs --mode switch --deployment ptu --live --azd-env
 node scripts/verify-ptu-demo.mjs --mode conversation --deployment ptu --live --azd-env
 node scripts/verify-ptu-demo.mjs --mode comparison --live --azd-env
 node scripts/verify-ptu-demo.mjs --mode traces --live --azd-env
 node scripts/verify-ptu-demo.mjs --mode utilization --live --azd-env
 
-# 4. Roll back to PAYG, then delete PTU to stop billing
-Push-Location foundry; azd env set AZURE_AI_MODEL_DEPLOYMENT_NAME gpt-5.4-mini; azd deploy waypoint-agent; Pop-Location
+# 4. Roll back to PAYG, then delete PTU to stop billing (load RouteStack credentials as in step 3 first)
+Push-Location foundry; Remove-Item Env:AZURE_ENV_NAME -ErrorAction SilentlyContinue
+azd env set AZURE_AI_MODEL_DEPLOYMENT_NAME gpt-5.4-mini; azd deploy waypoint-agent; Pop-Location
 azd env set USE_FOUNDRY_PTU false
 azd env set DEPLOY_FOUNDRY_PTU false
 azd up

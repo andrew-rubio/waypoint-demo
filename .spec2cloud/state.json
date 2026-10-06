@@ -1,16 +1,41 @@
 {
   "mode": "greenfield",
   "phase": "increment-delivery",
-  "step": "implementation",
+  "step": "verify-and-ship",
   "status": "awaiting-human-gate",
-  "lastUpdated": "2026-10-06T11:40:00Z",
-  "currentIncrement": "EXT-PRE-001",
+  "lastUpdated": "2026-10-06T13:15:00Z",
+  "currentIncrement": "EXT-001",
   "increments_progress": {
+    "EXT-001": {
+      "frd": "FRD-011",
+      "name": "ptu-observability-demonstration",
+      "depends_on": ["EXT-PRE-001"],
+      "status": "live-verified-ptu-active",
+      "branch": "spec2cloud/extend/ptu-live-demo",
+      "priceApproval": "USD 15/hour for 15 PTUs, approved by user 2026-10-06 from the Foundry portal; hourly, no reservation",
+      "liveEvidence": {
+        "preflight": "quota 100, live capacity 100, required 15",
+        "ptuDeployment": "gpt-5.4-mini-ptu GlobalProvisionedManaged 15 Succeeded; PAYG gpt-5.4-mini GlobalStandard 500 unchanged",
+        "paygBaselineConversation": "200 via hosted agent on gpt-5.4-mini, 16231 ms",
+        "modelComparison": "same prompt direct: PAYG 200 in 5686 ms, PTU 200 in 1629 ms, no throttling (single sample)",
+        "switch": "API FOUNDRY_MODEL and hosted agent v9 both gpt-5.4-mini-ptu; consistent",
+        "ptuConversation": "200 via hosted agent on gpt-5.4-mini-ptu, 12401 ms; implementation unchanged",
+        "traces": "correlated invoke_agent/chat/execute_tool spans for both tiers; PTU run identifies gpt-5.4-mini-ptu",
+        "utilization": "AzureOpenAIProvisionedManagedUtilizationV2: 120 points, peak 7.3%"
+      },
+      "fixesFound": [
+        "foundry/azure.yaml duplicate env keys made azd panic; duplicates removed",
+        "verifier parsed App Insights dynamic columns as strings; now JSON-parsed",
+        "hosted-agent deploy needs RouteStack credentials loaded from the root azd environment"
+      ],
+      "humanGate": "pending: keep PTU for the demo or roll back and delete"
+    },
     "EXT-PRE-001": {
       "frd": "FRD-011",
       "name": "parameterize-model-deployment-capacity",
       "depends_on": [],
-      "status": "implementation-green-awaiting-pr-review",
+      "delivered": "PR #6 merged to main (f7490a0)",
+      "status": "delivered",
       "gherkin": {
         "path": "specs/features/provisioned-model-capacity.feature",
         "status": "approved",
@@ -54,7 +79,7 @@
         "azureValidation": "read-only ARM what-if: defaults keep PAYG GlobalStandard/500 and create no PTU; deployProvisionedModel=true creates gpt-5.4-mini-ptu GlobalProvisionedManaged/15. Live preflight: 100 PTU quota, 100 PTU live capacity, blocked only by price approval",
         "driftFixes": "PAYG capacity pinned to live 500 (was implicit 20); FOUNDRY_AGENT_RESPONSES_URL and OTEL_SERVICE_NAME preserved by Bicep; root azd env FOUNDRY_AGENT_RESPONSES_URL set from live value",
         "specNote": "Hosted-agent routing selects the serving deployment through AZURE_AI_MODEL_DEPLOYMENT_NAME; recorded in ADR-013 Implementation Notes",
-        "humanGate": "pending PR review"
+        "humanGate": "approved: PR #6 merged"
       }
     },
     "INC-2": {
@@ -263,8 +288,8 @@
         { "id": "INC-5", "frd": "FRD-005", "name": "flight-hotel-search-booking", "depends_on": ["INC-1", "INC-3"] },
         { "id": "INC-6", "frd": "FRD-006", "name": "personalisation-fabric", "depends_on": ["INC-1"] },
         { "id": "INC-7", "frd": "FRD-007", "name": "trip-summary-and-budget", "depends_on": ["INC-4", "INC-5", "INC-6"] },
-        { "id": "EXT-PRE-001", "type": "extension-prerequisite", "frd": "FRD-011", "name": "parameterize-model-deployment-capacity", "depends_on": [], "status": "implementation-green-awaiting-pr-review", "gherkin": { "path": "specs/features/provisioned-model-capacity.feature", "status": "approved", "scenarios": 17 } },
-        { "id": "EXT-001", "type": "extension", "frd": "FRD-011", "name": "ptu-observability-demonstration", "depends_on": ["EXT-PRE-001"], "status": "planned", "humanGate": "pending-hourly-price-approval", "gherkin": { "path": "specs/features/provisioned-model-capacity.feature", "status": "approved", "scenarios": 17 } }
+        { "id": "EXT-PRE-001", "type": "extension-prerequisite", "frd": "FRD-011", "name": "parameterize-model-deployment-capacity", "depends_on": [], "status": "delivered", "gherkin": { "path": "specs/features/provisioned-model-capacity.feature", "status": "approved", "scenarios": 17 } },
+        { "id": "EXT-001", "type": "extension", "frd": "FRD-011", "name": "ptu-observability-demonstration", "depends_on": ["EXT-PRE-001"], "status": "live-verified-ptu-active", "humanGate": "price-approved", "gherkin": { "path": "specs/features/provisioned-model-capacity.feature", "status": "approved", "scenarios": 17 } }
       ]
     },
     "techStack": {
