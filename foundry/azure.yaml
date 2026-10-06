@@ -19,18 +19,12 @@ extensions:
 name: waypoint-foundry
 
 services:
-  # Model deployment (reuses the ADR-005 choice: gpt-5.4-mini).
+  # Foundry project. Model deployments are owned by infra/modules/foundry.bicep
+  # (PAYG gpt-5.4-mini + optional gpt-5.4-mini-ptu, FRD-011/ADR-013); declaring
+  # them here too would let azd recreate or resize them. The agent selects one by
+  # name through AZURE_AI_MODEL_DEPLOYMENT_NAME in this azd environment.
   ai-project:
     host: azure.ai.project
-    deployments:
-      - name: gpt-5.4-mini
-        model:
-          format: OpenAI
-          name: gpt-5.4-mini
-          version: '2026-03-17'
-        sku:
-          name: GlobalStandard
-          capacity: 10
 
   # The hosted agent — the existing Express + Copilot SDK image.
   waypoint-agent:

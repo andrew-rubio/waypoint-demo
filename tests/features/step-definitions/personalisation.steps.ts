@@ -115,7 +115,7 @@ Then('the personalisation note should acknowledge it differs from the saved pref
 });
 
 Then("no personalisation note should claim to know the traveller's profile", async function (this: CustomWorld) {
-  await expect(this.chat.personalisationNote).not.toContainText(/Gold Tier|7,463/i);
+  await expect(this.chat.personalisationNote.filter({ hasText: /Gold Tier|7,463/i })).toHaveCount(0);
 });
 
 // ── Then: booking echoes personalisation ─────────────────────────────

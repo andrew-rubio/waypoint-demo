@@ -139,7 +139,7 @@ Then('the agent should note that conversion to EUR is unavailable', async functi
 
 Then('the audit trail should contain an error entry for the currency service', async function (this: CustomWorld) {
   await audit(this).open();
-  const entry = audit(this).entriesOfType('mcp').filter({ hasText: 'currency' }).first();
+  const entry = audit(this).entriesOfType('mcp').filter({ hasText: 'currency' }).last();
   await expect(entry).toHaveAttribute('data-status', 'error');
 });
 

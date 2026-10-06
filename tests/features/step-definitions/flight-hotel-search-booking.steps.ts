@@ -301,12 +301,12 @@ Then('the search should not be retried', async function (this: CustomWorld) {
 
 Then('the audit trail should contain a successful currency conversion entry', async function (this: CustomWorld) {
   await audit(this).open();
-  const entry = audit(this).entriesOfType('mcp').filter({ hasText: 'currency.convert' });
+  const entry = audit(this).entriesOfType('mcp').filter({ hasText: 'currency.convert' }).last();
   await expect(entry).toHaveAttribute('data-status', 'ok');
 });
 
 Then('the currency conversion entry should record the exchange rate and a rate timestamp', async function (this: CustomWorld) {
-  const entry = audit(this).entriesOfType('mcp').filter({ hasText: 'currency.convert' });
+  const entry = audit(this).entriesOfType('mcp').filter({ hasText: 'currency.convert' }).last();
   await entry.locator('[data-testid="audit-entry-top"]').click();
   const detail = entry.locator('[data-testid="audit-entry-detail"]');
   await expect(detail).toContainText(/rate/i);

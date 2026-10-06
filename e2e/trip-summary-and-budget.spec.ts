@@ -60,9 +60,10 @@ test.describe('Trip summary, budget & currency (FRD-007) @flow:trip-summary @frd
     await expect(chat.tripSummaryCard).toContainText('€');
 
     await audit.open();
-    const entry = audit.entriesOfType('mcp').filter({ hasText: 'currency.convert' }).first();
+    const entry = audit.entriesOfType('mcp').filter({ hasText: 'currency.convert' }).last();
     await expect(entry).toHaveAttribute('data-status', 'ok');
-    const detail = await audit.expandFirstOfType('mcp');
+    await entry.getByTestId('audit-entry-top').click();
+    const detail = entry.getByTestId('audit-entry-detail');
     await expect(detail).toContainText(/rate/i);
   });
 
@@ -79,7 +80,7 @@ test.describe('Trip summary, budget & currency (FRD-007) @flow:trip-summary @frd
     await expect(chat.input).toBeEnabled();
 
     await audit.open();
-    await expect(audit.entriesOfType('mcp').filter({ hasText: 'currency' }).first()).toHaveAttribute('data-status', 'error');
+    await expect(audit.entriesOfType('mcp').filter({ hasText: 'currency' }).last()).toHaveAttribute('data-status', 'error');
   });
 
   test('the summary omits preferences and points when personalisation is unavailable (degraded)', async ({ page }) => {

@@ -26,8 +26,24 @@ param modelFormat string = 'OpenAI'
 @description('Model version to deploy.')
 param modelVersion string
 
+@description('PAYG chat deployment SKU. GlobalStandard is billed per token.')
+@allowed([
+  'GlobalStandard'
+])
+param modelDeploymentSku string = 'GlobalStandard'
+
 @description('Deployment capacity (thousands of tokens/min). Must fit regional quota.')
 param capacity int = 20
+
+@description('Create the side-by-side Global Provisioned deployment (FRD-011). Billed hourly while it exists.')
+param deployProvisionedModel bool = false
+
+@description('Global Provisioned deployment name, distinct from the PAYG deployment so both can coexist.')
+param provisionedModelName string = '${modelName}-ptu'
+
+@description('Global Provisioned capacity in PTUs. GPT-5.4-mini requires at least 15, in increments of 5.')
+@minValue(15)
+param provisionedCapacity int = 15
 
 @description('Embedding model deployment name (INC-8, ADR-008) — embeds the travel-guide guide.')
 param embeddingModelName string = 'text-embedding-3-small'
@@ -82,6 +98,7 @@ resource project 'Microsoft.CognitiveServices/accounts/projects@2025-04-01-previ
   dependsOn: [
     deployment
     embeddingDeployment
+    provisionedDeployment
   ]
 }
 
@@ -89,7 +106,7 @@ resource deployment 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01
   parent: account
   name: modelName
   sku: {
-    name: 'GlobalStandard'
+    name: modelDeploymentSku
     capacity: capacity
   }
   properties: {
@@ -120,6 +137,28 @@ resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2
   }
   dependsOn: [
     deployment
+  ]
+}
+
+// FRD-011 / ADR-013: the same model and version on hourly Global Provisioned
+// Throughput, beside PAYG for comparison and rollback. PTUs are billed hourly
+// while this deployment exists and cannot be paused, so it is off by default.
+resource provisionedDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-04-01-preview' = if (deployProvisionedModel) {
+  parent: account
+  name: provisionedModelName
+  sku: {
+    name: 'GlobalProvisionedManaged'
+    capacity: provisionedCapacity
+  }
+  properties: {
+    model: {
+      format: modelFormat
+      name: modelName
+      version: modelVersion
+    }
+  }
+  dependsOn: [
+    embeddingDeployment
   ]
 }
 
@@ -156,3 +195,5 @@ output accountId string = account.id
 output projectName string = project.name
 output projectPrincipalId string = project.identity.principalId
 output embeddingDeploymentName string = embeddingDeployment.name
+output paygDeploymentName string = deployment.name
+output ptuDeploymentName string = deployProvisionedModel ? provisionedDeployment.name : ''

@@ -1,10 +1,62 @@
 {
   "mode": "greenfield",
   "phase": "increment-delivery",
-  "step": "delivered",
-  "status": "done",
-  "currentIncrement": "INC-2",
+  "step": "implementation",
+  "status": "awaiting-human-gate",
+  "lastUpdated": "2026-10-06T11:40:00Z",
+  "currentIncrement": "EXT-PRE-001",
   "increments_progress": {
+    "EXT-PRE-001": {
+      "frd": "FRD-011",
+      "name": "parameterize-model-deployment-capacity",
+      "depends_on": [],
+      "status": "implementation-green-awaiting-pr-review",
+      "gherkin": {
+        "path": "specs/features/provisioned-model-capacity.feature",
+        "status": "approved",
+        "scenarios": 17,
+        "approved_at": "2026-10-05T21:30:00Z"
+      },
+      "tests": {
+        "status": "approved",
+        "bdd": ["tests/features/step-definitions/provisioned-model-capacity.steps.ts"],
+        "unit": ["src/api/tests/unit/provisioned-model-capacity.test.ts"],
+        "e2e": [],
+        "approved_at": "2026-10-05T21:40:00Z",
+        "baseline": "red: 8/8 new Vitest tests fail; 17/17 new Cucumber scenarios fail for missing approved implementation",
+        "existingRegression": "green: 126 existing API tests, 32 governance tests, 94/94 non-PTU Cucumber scenarios (495 steps), and 47/47 Playwright tests pass; skip scan clean; PTU contract remains red as approved (8 Vitest, 17 Cucumber)",
+        "baselineRepair": {
+          "status": "done",
+          "governanceAdapter": "done: tests/features/step-definitions/control-contract-governance.steps.ts",
+          "orchestration": "done: scripts/e2e.mjs uses available loopback ports and test-mode API; Aspire deferred by ADR-014",
+          "approvedTestCorrections": "ChatPage.send waits for composer readiness; Cosmos-unavailable assertions accept an absent note; travel-guide and currency audit assertions target the intended entry",
+          "applicationFix": "src/web/app/page.tsx renders only the latest trip summary card"
+        },
+        "note": "No UI flow changes; no new Playwright tests. Regression baseline is green."
+      },
+      "contracts": {
+        "status": "done",
+        "infra": "specs/contracts/infra/resources.yaml: optional gpt-5.4-mini-ptu (GlobalProvisionedManaged, 15), PAYG capacity 500, modelSelection, PTU utilization metric",
+        "api": "no API or shared-type change"
+      },
+      "implementation": {
+        "status": "green",
+        "files": [
+          "infra/main.bicep",
+          "infra/modules/foundry.bicep",
+          "infra/main.parameters.json",
+          "foundry/azure.yaml",
+          "scripts/verify-ptu-demo.mjs",
+          "scripts/e2e.mjs",
+          "README.md"
+        ],
+        "regression": "lint clean; 134/134 API (incl. 8 PTU), 32/32 governance, 111/111 Cucumber (569 steps, incl. 17 PTU), 47/47 Playwright; skip scan clean",
+        "azureValidation": "read-only ARM what-if: defaults keep PAYG GlobalStandard/500 and create no PTU; deployProvisionedModel=true creates gpt-5.4-mini-ptu GlobalProvisionedManaged/15. Live preflight: 100 PTU quota, 100 PTU live capacity, blocked only by price approval",
+        "driftFixes": "PAYG capacity pinned to live 500 (was implicit 20); FOUNDRY_AGENT_RESPONSES_URL and OTEL_SERVICE_NAME preserved by Bicep; root azd env FOUNDRY_AGENT_RESPONSES_URL set from live value",
+        "specNote": "Hosted-agent routing selects the serving deployment through AZURE_AI_MODEL_DEPLOYMENT_NAME; recorded in ADR-013 Implementation Notes",
+        "humanGate": "pending PR review"
+      }
+    },
     "INC-2": {
       "frd": "FRD-002",
       "name": "audit-trail",
@@ -171,7 +223,8 @@
       { "id": "FRD-004", "name": "weather-and-timing", "path": "specs/frd-weather-and-timing.md", "priority": "P0", "depends_on": ["FRD-001"] },
       { "id": "FRD-005", "name": "flight-hotel-search-booking", "path": "specs/frd-flight-hotel-search-booking.md", "priority": "P0", "depends_on": ["FRD-001", "FRD-003"] },
       { "id": "FRD-006", "name": "personalisation-fabric", "path": "specs/frd-personalisation-fabric.md", "priority": "P1", "depends_on": ["FRD-001"] },
-      { "id": "FRD-007", "name": "trip-summary-and-budget", "path": "specs/frd-trip-summary-and-budget.md", "priority": "P1", "depends_on": ["FRD-004", "FRD-005", "FRD-006"] }
+      { "id": "FRD-007", "name": "trip-summary-and-budget", "path": "specs/frd-trip-summary-and-budget.md", "priority": "P1", "depends_on": ["FRD-004", "FRD-005", "FRD-006"] },
+      { "id": "FRD-011", "name": "provisioned-model-capacity", "path": "specs/frd-provisioned-model-capacity.md", "priority": "P1", "depends_on": ["FRD-001", "FRD-009"], "status": "approved", "approved_at": "2026-10-05T21:20:00Z" }
     ],
     "frdReview": {
       "status": "approved",
@@ -209,7 +262,9 @@
         { "id": "INC-4", "frd": "FRD-004", "name": "weather-and-timing", "depends_on": ["INC-1", "INC-3"] },
         { "id": "INC-5", "frd": "FRD-005", "name": "flight-hotel-search-booking", "depends_on": ["INC-1", "INC-3"] },
         { "id": "INC-6", "frd": "FRD-006", "name": "personalisation-fabric", "depends_on": ["INC-1"] },
-        { "id": "INC-7", "frd": "FRD-007", "name": "trip-summary-and-budget", "depends_on": ["INC-4", "INC-5", "INC-6"] }
+        { "id": "INC-7", "frd": "FRD-007", "name": "trip-summary-and-budget", "depends_on": ["INC-4", "INC-5", "INC-6"] },
+        { "id": "EXT-PRE-001", "type": "extension-prerequisite", "frd": "FRD-011", "name": "parameterize-model-deployment-capacity", "depends_on": [], "status": "implementation-green-awaiting-pr-review", "gherkin": { "path": "specs/features/provisioned-model-capacity.feature", "status": "approved", "scenarios": 17 } },
+        { "id": "EXT-001", "type": "extension", "frd": "FRD-011", "name": "ptu-observability-demonstration", "depends_on": ["EXT-PRE-001"], "status": "planned", "humanGate": "pending-hourly-price-approval", "gherkin": { "path": "specs/features/provisioned-model-capacity.feature", "status": "approved", "scenarios": 17 } }
       ]
     },
     "techStack": {
@@ -222,14 +277,16 @@
         "specs/adrs/adr-002-model-auth.md",
         "specs/adrs/adr-003-hosting-aca.md",
         "specs/adrs/adr-004-frontend-styling.md",
-        "specs/adrs/adr-005-byok-foundry-model.md"
+        "specs/adrs/adr-005-byok-foundry-model.md",
+        "specs/adrs/adr-013-use-global-provisioned-throughput.md",
+        "specs/adrs/adr-014-defer-aspire-apphost.md"
       ],
       "decisions": {
         "agentRuntime": "@github/copilot-sdk (Node/TS)",
         "modelAuth": "BYOK -> Microsoft Foundry, MANAGED IDENTITY (ADR-005, supersedes ADR-002). Sub policy disables local auth (keys); uses SDK bearerTokenProvider + DefaultAzureCredential; MI granted Cognitive Services OpenAI User. FOUNDRY_MODEL_URL/MODEL + FOUNDRY_USE_MANAGED_IDENTITY + AZURE_CLIENT_ID; old GitHub-token path kept commented",
         "web": "Next.js 15 + React 19, CSS Modules + design tokens",
         "api": "Express 5 on Node 22, Zod, pino, SSE",
-        "hosting": "Azure Container Apps via azd + Bicep; Aspire local",
+        "hosting": "Azure Container Apps via azd + Bicep; dynamic Node integration harness locally (Aspire deferred by ADR-014)",
         "observability": "App Insights + OpenTelemetry + pino",
         "testing": "Vitest + Cucumber.js + Playwright"
       }

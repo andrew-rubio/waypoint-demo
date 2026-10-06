@@ -33,6 +33,7 @@ export default function ChatPage() {
   const activeWeatherMessage = latestWeatherMessageIndex(messages);
   const activeTravelMessage = latestTravelMessageIndex(messages);
   const activeBookingMessage = latestBookingMessageIndex(messages);
+  const activeSummaryMessage = latestSummaryMessageIndex(messages);
 
   const submit = async () => {
     if (!canSend) return;
@@ -123,7 +124,9 @@ export default function ChatPage() {
                   {showTravel && (
                     <TravelOptions message={m} onSelect={(phrase) => setDraft(phrase)} />
                   )}
-                  {m.role === 'assistant' && m.tripSummary && <TripSummaryCard summary={m.tripSummary} />}
+                  {m.role === 'assistant' && i === activeSummaryMessage && m.tripSummary && (
+                    <TripSummaryCard summary={m.tripSummary} />
+                  )}
                   {showBooking && <BookingConfirmationCard message={m} />}
                 </Fragment>
               );
@@ -201,6 +204,13 @@ function latestTravelMessageIndex(messages: UiMessage[]): number {
 function latestBookingMessageIndex(messages: UiMessage[]): number {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     if (messages[index].booking) return index;
+  }
+  return -1;
+}
+
+function latestSummaryMessageIndex(messages: UiMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index].tripSummary) return index;
   }
   return -1;
 }

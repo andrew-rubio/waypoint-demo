@@ -71,6 +71,8 @@ export class ChatPage {
 
   async send(text: string): Promise<void> {
     await this.input.fill(text);
+    // Cards can render mid-stream; the composer only accepts a message once the previous reply finishes.
+    await expect(this.sendButton).toBeEnabled({ timeout: 15_000 });
     await this.input.press('Enter');
   }
 
