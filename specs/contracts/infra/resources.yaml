@@ -58,10 +58,23 @@ resources:
     purpose: BYOK model for the agent (ADR-005). Foundry v2 account + project; OpenAI-compatible endpoint.
     project: waypoint                            # Microsoft.CognitiveServices/accounts/projects (v2 experience)
     deployments:
-      - name: gpt-5.4-mini                       # = SDK `model`; version pinned in Bicep
-        sku: { name: GlobalStandard, capacity: 20 }   # needs regional quota (Sweden Central)
+      - name: gpt-5.4-mini                       # = SDK `model`; version pinned in Bicep (PAYG, default active)
+        sku: { name: GlobalStandard, capacity: 500 }  # matches the live PAYG capacity; param foundryModelCapacity
+      - name: gpt-5.4-mini-ptu                   # EXT-PRE-001 (FRD-011, ADR-013) — side-by-side provisioned deployment
+        sku: { name: GlobalProvisionedManaged, capacity: 15 }  # 15 PTU minimum, 5-PTU increments, hourly billing, no reservation
+        model: { name: gpt-5.4-mini, version: '2026-03-17' }
+        optional: true                           # deployFoundryPtu=false by default; true only after hourly-price approval
+        billing: hourly-while-deployed           # cannot be paused; delete the deployment to stop charges
       - name: text-embedding-3-small             # INC-8 (ADR-008) — embeds the travel-guide PDF into AI Search
         sku: { name: GlobalStandard, capacity: 20 }   # Sweden Central supports GlobalStandard/DataZoneStandard (not Standard)
+    modelSelection:                              # EXT-PRE-001 — the API's FOUNDRY_MODEL is the only value that changes
+      parameters: [deployFoundryPtu, useFoundryPtu]   # both default false
+      activeDeployment: "useFoundryPtu && deployFoundryPtu ? gpt-5.4-mini-ptu : gpt-5.4-mini"
+      unchanged: [FOUNDRY_MODEL_URL, managedIdentity, inferenceRole, applicationInsights, agent, tools, prompts]
+      outputs: [FOUNDRY_PAYG_DEPLOYMENT, FOUNDRY_PTU_DEPLOYMENT, FOUNDRY_ACTIVE_DEPLOYMENT]
+      hostedAgent: foundry/azure.yaml references AZURE_AI_MODEL_DEPLOYMENT_NAME only; Bicep owns all deployments
+    monitoring:
+      ptuMetric: AzureOpenAIProvisionedManagedUtilizationV2   # "Provisioned-managed Utilization V2", split by ModelDeploymentName
     connections:
       - name: travel-guide-search                # INC-8 (ADR-008) — project connection so the AI Search index shows in the Foundry project
         type: Microsoft.CognitiveServices/accounts/projects/connections
@@ -171,3 +184,8 @@ mcpAllowlist: [routestack, open-meteo, currency, cosmos, travel-guide]
 
 # INC-3 contract review: destination-advisor is an in-process skill. It adds no
 # Azure resource, secret, environment variable, network dependency, or Bicep change.
+
+# EXT-PRE-001 contract review (FRD-011, ADR-013): adds one optional Foundry model
+# deployment and two boolean parameters. No new resource type, secret, identity,
+# role assignment, endpoint, or application environment variable is introduced.
+# Read-only evidence: scripts/verify-ptu-demo.mjs (simulated by default, --live for Azure).

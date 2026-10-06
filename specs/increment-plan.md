@@ -243,3 +243,81 @@ business requirement (PRD-*)
 ```
 
 Run `npm run gov:trace` for the live matrix.
+
+## Provisioned model capacity extension
+
+> Branch: `spec2cloud/extend/ptu-observability`. These increments add an hourly
+> GPT-5.4-mini Global Provisioned deployment while preserving the current PAYG
+> deployment and observability path. Provisioning remains blocked until the
+> presenter approves the Foundry portal's hourly price for 15 PTUs.
+
+### EXT-PRE-001 Parameterize model deployment capacity
+
+* Type: extension prerequisite
+* FRD: [FRD-011](./frd-provisioned-model-capacity.md)
+* ADR: [ADR-013](./adrs/adr-013-use-global-provisioned-throughput.md)
+* Scope: Parameterize model deployment name, SKU, and capacity in the Foundry
+  Bicep module. Preserve `GlobalStandard` as the default, keep the embedding
+  deployment on PAYG, and prevent the hosted-agent definition from creating a
+  conflicting model deployment.
+* Acceptance criteria:
+  * Existing PAYG infrastructure remains the default deployment outcome.
+  * Bicep validates for PAYG and PTU parameter sets.
+  * Deployment capacity documentation distinguishes TPM quota units from PTUs.
+  * Existing application and test behavior remains unchanged.
+* Test strategy:
+  * Compile Bicep for PAYG and PTU parameter sets.
+  * Inspect deployment snapshots for the expected SKU, capacity, and model.
+  * Run the full existing application test suite.
+  * Run the prohibited test-skip scan.
+* Gherkin deltas:
+  * New: `Scenario: PAYG remains the default model deployment`.
+  * New: `Scenario: A PTU parameter set produces Global Provisioned capacity`.
+  * Regression: All existing chat, audit, observability, and evaluation scenarios
+    remain unchanged.
+* Integration points:
+  * `infra/main.bicep`
+  * `infra/modules/foundry.bicep`
+  * `foundry/azure.yaml`
+  * `specs/contracts/infra/resources.yaml`
+* Dependencies: Existing INC-9 and INC-10 capabilities
+* Rollback plan: Revert the parameterization; the existing PAYG resource remains
+  unchanged.
+
+### EXT-001 Demonstrate PTU inference with preserved observability
+
+* Type: extension
+* FRD: [FRD-011](./frd-provisioned-model-capacity.md)
+* ADR: [ADR-013](./adrs/adr-013-use-global-provisioned-throughput.md)
+* Scope: Provision a separately named GPT-5.4-mini `2026-03-17`
+  `GlobalProvisionedManaged` deployment at 15 PTUs after the price gate. Smoke
+  test inference, switch the app through configuration, run the same comparison
+  workload against PAYG and PTU, and verify traces plus provisioned utilization.
+* Acceptance criteria:
+  * PAYG and PTU deployments are healthy side by side.
+  * Switching requires only the deployment-name configuration.
+  * The same representative conversation succeeds against both deployments.
+  * Foundry and Application Insights show correlated spans for both runs.
+  * Azure Monitor shows `Provisioned-Managed Utilization V2` for PTU.
+  * Switching back to PAYG succeeds before optional PTU deletion.
+* Test strategy:
+  * Verify the new Gherkin scenarios against the deployed environment.
+  * Run the complete Vitest, Cucumber, and Playwright suites.
+  * Run the existing Foundry evaluation dataset against both deployments.
+  * Perform inference, trace, metric, rollback, and cleanup smoke checks.
+* Gherkin deltas:
+  * New: `Scenario: Switch the agent from PAYG to PTU through configuration`.
+  * New: `Scenario: PTU preserves Foundry trace correlation`.
+  * New: `Scenario: Operator can observe provisioned utilization`.
+  * New: `Scenario: Roll back from PTU to PAYG`.
+  * Regression: Existing agent-runtime and observability scenarios must pass
+    unchanged.
+* Integration points:
+  * Foundry model deployments in Sweden Central
+  * Existing managed identity and model-inference RBAC
+  * Existing Application Insights and Foundry project connection
+  * Existing evaluation dataset and trace correlation
+* Dependencies: EXT-PRE-001, portal hourly-price approval, at least 15 PTUs of
+  quota and live capacity
+* Rollback plan: Select the PAYG deployment, verify inference, and delete the PTU
+  deployment to stop hourly billing.

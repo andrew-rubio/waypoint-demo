@@ -19,6 +19,15 @@
     },
     "deployerPrincipalId": {
       "value": "${AZURE_PRINCIPAL_ID}"
+    },
+    "deployFoundryPtu": {
+      "value": "${DEPLOY_FOUNDRY_PTU=false}"
+    },
+    "useFoundryPtu": {
+      "value": "${USE_FOUNDRY_PTU=false}"
+    },
+    "foundryAgentResponsesUrl": {
+      "value": "${FOUNDRY_AGENT_RESPONSES_URL}"
     }
   }
 }

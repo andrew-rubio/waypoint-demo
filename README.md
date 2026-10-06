@@ -154,12 +154,15 @@ The runtime auto‑switches to the Copilot SDK driver with `provider: { type: 'o
 
 ## Tests
 
-All suites run against the app (Cucumber/Playwright expect a running web + api; the harness [`scripts/e2e.mjs`](scripts/e2e.mjs) boots both).
+The local harness starts the API and web application on available loopback ports,
+then passes those endpoints to Cucumber or Playwright. Set
+`WAYPOINT_TEST_API_PORT` and `WAYPOINT_TEST_WEB_PORT` only when fixed local ports
+are required.
 
 ```powershell
 npm run test:unit    # Vitest (API unit + integration via Supertest)
-node scripts/e2e.mjs e2e    # Playwright end-to-end
-node scripts/e2e.mjs bdd    # Cucumber BDD
+npm run test:e2e     # Playwright end-to-end with the local harness
+npm run test:bdd     # Cucumber BDD with the local harness
 ```
 
 ---
@@ -180,6 +183,52 @@ azd up
 > **Important:** `azd provision` on its own resets the container apps to a placeholder image. Always follow provisioning with `azd deploy` — or just use `azd up` (provision + deploy).
 
 The API image installs `ca-certificates` (the Copilot native runtime needs a system CA store for TLS). Auth is **managed identity** — the Container App identity is granted **Cognitive Services OpenAI User** on the Foundry resource, plus **Cosmos DB Data Reader** and **Search Index Data Reader**; there is no key or secret to store. Cosmos DB (serverless) and Azure AI Search (Free tier) are provisioned by Bicep, along with a Foundry **`text-embedding-3-small`** deployment (embeds the travel-guide) and a **Foundry project connection** to AI Search so the `travel-guide` index is visible inside the Foundry project (ADR-008). After provisioning, the guide index is seeded by [`scripts/ingest-guide.mjs`](scripts/ingest-guide.mjs).
+
+### PAYG → PTU demonstration (FRD-011, ADR-013)
+
+Bicep keeps the PAYG `gpt-5.4-mini` deployment (`GlobalStandard`, 500) and can add a
+side-by-side `gpt-5.4-mini-ptu` deployment (`GlobalProvisionedManaged`, 15 PTUs, hourly).
+Only the deployment name changes; the agent, tools, identity, endpoint, and telemetry stay the same.
+Chat turns are proxied to the Foundry-hosted agent, so switch the hosted agent and the API together:
+the hosted agent's deployment serves the model calls, and the API's `FOUNDRY_MODEL` labels its audit spans.
+
+> [!CAUTION]
+> A PTU deployment is billed every hour it exists, even when idle, and can't be paused.
+> Create it only after confirming the hourly price in the Foundry portal, and delete it after the demo.
+
+```powershell
+# 1. Read-only preflight: quota, live capacity, and the price gate
+node scripts/verify-ptu-demo.mjs --mode preflight --live --azd-env
+
+# 2. After approving the portal's hourly price: create PTU beside PAYG, then verify (azd up needs Docker running)
+azd env set DEPLOY_FOUNDRY_PTU true
+azd up
+$env:PTU_PRICE_APPROVED = 'true'
+node scripts/verify-ptu-demo.mjs --mode post-provision --live --azd-env
+
+# 3. Switch the API and the hosted agent to PTU, then prove the conversation, traces, and utilization
+azd env set USE_FOUNDRY_PTU true
+azd up
+Push-Location foundry; azd env set AZURE_AI_MODEL_DEPLOYMENT_NAME gpt-5.4-mini-ptu; azd deploy waypoint-agent; Pop-Location
+node scripts/verify-ptu-demo.mjs --mode switch --deployment ptu --live --azd-env
+node scripts/verify-ptu-demo.mjs --mode conversation --deployment ptu --live --azd-env
+node scripts/verify-ptu-demo.mjs --mode comparison --live --azd-env
+node scripts/verify-ptu-demo.mjs --mode traces --live --azd-env
+node scripts/verify-ptu-demo.mjs --mode utilization --live --azd-env
+
+# 4. Roll back to PAYG, then delete PTU to stop billing
+Push-Location foundry; azd env set AZURE_AI_MODEL_DEPLOYMENT_NAME gpt-5.4-mini; azd deploy waypoint-agent; Pop-Location
+azd env set USE_FOUNDRY_PTU false
+azd env set DEPLOY_FOUNDRY_PTU false
+azd up
+az cognitiveservices account deployment delete -g <resource-group> -n <foundry-account> --deployment-name gpt-5.4-mini-ptu
+node scripts/verify-ptu-demo.mjs --mode cleanup --deployment payg --live --azd-env
+```
+
+Bicep owns both deployments; [`foundry/azure.yaml`](foundry/azure.yaml) only selects one through
+`AZURE_AI_MODEL_DEPLOYMENT_NAME`. Setting `DEPLOY_FOUNDRY_PTU` back to `false` does not delete an existing
+deployment, so the explicit delete is required. Without `--live`, the verifier uses labelled simulated
+evidence for automated tests.
 
 ---
 

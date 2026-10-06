@@ -33,6 +33,27 @@ param foundryModelName string = 'gpt-5.4-mini'
 @description('Foundry model version to deploy.')
 param foundryModelVersion string = '2026-03-17'
 
+@description('PAYG chat deployment SKU (FRD-011). The PTU deployment is separate and never replaces it.')
+param foundryModelDeploymentSku string = 'GlobalStandard'
+
+@description('PAYG chat deployment capacity (thousands of tokens/min). Matches the live deployment so provisioning does not reduce it.')
+param foundryModelCapacity int = 500
+
+@description('Global Provisioned deployment name for the same model (FRD-011, ADR-013).')
+param foundryPtuModelName string = 'gpt-5.4-mini-ptu'
+
+@description('Global Provisioned capacity in PTUs (GPT-5.4-mini minimum is 15).')
+param foundryPtuCapacity int = 15
+
+@description('Create the hourly-billed PTU deployment. Set true only after approving the hourly price shown in the Foundry portal.')
+param deployFoundryPtu bool = false
+
+@description('Route the API to the PTU deployment. Ignored unless deployFoundryPtu is also true, so the agent stays on PAYG.')
+param useFoundryPtu bool = false
+
+@description('Responses endpoint of the Foundry-hosted agent (ADR-010). When set, the API proxies chat turns to it; empty keeps the in-process agent.')
+param foundryAgentResponsesUrl string = ''
+
 @description('Foundry embedding model deployment name (INC-8, ADR-008) — vectorises the travel-guide guide.')
 param foundryEmbeddingModelName string = 'text-embedding-3-small'
 
@@ -44,6 +65,8 @@ param deployerPrincipalId string = ''
 
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
+// FRD-011: the only application setting that differs between PAYG and PTU.
+var activeFoundryModelName = useFoundryPtu && deployFoundryPtu ? foundryPtuModelName : foundryModelName
 
 resource rg 'Microsoft.Resources/resourceGroups@2023-07-01' = {
   name: 'rg-${environmentName}'
@@ -104,6 +127,11 @@ module foundry 'modules/foundry.bicep' = if (useFoundry) {
     accountName: 'aif-${resourceToken}'
     modelName: foundryModelName
     modelVersion: foundryModelVersion
+    modelDeploymentSku: foundryModelDeploymentSku
+    capacity: foundryModelCapacity
+    deployProvisionedModel: deployFoundryPtu
+    provisionedModelName: foundryPtuModelName
+    provisionedCapacity: foundryPtuCapacity
     embeddingModelName: foundryEmbeddingModelName
     embeddingModelVersion: foundryEmbeddingModelVersion
     principalId: identity.outputs.principalId
@@ -262,7 +290,21 @@ var apiEnv = concat(
       name: 'WAYPOINT_DATA_MCP_URL'
       value: '${waypointData.outputs.uri}/mcp'
     }
+    {
+      // Attributes the API's GenAI spans to the agent in Application Insights / Foundry (INC-10).
+      name: 'OTEL_SERVICE_NAME'
+      value: 'waypoint-agent'
+    }
   ],
+  // Option C (ADR-010): route chat turns to the Foundry-hosted agent when its endpoint is known.
+  empty(foundryAgentResponsesUrl)
+    ? []
+    : [
+        {
+          name: 'FOUNDRY_AGENT_RESPONSES_URL'
+          value: foundryAgentResponsesUrl
+        }
+      ],
   useFoundry
     ? [
         {
@@ -271,7 +313,7 @@ var apiEnv = concat(
         }
         {
           name: 'FOUNDRY_MODEL'
-          value: foundryModelName
+          value: activeFoundryModelName
         }
         {
           name: 'FOUNDRY_USE_MANAGED_IDENTITY'
@@ -352,3 +394,6 @@ output SEARCH_ENDPOINT string = aiSearch.outputs.endpoint
 output SEARCH_INDEX string = 'travel-guide'
 output FOUNDRY_MODEL_URL string = useFoundry ? foundry!.outputs.openAiEndpoint : ''
 output FOUNDRY_EMBEDDING_DEPLOYMENT string = useFoundry ? foundry!.outputs.embeddingDeploymentName : ''
+output FOUNDRY_PAYG_DEPLOYMENT string = useFoundry ? foundry!.outputs.paygDeploymentName : ''
+output FOUNDRY_PTU_DEPLOYMENT string = useFoundry ? foundry!.outputs.ptuDeploymentName : ''
+output FOUNDRY_ACTIVE_DEPLOYMENT string = useFoundry ? activeFoundryModelName : ''
