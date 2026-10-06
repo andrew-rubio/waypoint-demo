@@ -243,6 +243,8 @@ Then('the audit trail should contain a successful travel-guide search entry', as
 
 Then('the travel-guide search entry should summarise the requested month and result', async function (this: CustomWorld) {
   const entry = audit(this).entriesOfType('mcp').filter({ hasText: 'travel-guide' }).first();
-  await expect(entry).toContainText(/June/i);
-  await expect(entry).toContainText(/destination|result|match|passage/i);
+  await entry.getByTestId('audit-entry-top').click();
+  const detail = entry.getByTestId('audit-entry-detail');
+  await expect(detail).toContainText(/June/i);
+  await expect(detail).toContainText(/destination|result|match|passage/i);
 });

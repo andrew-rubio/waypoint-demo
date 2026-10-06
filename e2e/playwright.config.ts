@@ -1,10 +1,10 @@
 import { defineConfig, devices } from '@playwright/test';
 
-// E2E runs against the Aspire-orchestrated Web app. Set WEB_BASE_URL in CI/Aspire.
+// E2E runs against the Web app supplied by the local harness or CI.
 const baseURL = process.env.WEB_BASE_URL ?? 'http://localhost:3000';
 
 // When no external stack is provided, Playwright boots the API + Web itself so
-// the e2e suite is self-contained. In Aspire/CI set WEB_BASE_URL to skip this.
+// the e2e suite is self-contained. Set WEB_BASE_URL to skip this fallback.
 const selfHosted = !process.env.WEB_BASE_URL;
 
 export default defineConfig({
@@ -18,8 +18,6 @@ export default defineConfig({
   use: {
     baseURL,
     trace: 'on-first-retry',
-    // Waypoint honours prefers-reduced-motion; keep e2e deterministic.
-    reducedMotion: 'reduce',
   },
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   ...(selfHosted
@@ -44,4 +42,3 @@ export default defineConfig({
       }
     : {}),
 });
-

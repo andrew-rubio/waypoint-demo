@@ -100,6 +100,6 @@ test.describe('Personalisation via Cosmos DB (FRD-006) @flow:personalisation @fr
     await expect(chat.errorNotice).toContainText('Personalised data is unavailable right now');
     await expect(chat.input).toBeEnabled();
     await expect(chat.destinationList).toBeVisible();
-    await expect(chat.personalisationNote).not.toContainText(/Gold Tier|7,463/i);
+    await expect(chat.personalisationNote.filter({ hasText: /Gold Tier|7,463/i })).toHaveCount(0);
   });
 });
