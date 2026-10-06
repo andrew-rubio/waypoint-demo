@@ -52,8 +52,6 @@ services:
       WAYPOINT_MODEL_URL: ${FOUNDRY_MODEL_URL}
       WAYPOINT_USE_MANAGED_IDENTITY: 'true'
       WAYPOINT_WIRE_API: responses
-      OTEL_SERVICE_NAME: waypoint-agent
-      WAYPOINT_APPINSIGHTS_CONNECTION_STRING: ${WAYPOINT_APPINSIGHTS_CONNECTION_STRING}
       # Live RouteStack MCP creds — without these the flight/hotel search falls back
       # to the deterministic offline catalogue (limited cities; no Vienna). Same values
       # as the ACA `routestack-api-key` / `routestack-secret` Container App secrets.

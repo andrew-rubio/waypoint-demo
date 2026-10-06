@@ -374,8 +374,13 @@ function liveSource(config) {
           token: token('https://api.applicationinsights.io'),
           body: { query },
         });
-        const rows = result.tables[0].rows.map(([, operations, models]) => ({ operations, models }));
-        const forTier = (name) => rows.find((row) => row.models.includes(name));
+        // The query API returns dynamic (make_set) columns as JSON strings.
+        const list = (value) => (typeof value === 'string' ? JSON.parse(value) : value ?? []);
+        const rows = result.tables[0].rows.map(([, operations, models]) => ({ operations: list(operations), models: list(models) }));
+        const forTier = (name) => {
+          const matching = rows.filter((row) => row.models.includes(name));
+          return matching.find(correlated) ?? matching[0];
+        };
         const payg = forTier(config.paygName);
         const ptu = forTier(config.ptuName);
         if (payg && ptu) return { waited, available: true, payg, ptu };

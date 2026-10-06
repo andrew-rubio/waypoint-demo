@@ -98,6 +98,23 @@ the account's managed identity and the running user).
   `--input`, `--name` (see `python eval/evaluate.py --help`) or env vars
   `FOUNDRY_PROJECT_ENDPOINT`, `FOUNDRY_EVAL_MODEL`, `WAYPOINT_EVAL_INPUT`.
 
+## Evaluating while the agent runs on PTU
+
+The agent can run on a pay-as-you-go (`gpt-5.4-mini`) or a provisioned throughput
+(`gpt-5.4-mini-ptu`) deployment of the same model (see
+[Switching the model between PAYG and PTU](../README.md#switching-the-model-between-payg-and-ptu-frd-011-adr-013)).
+The two halves of the pipeline are affected differently:
+
+| Part | Deployment it uses | Impact when the agent is on PTU | Why |
+|------|--------------------|---------------------------------|-----|
+| Dataset generation and smoke slice (steps 1 and 2) | None | None | Pure Node over the Gherkin files; no model calls. |
+| Agent replay (`run-agent.mjs`, step 3) | Whatever the hosted agent uses | Low | Replays call the hosted agent, so responses come from PTU while it's active. Same model and version, so scores stay comparable with PAYG runs. |
+| Judging (`evaluate.py`, step 4) | `FOUNDRY_EVAL_MODEL`, default `gpt-5.4-mini` (PAYG) | None by default | The judge is separate from the agent and stays on PAYG. |
+| Pointing the judge at PTU (`--model gpt-5.4-mini-ptu`) | PTU | High, not recommended | Seven evaluators fire concurrently. At 100% utilization 15 PTUs return HTTP 429, and throttled rows score 0, which looks like a quality drop. |
+
+To compare tiers, replay the same smoke dataset once with the agent on PAYG and once on PTU,
+keep the judge on PAYG, and compare the two runs in the Evaluations tab.
+
 ## CI quality gate
 
 `.github/workflows/agent-eval.yml` runs the whole pipeline on every PR that

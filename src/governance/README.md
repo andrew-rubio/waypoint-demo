@@ -33,6 +33,19 @@ material change (obligation, threshold, severity, applicable control, propositio
 the contract hash and **invalidates approval**. A production implementation would integrate
 enterprise identity, protected GitHub environments, Git commit signatures, or attestation.
 
+## Model deployment changes (PAYG and PTU)
+
+Switching the agent between the pay-as-you-go and provisioned throughput deployments
+([root README](../../README.md#switching-the-model-between-payg-and-ptu-frd-011-adr-013))
+has no effect on governance:
+
+| Governance element | Impact | Why |
+|--------------------|--------|-----|
+| Proposition and control selection | None | The proposition's characteristics (LLM use, data, autonomy, integrations) are unchanged, so the same controls are selected. |
+| Control contract and approval | None | The contract hash depends on the proposition and catalogue, not the deployment tier, so existing approvals stay valid. |
+| Evidence and release decision | None | Adapters inspect code, configuration, tests, and evaluations, none of which change with the tier. |
+| Version-capture lineage (OPS-VER-001) | Positive | Runtime metadata reports the active deployment name (`gpt-5.4-mini` or `gpt-5.4-mini-ptu`), so each transaction records which tier served it. |
+
 ## Evidence mode
 
 - `ci-authoritative` — requires a certified immutable artefact digest matching the
